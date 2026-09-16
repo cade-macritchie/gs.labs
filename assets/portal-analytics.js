@@ -3,7 +3,7 @@
 
   const PRODUCTION_HOST = 'gateway-seminary-labs.github.io';
   const SITE_TOKEN = '41948a5bca5f4a97b32961ff03ce053f';
-  const AGGREGATE_ENDPOINT = 'https://gs-labs-slate-gateway.queryomatic.workers.dev/api/analytics/event';
+  const AGGREGATE_ENDPOINT = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/event';
   const IDENTIFIER_PATTERN = /^[a-f0-9-]{20,64}$/i;
   const VISITOR_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 

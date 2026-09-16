@@ -18,7 +18,7 @@
   // injects the real Slate query id/token server-side — see
   // tools/queryomatic/worker.js. Nothing Slate-credential related is ever
   // hardcoded here.
-  const recordsService = 'https://gs-labs-slate-gateway.queryomatic.workers.dev/api/slate/records';
+  const recordsService = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/slate/records';
   const frame = document.getElementById('eventTrackerFrame');
   const root = document.getElementById('eventTrackerData');
   const read = (node, key) => { const el = node && node.querySelector('.' + key); return el ? el.textContent.trim() : ''; };

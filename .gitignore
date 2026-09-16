@@ -2,3 +2,8 @@ tools/queryomatic/.wrangler/
 idea-box-worker/.wrangler/
 .wrangler/
 supabase/.temp/
+
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example

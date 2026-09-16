@@ -15,4 +15,4 @@ PORTAL_ORIGIN = "https://enroll.gs.edu"
 # rate limiter.
 [[kv_namespaces]]
 binding = "OPTIONS_CACHE"
-id = "c6d8bdd0999b4c7b913769f3d2ce46b7"
+id = "1fc9b0939692486d91f3147d3b215769"
