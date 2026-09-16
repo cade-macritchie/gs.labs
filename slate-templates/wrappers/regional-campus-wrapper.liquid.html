@@ -16,9 +16,14 @@
   'use strict';
   const dashboard = 'regional-campus';
   const frameOrigin = 'https://gateway-seminary-labs.github.io';
-  const optionsService = 'https://enroll.gs.edu/manage/query/run?id=4f1e5d6f-2286-4100-9b40-2b33fa1882aa&cmd=service&output=json';
-  const recordsService = 'https://enroll.gs.edu/manage/query/run?id=5b1950b0-637e-4ea2-86ef-08e8dfb80ea4&cmd=service&output=json&h=028f12ce-8c87-4658-9bcb-f0ea69699583&campus=&term=&year=';
-  const inquiryService = 'https://enroll.gs.edu/manage/query/run?id=6f920b18-cda2-44cb-94db-edd8adbefb00&cmd=service&output=json&h=e3041f08-339d-4b3d-8559-0eb93760a4b3&campus=';
+  // Every Slate query below is proxied through the GS Labs Slate Gateway
+  // Cloudflare Worker, which injects the real Slate query id/token
+  // server-side — see tools/queryomatic/worker.js. Nothing Slate-credential
+  // related is ever hardcoded here.
+  const workerBase = 'https://gs-labs-slate-gateway.queryomatic.workers.dev';
+  const optionsService = workerBase + '/api/slate/portal-options';
+  const recordsService = workerBase + '/api/slate/regional-campus-records';
+  const inquiryService = workerBase + '/api/slate/inquiries';
   const fallbackCampuses = [
     'Arizona Regional Campus',
     'Bay Area Campus',

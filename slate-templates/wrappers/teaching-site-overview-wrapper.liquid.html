@@ -34,13 +34,18 @@
   'use strict';
   const dashboard = 'teaching-site-overview';
   const frameOrigin = 'https://gateway-seminary-labs.github.io';
-  const countsService = 'https://enroll.gs.edu/manage/query/run?id=3095d9eb-e68c-4253-bd57-e57f310e0f14&cmd=service&output=json&h=65d38d9a-bfb3-4931-a95c-e74dc6cf9d5d';
-  const recordsService = 'https://enroll.gs.edu/manage/query/run?id=b83ba692-55a0-42d9-b950-60a3f2eccac7&cmd=service&output=json&h=7eb188d8-0524-4d60-b731-37c0b94af784&first=&last=&sisid=&term=&year=&status=&pipeline=&teachingsite=&program=&app_code=&app_createddate_start=&app_createddate_end=&campus_assigned=&alt_form_type=&int_code=&person_created_date_start=&person_created_date_end=';
+  // Every Slate query below is proxied through the GS Labs Slate Gateway
+  // Cloudflare Worker, which injects the real Slate query id/token
+  // server-side — see tools/queryomatic/worker.js. Nothing Slate-credential
+  // related is ever hardcoded here.
+  const workerBase = 'https://gs-labs-slate-gateway.queryomatic.workers.dev';
+  const countsService = workerBase + '/api/slate/teaching-site-counts';
+  const recordsService = workerBase + '/api/slate/records';
   // Same inquiry-only query Regional Campus uses (see
   // slate-templates/wrappers/regional-campus-wrapper.liquid.html), now also
   // accepting a "teachingsite" parameter (instead of Regional Campus's
   // "campus") plus person_created_date_start/person_created_date_end.
-  const inquiryService = 'https://enroll.gs.edu/manage/query/run?id=6f920b18-cda2-44cb-94db-edd8adbefb00&cmd=service&output=json&h=e3041f08-339d-4b3d-8559-0eb93760a4b3&teachingsite=&person_created_date_start=&person_created_date_end=';
+  const inquiryService = workerBase + '/api/slate/inquiries';
   // Calendar bounds for each academic period, keyed "term|year" to match
   // payload.filters — used only for the inquiries request's
   // person_created_date_start/person_created_date_end (see loadInquiries below).
@@ -59,7 +64,7 @@
   // its campus list from (see slate-templates/wrappers/regional-campus-wrapper.liquid.html);
   // it exports every configured prompt's key/value pairs, so the teaching-site
   // prompt's values are filtered out by key below instead of hardcoded here.
-  const optionsService = 'https://enroll.gs.edu/manage/query/run?id=4f1e5d6f-2286-4100-9b40-2b33fa1882aa&cmd=service&output=json';
+  const optionsService = workerBase + '/api/slate/portal-options';
   const teachingSiteOptionKeys = new Set(['teachingsite', 'teachingsites', 'site', 'teaching_site']);
   const fallbackTeachingSites = [
     'Agricola in Finland',

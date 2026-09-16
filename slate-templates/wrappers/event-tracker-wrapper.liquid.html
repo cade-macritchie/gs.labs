@@ -14,7 +14,11 @@
   'use strict';
   const dashboard = 'event-tracker';
   const frameOrigin = 'https://gateway-seminary-labs.github.io';
-  const recordsService = 'https://enroll.gs.edu/manage/query/run?id=b83ba692-55a0-42d9-b950-60a3f2eccac7&cmd=service&output=json&h=7eb188d8-0524-4d60-b731-37c0b94af784&first=&last=&sisid=&term=&year=&status=&pipeline=&teachingsite=&program=&app_code=&app_createddate_start=&app_createddate_end=&campus_assigned=&alt_form_type=Event';
+  // Proxied through the GS Labs Slate Gateway Cloudflare Worker, which
+  // injects the real Slate query id/token server-side — see
+  // tools/queryomatic/worker.js. Nothing Slate-credential related is ever
+  // hardcoded here.
+  const recordsService = 'https://gs-labs-slate-gateway.queryomatic.workers.dev/api/slate/records';
   const frame = document.getElementById('eventTrackerFrame');
   const root = document.getElementById('eventTrackerData');
   const read = (node, key) => { const el = node && node.querySelector('.' + key); return el ? el.textContent.trim() : ''; };

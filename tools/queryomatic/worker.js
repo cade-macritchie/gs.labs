@@ -1,7 +1,22 @@
 /**
- * Queryomatic Cloudflare Worker
+ * GS Labs Slate Gateway (formerly "Queryomatic Cloudflare Worker")
  *
- * REFRESH FLOW:
+ * Two jobs live in this one Worker:
+ *
+ * 1. Queryomatic — the AI-assisted admissions-export tool's own backend
+ *    (options.md refresh/generate/run flows below).
+ *
+ * 2. Slate portal proxy (/api/slate/*) — every Slate query id/h token that
+ *    used to be hardcoded directly in slate-templates/wrappers/*.liquid.html
+ *    now lives here as a secret instead, so the browser never sees it.
+ *    Each route whitelists only the query-string parameters its wrapper
+ *    actually sends. These routes are called from Slate portal pages at
+ *    PORTAL_ORIGIN (enroll.gs.edu), NOT from ALLOWED_ORIGIN (GitHub Pages) —
+ *    that's a different caller than Queryomatic's own routes below, so they
+ *    check Origin against PORTAL_ORIGIN instead.
+ *
+ *
+ * QUERYOMATIC REFRESH FLOW:
  *
  * POST /api/options/refresh
  *     ↓
@@ -20,7 +35,7 @@
  * Commit updated options.md to GitHub
  *
  *
- * GENERATE FLOW:
+ * QUERYOMATIC GENERATE FLOW:
  *
  * POST /api/generate
  *     ↓
@@ -31,23 +46,40 @@
  * Return Slate query parameters
  *
  *
- * RUN FLOW:
+ * QUERYOMATIC RUN FLOW:
  *
  * POST /api/run
  *     ↓
  * Run main Slate query
  *
  *
- * Secrets:
- * - SLATE_TOKEN_PROMPTS
- * - SLATE_TOKEN_MAINDB
- * - ANTHROPIC_API_KEY
- * - GITHUB_TOKEN
+ * SLATE PORTAL PROXY ROUTES (/api/slate/*), one per distinct Slate query id:
+ *
+ * - GET /api/slate/teaching-site-counts       (teaching-site-overview wrapper)
+ * - GET /api/slate/records                    (teaching-site-overview, student-lookup, event-tracker wrappers)
+ * - GET /api/slate/inquiries                  (teaching-site-overview, regional-campus wrappers)
+ * - GET /api/slate/portal-options             (teaching-site-overview, regional-campus wrappers)
+ * - GET /api/slate/regional-campus-records    (regional-campus wrapper)
+ * - GET /api/slate/additional-applications    (student-lookup wrapper)
+ *
+ *
+ * Secrets (names only — set with `wrangler secret put <NAME>`):
+ * - SLATE_TOKEN_PROMPTS                        (Queryomatic options refresh)
+ * - SLATE_TOKEN_MAINDB                         (Queryomatic /api/run)
+ * - ANTHROPIC_API_KEY                          (Queryomatic /api/generate)
+ * - GITHUB_TOKEN                               (Queryomatic options.md commits)
+ * - SLATE_OPTIONS_URL                          (moved here from [vars] — Queryomatic)
+ * - SLATE_QUERY_URL                            (moved here from [vars] — Queryomatic)
+ * - SLATE_TEACHING_SITE_COUNTS_URL             (full Slate URL incl. id + h)
+ * - SLATE_RECORDS_URL                          (full Slate URL incl. id + h)
+ * - SLATE_INQUIRIES_URL                        (full Slate URL incl. id + h)
+ * - SLATE_PORTAL_OPTIONS_URL                   (full Slate URL incl. id, no h)
+ * - SLATE_REGIONAL_CAMPUS_RECORDS_URL          (full Slate URL incl. id + h)
+ * - SLATE_ADDITIONAL_APPLICATIONS_URL          (full Slate URL incl. id + h)
  *
  * Vars:
- * - SLATE_OPTIONS_URL
- * - SLATE_QUERY_URL
- * - ALLOWED_ORIGIN
+ * - ALLOWED_ORIGIN   (GitHub Pages origin — Queryomatic + analytics routes)
+ * - PORTAL_ORIGIN    (Slate portal origin — /api/slate/* routes)
  */
 
 
@@ -109,6 +141,7 @@ function safeUrl(urlString) {
       "token",
       "access_token",
       "api_key",
+      "h",
     ]) {
       if (url.searchParams.has(key)) {
         url.searchParams.set(
@@ -158,10 +191,10 @@ function normalizeQueryParams(params) {
 // CORS / JSON
 // ============================================================
 
-function corsHeaders(env) {
+function corsHeaders(env, origin) {
   return {
     "Access-Control-Allow-Origin":
-      env.ALLOWED_ORIGIN || "*",
+      origin || env.ALLOWED_ORIGIN || "*",
 
     "Access-Control-Allow-Methods":
       "GET,POST,OPTIONS",
@@ -172,17 +205,105 @@ function corsHeaders(env) {
 }
 
 
-function json(data, env, status = 200) {
+function json(data, env, status = 200, origin) {
   return new Response(
     JSON.stringify(data),
     {
       status,
       headers: {
         "Content-Type": "application/json",
-        ...corsHeaders(env),
+        ...corsHeaders(env, origin),
       },
     }
   );
+}
+
+
+// ============================================================
+// SLATE PORTAL PROXY HELPERS (/api/slate/*)
+// ============================================================
+
+function originAllowed(request, allowedOrigin) {
+  if (!allowedOrigin) return false;
+
+  const origin = request.headers.get("Origin");
+  if (origin === allowedOrigin) return true;
+
+  const referer = request.headers.get("Referer") || "";
+  return referer === allowedOrigin || referer.startsWith(allowedOrigin + "/");
+}
+
+
+const RATE_LIMIT_MAX_REQUESTS = 60;
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+
+async function checkRateLimit(env, request, bucket) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const window = Math.floor(Date.now() / (RATE_LIMIT_WINDOW_SECONDS * 1000));
+  const key = `ratelimit:${bucket}:${ip}:${window}`;
+
+  const current = Number.parseInt((await env.OPTIONS_CACHE.get(key)) || "0", 10);
+  if (current >= RATE_LIMIT_MAX_REQUESTS) return false;
+
+  await env.OPTIONS_CACHE.put(key, String(current + 1), {
+    expirationTtl: RATE_LIMIT_WINDOW_SECONDS * 2,
+  });
+  return true;
+}
+
+
+async function proxySlateQuery(env, id, urlEnvKey, allowedParams, incomingSearchParams) {
+  const baseUrl = env[urlEnvKey];
+
+  if (!baseUrl) {
+    throw new Error(`${urlEnvKey} is missing`);
+  }
+
+  const url = new URL(baseUrl);
+
+  for (const key of allowedParams) {
+    if (incomingSearchParams.has(key)) {
+      url.searchParams.set(key, String(incomingSearchParams.get(key) || "").trim());
+    }
+  }
+
+  logInfo(id, "Slate portal proxy request", { route: urlEnvKey, url: safeUrl(url.toString()) });
+
+  const resp = await fetch(url.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  const responseText = await resp.text();
+
+  if (!resp.ok) {
+    logError(id, "Slate portal proxy query failed", {
+      route: urlEnvKey,
+      status: resp.status,
+      body: responseText.slice(0, 2000),
+    });
+    throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
+  }
+
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    throw new Error("Slate query returned invalid JSON");
+  }
+}
+
+
+async function handleSlateProxyRoute(request, env, id, routeName, urlEnvKey, allowedParams) {
+  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, routeName))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+  }
+
+  const data = await proxySlateQuery(env, id, urlEnvKey, allowedParams, new URL(request.url).searchParams);
+  return json(data, env, 200, env.PORTAL_ORIGIN);
 }
 
 
@@ -1753,11 +1874,17 @@ export default {
       request.method === "OPTIONS"
     ) {
 
+      const requestOrigin = request.headers.get("Origin");
+      const reflectedOrigin =
+        requestOrigin === env.PORTAL_ORIGIN
+          ? env.PORTAL_ORIGIN
+          : env.ALLOWED_ORIGIN;
+
       return new Response(
         null,
         {
           headers:
-            corsHeaders(env),
+            corsHeaders(env, reflectedOrigin),
         }
       );
     }
@@ -1770,6 +1897,80 @@ export default {
         request.method === "POST"
       ) {
         return await recordAnalyticsEvent(request, env);
+      }
+
+      // ======================================================
+      // SLATE PORTAL PROXY ROUTES
+      //
+      // One route per distinct Slate query id. Called from
+      // Slate portal wrapper pages at PORTAL_ORIGIN, not from
+      // ALLOWED_ORIGIN — see handleSlateProxyRoute.
+      // ======================================================
+
+      if (
+        url.pathname === "/api/slate/teaching-site-counts" &&
+        request.method === "GET"
+      ) {
+        return await handleSlateProxyRoute(
+          request, env, id, "teaching-site-counts",
+          "SLATE_TEACHING_SITE_COUNTS_URL",
+          ["status", "year", "term", "site"]
+        );
+      }
+
+      if (
+        url.pathname === "/api/slate/records" &&
+        request.method === "GET"
+      ) {
+        return await handleSlateProxyRoute(
+          request, env, id, "records",
+          "SLATE_RECORDS_URL",
+          ["status", "year", "term", "teachingsite", "first", "last", "sisid", "alt_form_type"]
+        );
+      }
+
+      if (
+        url.pathname === "/api/slate/inquiries" &&
+        request.method === "GET"
+      ) {
+        return await handleSlateProxyRoute(
+          request, env, id, "inquiries",
+          "SLATE_INQUIRIES_URL",
+          ["campus", "teachingsite", "person_created_date_start", "person_created_date_end"]
+        );
+      }
+
+      if (
+        url.pathname === "/api/slate/portal-options" &&
+        request.method === "GET"
+      ) {
+        return await handleSlateProxyRoute(
+          request, env, id, "portal-options",
+          "SLATE_PORTAL_OPTIONS_URL",
+          []
+        );
+      }
+
+      if (
+        url.pathname === "/api/slate/regional-campus-records" &&
+        request.method === "GET"
+      ) {
+        return await handleSlateProxyRoute(
+          request, env, id, "regional-campus-records",
+          "SLATE_REGIONAL_CAMPUS_RECORDS_URL",
+          ["campus", "term", "year"]
+        );
+      }
+
+      if (
+        url.pathname === "/api/slate/additional-applications" &&
+        request.method === "GET"
+      ) {
+        return await handleSlateProxyRoute(
+          request, env, id, "additional-applications",
+          "SLATE_ADDITIONAL_APPLICATIONS_URL",
+          ["sisid"]
+        );
       }
 
       if (
@@ -2054,7 +2255,8 @@ export default {
             id,
         },
         env,
-        500
+        500,
+        url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
       );
     }
   },

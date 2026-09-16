@@ -5,7 +5,7 @@ This repository is the single source of truth for the Admissions hub and its ass
 ## Structure
 
 - `index.html` — hub published at the GitHub Pages root.
-- `tools/queryomatic/` — Queryomatic frontend, Worker configuration, options reference, and setup notes. Its GitHub Pages entry point is `/tools/queryomatic/`.
+- `tools/queryomatic/` — Queryomatic frontend, Worker configuration, options reference, and setup notes. Its GitHub Pages entry point is `/tools/queryomatic/`. The Worker itself (`tools/queryomatic/worker.js`, Cloudflare service name `gs-labs-slate-gateway`) now also proxies every Slate query token used by the portal wrappers below — see "Slate query tokens".
 - `slate-templates/wrappers/` — the small wrapper files you paste into Slate.
 - `tools/student-lookup/` — GitHub-hosted record search/profile interface.
 - `slate-templates/wrappers/student-lookup-wrapper.liquid.html` — the Slate query wrapper for the Record Lookup portal.
@@ -93,3 +93,7 @@ Do not rename the query exports or their fields without making the matching chan
 ## Queryomatic
 
 The former standalone Queryomatic repository was imported under `tools/queryomatic/`. The Cloudflare Worker remains a separate deployment; use `tools/queryomatic/README.md` for its Worker secrets and setup instructions. Update its worker `ALLOWED_ORIGIN` to permit the consolidated Pages origin and the `/gs.labs` site.
+
+## Slate query tokens
+
+No `slate-templates/wrappers/*.liquid.html` file may hardcode a Slate query `id` or `h` token — this repository is public, and anything committed here or shipped in the wrapper's inline `<script>` is visible to every site visitor. Every wrapper's Slate call instead goes through the `/api/slate/*` routes on the `gs-labs-slate-gateway` Cloudflare Worker (`tools/queryomatic/worker.js`), which injects the real Slate URL (id + token) from a Worker secret and whitelists only the query-string parameters that route legitimately accepts. See `tools/queryomatic/README.md` for the full secret list and how to add a new route when a portal needs another Slate query.

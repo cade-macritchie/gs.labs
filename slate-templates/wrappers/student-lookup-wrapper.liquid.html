@@ -19,8 +19,13 @@
 (function () {
   'use strict';
   const frameOrigin = 'https://gateway-seminary-labs.github.io';
-  const recordsService = 'https://enroll.gs.edu/manage/query/run?id=b83ba692-55a0-42d9-b950-60a3f2eccac7&cmd=service&output=json&h=7eb188d8-0524-4d60-b731-37c0b94af784&first=&last=&sisid=&term=&year=&status=&pipeline=&teachingsite=&program=&app_code=&app_createddate_start=&app_createddate_end=&campus_assigned=';
-  const additionalApplicationsService = 'https://enroll.gs.edu/manage/query/run?id=ae358124-96d9-4c40-a6a9-da66b82b8f19&cmd=service&output=json&h=ff8fb6fa-de49-4f83-9a64-fc916a0dc6e8&sisid=';
+  // Every Slate query below is proxied through the GS Labs Slate Gateway
+  // Cloudflare Worker, which injects the real Slate query id/token
+  // server-side — see tools/queryomatic/worker.js. Nothing Slate-credential
+  // related is ever hardcoded here.
+  const workerBase = 'https://gs-labs-slate-gateway.queryomatic.workers.dev';
+  const recordsService = workerBase + '/api/slate/records';
+  const additionalApplicationsService = workerBase + '/api/slate/additional-applications';
   const frame = document.getElementById('studentLookupFrame');
   const pageUrl = new URL(window.location.href);
   const legacySearch = [pageUrl.searchParams.get('first'), pageUrl.searchParams.get('last'), pageUrl.searchParams.get('sisid')].filter(Boolean).join(' ');
