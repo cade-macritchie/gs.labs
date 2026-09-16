@@ -28,7 +28,9 @@ GitHub Pages hosts the front-end pages. Slate retains the queries and renders th
 SQLite file, and local disk for uploaded product images, so it cannot run on
 Pages; the Pages build simply carries its source along as static files. Deploy
 it separately to an always-on Node host and keep the source here so it stays
-with the other internal tools.
+with the other internal tools. It's reverse-proxied at
+`https://enroll.gs.edu/portal/merch-order`, linked from the hub's Tools tab
+like the other portals.
 
 Use the files in `slate-templates/wrappers/` for the iframe-based portals. Normal HTML, CSS, labels, charts, and client-side behavior can be changed in this repository without repasting a Slate template. Repaste a wrapper only when its query/export names, exported fields, URL parameters, iframe URL, or message contract changes.
 
