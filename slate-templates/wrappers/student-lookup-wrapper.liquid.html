@@ -152,7 +152,7 @@
     const resolvedLast = last || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : '');
     const sisid = plain(field(row, ['per_sisid','sisid','SIS_ID','SISID','student_id']));
     const createdDate = plain(field(row, ['app_created_date','application_created_date']));
-    const appDegree = plain(field(row, 'app_degree'));
+    const appDegree = plain(field(row, ['app_degree', 'per_degree_current']));
     return {
       SIS_ID: sisid,
       first: resolvedFirst,
@@ -189,7 +189,7 @@
   function normalizeApplication(row) {
     return {
       SIS_ID: plain(field(row, ['per_sisid','sisid','SIS_ID','SISID','student_id'])),
-      app_degree: plain(field(row, ['app_degree','degree','program'])),
+      app_degree: plain(field(row, ['app_degree','per_degree_current','degree','program'])),
       app_round: plain(field(row, ['app_round','application_round'])),
       app_status: plain(field(row, ['app_status','application_status'])),
       app_term: plain(field(row, ['app_term','term'])),

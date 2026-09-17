@@ -256,7 +256,7 @@ const MAINDB_PARAM_ALIASES = Object.freeze({
 });
 
 
-async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearchParams) {
+async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearchParams, fixedParams) {
   if (!env.SLATE_QUERY_URL) {
     throw new Error("SLATE_QUERY_URL is missing");
   }
@@ -267,6 +267,10 @@ async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearch
 
   const url = new URL(env.SLATE_QUERY_URL);
   url.searchParams.set("output", "json");
+
+  for (const [key, value] of Object.entries(fixedParams || {})) {
+    url.searchParams.set(key, value);
+  }
 
   for (const key of allowedParams) {
     if (!incomingSearchParams.has(key)) continue;
@@ -313,7 +317,7 @@ async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearch
 // `source` picks which Slate query backs the route: "maindb" (the parameterized
 // person query, SLATE_QUERY_URL + SLATE_TOKEN_MAINDB) or "prompts" (the
 // key/value options query, SLATE_OPTIONS_URL + SLATE_TOKEN_PROMPTS).
-async function handleSlateProxyRoute(request, env, id, routeName, source, allowedParams) {
+async function handleSlateProxyRoute(request, env, id, routeName, source, allowedParams, fixedParams) {
   if (!originAllowed(request, env.PORTAL_ORIGIN)) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
   }
@@ -324,7 +328,7 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 
   const data = source === "prompts"
     ? await fetchSlateOptions(env, id)
-    : await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams);
+    : await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams, fixedParams);
 
   return json(data, env, 200, env.PORTAL_ORIGIN);
 }
@@ -1956,9 +1960,14 @@ export default {
         url.pathname === "/api/slate/inquiries" &&
         request.method === "GET"
       ) {
+        // status=Inquiry is pinned here because this route replaced a
+        // dedicated inquiry-only Slate query. Both callers relabel every row
+        // they get back as an inquiry, so an unconstrained population would
+        // report students and prospects as inquiries.
         return await handleSlateProxyRoute(
           request, env, id, "inquiries", "maindb",
-          ["campus", "teachingsite", "person_created_date_start", "person_created_date_end"]
+          ["campus", "teachingsite", "person_created_date_start", "person_created_date_end"],
+          { status: "Inquiry" }
         );
       }
 

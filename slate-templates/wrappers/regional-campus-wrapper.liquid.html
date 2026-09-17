@@ -91,26 +91,42 @@
     }
   }
 
+  // The maindb query names its columns per_*/app_*; the unprefixed spellings
+  // are kept as fallbacks so a differently-shaped row still renders.
+  function pick(row, names) {
+    for (let index = 0; index < names.length; index += 1) {
+      const value = text(row && row[names[index]]);
+      if (value) return value;
+    }
+    return '';
+  }
+
+  // Slate returns "Last, First"; the other portals flip it for display.
+  function readableName(value) {
+    const parts = text(value).split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+    return parts.length > 1 ? parts.slice(1).concat(parts[0]).join(' ') : text(value);
+  }
+
   function normalize(row, campus) {
-    const first = text(row && row.first);
-    const last = text(row && row.last);
-    const status = text(row && row.status);
-    const sisid = text(row && (row.sisid || row.SIS_ID || row.SISID));
-    const recordUrl = sisid
+    const first = pick(row, ['first', 'first_name']);
+    const last = pick(row, ['last', 'last_name']);
+    const status = pick(row, ['per_status', 'status']);
+    const sisid = pick(row, ['per_sisid', 'sisid', 'SIS_ID', 'SISID']);
+    const recordUrl = pick(row, ['per_url', 'record_url']) || (sisid
       ? window.location.origin + '/manage/database/record?lookup=' + encodeURIComponent(sisid)
-      : '';
+      : '');
     return {
       campus: campus,
-      term: text(row && row.term) || payload.filters.term,
-      year: text(row && row.year) || payload.filters.year,
-      name: text(row && row.name) || [first, last].filter(Boolean).join(' '),
+      term: pick(row, ['app_term', 'term']) || payload.filters.term,
+      year: pick(row, ['app_year', 'year']) || payload.filters.year,
+      name: readableName(pick(row, ['per_name', 'name'])) || [first, last].filter(Boolean).join(' '),
       sisid: sisid,
       record_url: recordUrl,
-      email: text(row && row.email),
-      phone: text(row && row.phone),
+      email: pick(row, ['per_email', 'email']),
+      phone: pick(row, ['per_phone', 'phone']),
       status: isInquiryStatus(status) ? 'Inquiry' : status,
-      app_status: text(row && row.app_status),
-      program: text(row && row.program)
+      app_status: pick(row, ['app_status']),
+      program: pick(row, ['per_degree_current', 'app_degree', 'program'])
     };
   }
 

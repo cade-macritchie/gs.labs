@@ -185,7 +185,7 @@
       email: plain(field(row, ['per_email','email'])),
       phone: plain(field(row, ['per_phone','phone','mobile'])),
       sisid: sisid,
-      program: plain(field(row, ['app_degree','program','program_name'])),
+      program: plain(field(row, ['app_degree','per_degree_current','program','program_name'])),
       status: plain(field(row, ['per_status','status'])) || funnelStatuses[stage],
       teachingSite: teachingSite(row) || payload.filters.site,
       record_url: recordLink(rawUrl || rawName) || (sisid ? window.location.origin + '/manage/database/record?lookup=' + encodeURIComponent(sisid) : '')
