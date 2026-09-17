@@ -28,12 +28,12 @@
 <div id="teachingSiteOverviewData" style="display:none">
   <div class="records">{% for record in teaching_sites_persons %}<div class="record"><span class="title">{{ record.title | escape }}</span></div>{% endfor %}</div>
 </div>
-<iframe id="teachingSiteOverviewFrame" src="https://gateway-seminary-labs.github.io/gs.labs/reports/teaching-site-overview/?v=teaching-sites-v2" title="Teaching Sites Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="teachingSiteOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/reports/teaching-site-overview/?v=teaching-sites-v2" title="Teaching Sites Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'teaching-site-overview';
-  const frameOrigin = 'https://gateway-seminary-labs.github.io';
+  const frameOrigin = 'https://cade-macritchie.github.io';
   // Every Slate query below is proxied through the GS Labs Slate Gateway
   // Cloudflare Worker, which injects the real Slate query id/token
   // server-side — see tools/queryomatic/worker.js. Nothing Slate-credential

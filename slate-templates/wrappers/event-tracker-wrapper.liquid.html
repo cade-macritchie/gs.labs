@@ -8,12 +8,12 @@
   <div class="events">{% for event in events_general %}<div class="event"><span class="title">{{ event.title | escape }}</span><span class="startdate">{{ event.startdate | escape }}</span><span class="enddate">{{ event.enddate | escape }}</span><span class="registrants">{{ event.registrants | escape }}</span><span class="expenses">{{ event.expenses | escape }}</span></div>{% endfor %}</div>
   <div class="people">{% for person in event_people %}<div class="person"><span class="title">{{ person.title | escape }}</span><span class="status">{{ person.status | escape }}</span><span class="per_status">{{ person.per_status | escape }}</span><span class="email">{{ person.email | escape }}</span><span class="per_email">{{ person.per_email | escape }}</span><span class="sisid">{{ person.sisid | escape }}</span><span class="per_sisid">{{ person.per_sisid | escape }}</span></div>{% endfor %}</div>
 </div>
-<iframe id="eventTrackerFrame" src="https://gateway-seminary-labs.github.io/gs.labs/reports/event-tracker/" title="Event Tracker" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="eventTrackerFrame" src="https://cade-macritchie.github.io/gs.labs/reports/event-tracker/" title="Event Tracker" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'event-tracker';
-  const frameOrigin = 'https://gateway-seminary-labs.github.io';
+  const frameOrigin = 'https://cade-macritchie.github.io';
   // Proxied through the GS Labs Slate Gateway Cloudflare Worker, which
   // injects the real Slate query id/token server-side — see
   // tools/queryomatic/worker.js. Nothing Slate-credential related is ever

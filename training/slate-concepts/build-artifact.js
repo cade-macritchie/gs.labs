@@ -10,7 +10,7 @@ const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(dir, 'styles.css'), 'utf8');
 const js = fs.readFileSync(path.join(dir, 'app.js'), 'utf8');
 
-const HOMEPAGE = 'https://gateway-seminary-labs.github.io/gs.labs/';
+const HOMEPAGE = 'https://cade-macritchie.github.io/gs.labs/';
 
 const fontLinks = [...html.matchAll(/<link rel="preconnect"[^>]*>|<link href="https:\/\/fonts\.googleapis\.com[^>]*>/g)].map(m => m[0]);
 

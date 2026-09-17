@@ -8,12 +8,12 @@
   <div class="totals"><span class="applications">{{ total_apps.size }}</span><span class="inquiries">{{ total_inquiries.size }}</span><span class="prospects">{{ total_prospects.size }}</span><span class="students">{{ total_students.size }}</span></div>
   <div class="records">{% for record in pipeline_persons %}<div class="record"><span class="title">{{ record.title | escape }}</span></div>{% endfor %}</div>
 </div>
-<iframe id="pipelineOverviewFrame" src="https://gateway-seminary-labs.github.io/gs.labs/pipeline-overview/" title="Pipeline Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="pipelineOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/pipeline-overview/" title="Pipeline Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'pipeline-overview';
-  const frameOrigin = 'https://gateway-seminary-labs.github.io';
+  const frameOrigin = 'https://cade-macritchie.github.io';
   const frame = document.getElementById('pipelineOverviewFrame');
   const root = document.getElementById('pipelineOverviewData');
   const read = (node, key) => { const el = node && node.querySelector('.' + key); return el ? el.textContent.trim() : ''; };

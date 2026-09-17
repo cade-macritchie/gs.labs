@@ -25,7 +25,7 @@ only with whoever should be able to triage ideas.
 
 Edit `wrangler.toml` first:
 - `ALLOWED_ORIGIN` — your GitHub Pages origin, e.g.
-  `https://gateway-seminary-labs.github.io`
+  `https://cade-macritchie.github.io`
 
 `wrangler deploy` prints your Worker URL, e.g.
 `https://slate-idea-box.yoursubdomain.workers.dev`.

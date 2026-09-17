@@ -87,7 +87,7 @@
 // CONFIG
 // ============================================================
 
-const GITHUB_OWNER = "gateway-seminary-labs";
+const GITHUB_OWNER = "cade-macritchie";
 const GITHUB_REPO = "gs.labs";
 const GITHUB_BRANCH = "main";
 const GITHUB_OPTIONS_PATH = "tools/queryomatic/options.md";

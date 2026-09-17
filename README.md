@@ -40,7 +40,7 @@ The GitHub-hosted hub and portal interfaces support Cloudflare Web Analytics for
 
 To enable collection:
 
-1. In the existing Cloudflare account, open **Web Analytics**, add `gateway-seminary-labs.github.io` as a site, and copy its beacon token.
+1. In the existing Cloudflare account, open **Web Analytics**, add `cade-macritchie.github.io` as a site, and copy its beacon token.
 2. Paste the public token into `SITE_TOKEN` in `assets/portal-analytics.js`.
 3. Push the change to `main`, repaste the seven iframe wrappers in Slate to activate their explicit referrer safeguards, and verify a visit in the Cloudflare Web Analytics dashboard.
 

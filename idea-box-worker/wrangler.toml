@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2026-01-01"
 
 [vars]
-ALLOWED_ORIGIN = "https://gateway-seminary-labs.github.io"
+ALLOWED_ORIGIN = "https://cade-macritchie.github.io"
 
 # Create with: wrangler d1 create slate-idea-box
 # Then paste the returned database_id below and apply schema.sql:

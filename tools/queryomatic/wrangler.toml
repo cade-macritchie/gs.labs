@@ -7,7 +7,7 @@ compatibility_date = "2024-01-01"
 # the Secrets list in worker.js's header comment. Do NOT add id/h values here;
 # this file is committed to a public repo.
 [vars]
-ALLOWED_ORIGIN = "https://gateway-seminary-labs.github.io"
+ALLOWED_ORIGIN = "https://cade-macritchie.github.io"
 PORTAL_ORIGIN = "https://enroll.gs.edu"
 
 # Create with: wrangler kv namespace create OPTIONS_CACHE

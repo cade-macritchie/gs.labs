@@ -17,12 +17,12 @@
   <div class="admitted-records">{% for record in apps_admitted %}<div class="admitted-record"><span class="name">{{ record.name | escape }}</span><span class="program">{{ record.program | escape }}</span><span class="email">{{ record.email | escape }}</span><span class="url">{{ record.url | escape }}</span></div>{% endfor %}</div>
   <div class="action-records">{% for record in f1_students %}<div class="action-record"><span class="name">{{ record.name | escape }}</span><span class="email">{{ record.email | escape }}</span><span class="phone">{{ record.phone | escape }}</span><span class="url">{{ record.url | escape }}</span></div>{% endfor %}</div>
 </div>
-<iframe id="funnelOverviewFrame" src="https://gateway-seminary-labs.github.io/gs.labs/reports/funnel-overview/" title="Funnel Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="funnelOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/reports/funnel-overview/" title="Funnel Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'funnel-overview';
-  const frameOrigin = 'https://gateway-seminary-labs.github.io';
+  const frameOrigin = 'https://cade-macritchie.github.io';
   const frame = document.getElementById('funnelOverviewFrame');
   const root = document.getElementById('funnelOverviewData');
   const read = (node, key) => { const el = node && node.querySelector('.' + key); return el ? el.textContent.trim() : ''; };
