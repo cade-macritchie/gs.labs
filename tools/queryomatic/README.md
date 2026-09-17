@@ -5,10 +5,12 @@ This Worker (Cloudflare service name `gs-labs-slate-gateway`, formerly
 
 1. **Queryomatic** — the AI-assisted admissions-export tool's own backend
    (options.md refresh/generate/run flows).
-2. **Slate portal proxy** (`/api/slate/*`) — every Slate query `id`/`h` token
-   used by `slate-templates/wrappers/*.liquid.html` lives here as a secret,
-   so it's never hardcoded in a wrapper file or shipped to a browser. See
-   "Slate portal proxy routes" below.
+2. **Slate portal proxy** (`/api/slate/*`) — the Slate credentials used by
+   `slate-templates/wrappers/*.liquid.html` live here as secrets, so nothing
+   is hardcoded in a wrapper file or shipped to a browser. Every route is a
+   parameter set over the same maindb query Queryomatic runs, except
+   `portal-options`, which reads the prompts query. See "Slate portal proxy
+   routes" below.
 
 Two pieces: this Cloudflare Worker (holds your secrets, calls Slate + Anthropic)
 and a static page (goes on GitHub Pages).
@@ -30,21 +32,12 @@ wrangler secret put GITHUB_TOKEN
 wrangler secret put APP_PASSWORD
 wrangler secret put SESSION_SECRET
 
-# Full Slate query URLs (each includes that query's id, and its token where
-# one applies) — moved here from wrangler.toml [vars] because vars are
-# committed in plaintext:
+# The two Slate query URLs (each includes that query's id) — moved here from
+# wrangler.toml [vars] because vars are committed in plaintext. Between them
+# they back every route: the maindb query serves Queryomatic and all but one
+# of the /api/slate/* portal routes, the prompts query serves the rest.
 wrangler secret put SLATE_OPTIONS_URL
 wrangler secret put SLATE_QUERY_URL
-
-# Slate portal proxy secrets — one full Slate query URL per distinct query id.
-# Do not set these until you've generated a fresh grantee in Slate for each;
-# the portals stay broken (as they already are, post-revocation) until then.
-wrangler secret put SLATE_TEACHING_SITE_COUNTS_URL
-wrangler secret put SLATE_RECORDS_URL
-wrangler secret put SLATE_INQUIRIES_URL
-wrangler secret put SLATE_PORTAL_OPTIONS_URL
-wrangler secret put SLATE_REGIONAL_CAMPUS_RECORDS_URL
-wrangler secret put SLATE_ADDITIONAL_APPLICATIONS_URL
 
 wrangler deploy
 ```
@@ -57,20 +50,25 @@ actually sends, checks `Origin`/`Referer` against the `PORTAL_ORIGIN` var
 *not* `ALLOWED_ORIGIN`, which is GitHub Pages), and applies a 60
 requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
 
-| Route | Secret | Used by | Allowed params |
+| Route | Query | Used by | Allowed params |
 | --- | --- | --- | --- |
-| `GET /api/slate/teaching-site-counts` | `SLATE_TEACHING_SITE_COUNTS_URL` | Teaching Sites | `status`, `year`, `term`, `site` |
-| `GET /api/slate/records` | `SLATE_RECORDS_URL` | Teaching Sites, Record Lookup, Event Tracker | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
-| `GET /api/slate/inquiries` | `SLATE_INQUIRIES_URL` | Teaching Sites, Regional Campus | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
-| `GET /api/slate/portal-options` | `SLATE_PORTAL_OPTIONS_URL` | Teaching Sites, Regional Campus | (none) |
-| `GET /api/slate/regional-campus-records` | `SLATE_REGIONAL_CAMPUS_RECORDS_URL` | Regional Campus | `campus`, `term`, `year` |
-| `GET /api/slate/additional-applications` | `SLATE_ADDITIONAL_APPLICATIONS_URL` | Record Lookup | `sisid` |
+| `GET /api/slate/teaching-site-counts` | maindb | Teaching Sites | `status`, `year`, `term`, `site` |
+| `GET /api/slate/records` | maindb | Teaching Sites, Record Lookup, Event Tracker | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
+| `GET /api/slate/inquiries` | maindb | Teaching Sites, Regional Campus | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
+| `GET /api/slate/portal-options` | prompts | Teaching Sites, Regional Campus | (none) |
+| `GET /api/slate/regional-campus-records` | maindb | Regional Campus | `campus`, `term`, `year` |
+| `GET /api/slate/additional-applications` | maindb | Record Lookup | `sisid` |
 
-**Adding a new Slate query to a portal:** never hardcode its `id`/`h` in a
-wrapper file. Add a new `SLATE_<NAME>_URL` secret holding the full Slate
-query URL, add a route in `worker.js` that calls `handleSlateProxyRoute`
+Route parameter names that differ from the maindb query's own are renamed by
+`MAINDB_PARAM_ALIASES` in `worker.js` (`site` → `teachingsite`, `campus` →
+`campus_assigned`); everything else passes through unchanged, and blank values
+are dropped rather than sent as `""`.
+
+**Adding a new Slate query to a portal:** never hardcode a query `id`/`h` in a
+wrapper file. Add a route in `worker.js` that calls `handleSlateProxyRoute`
 with an explicit parameter whitelist, then point the wrapper at
-`${workerBase}/api/slate/<route>` instead of `enroll.gs.edu`.
+`${workerBase}/api/slate/<route>` instead of `enroll.gs.edu`. Prefer another
+parameter set over the maindb query to standing up a new Slate query.
 
 `APP_PASSWORD` is the shared password shown to authorized staff. Use a long,
 random password and distribute it only through an approved channel.

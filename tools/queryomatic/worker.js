@@ -6,14 +6,15 @@
  * 1. Queryomatic — the AI-assisted admissions-export tool's own backend
  *    (options.md refresh/generate/run flows below).
  *
- * 2. Slate portal proxy (/api/slate/*) — every Slate query id/h token that
- *    used to be hardcoded directly in slate-templates/wrappers/*.liquid.html
- *    now lives here as a secret instead, so the browser never sees it.
- *    Each route whitelists only the query-string parameters its wrapper
- *    actually sends. These routes are called from Slate portal pages at
- *    PORTAL_ORIGIN (enroll.gs.edu), NOT from ALLOWED_ORIGIN (GitHub Pages) —
- *    that's a different caller than Queryomatic's own routes below, so they
- *    check Origin against PORTAL_ORIGIN instead.
+ * 2. Slate portal proxy (/api/slate/*) — the Slate credentials that used to be
+ *    hardcoded directly in slate-templates/wrappers/*.liquid.html live here as
+ *    secrets instead, so the browser never sees them. Each route is a
+ *    parameter set over the same maindb query Queryomatic runs (portal-options
+ *    reads the prompts query), and whitelists only the query-string parameters
+ *    its wrapper actually sends. These routes are called from Slate portal
+ *    pages at PORTAL_ORIGIN (enroll.gs.edu), NOT from ALLOWED_ORIGIN (GitHub
+ *    Pages) — that's a different caller than Queryomatic's own routes below,
+ *    so they check Origin against PORTAL_ORIGIN instead.
  *
  *
  * QUERYOMATIC REFRESH FLOW:
@@ -64,18 +65,12 @@
  *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
- * - SLATE_TOKEN_PROMPTS                        (Queryomatic options refresh)
- * - SLATE_TOKEN_MAINDB                         (Queryomatic /api/run)
+ * - SLATE_TOKEN_PROMPTS                        (prompts query: options refresh + /api/slate/portal-options)
+ * - SLATE_TOKEN_MAINDB                         (maindb query: /api/run + every other /api/slate/* route)
  * - ANTHROPIC_API_KEY                          (Queryomatic /api/generate)
  * - GITHUB_TOKEN                               (Queryomatic options.md commits)
- * - SLATE_OPTIONS_URL                          (moved here from [vars] — Queryomatic)
- * - SLATE_QUERY_URL                            (moved here from [vars] — Queryomatic)
- * - SLATE_TEACHING_SITE_COUNTS_URL             (full Slate URL incl. id + h)
- * - SLATE_RECORDS_URL                          (full Slate URL incl. id + h)
- * - SLATE_INQUIRIES_URL                        (full Slate URL incl. id + h)
- * - SLATE_PORTAL_OPTIONS_URL                   (full Slate URL incl. id, no h)
- * - SLATE_REGIONAL_CAMPUS_RECORDS_URL          (full Slate URL incl. id + h)
- * - SLATE_ADDITIONAL_APPLICATIONS_URL          (full Slate URL incl. id + h)
+ * - SLATE_OPTIONS_URL                          (prompts query URL)
+ * - SLATE_QUERY_URL                            (maindb query URL)
  *
  * Vars:
  * - ALLOWED_ORIGIN   (GitHub Pages origin — Queryomatic + analytics routes)
@@ -252,33 +247,55 @@ async function checkRateLimit(env, request, bucket) {
 }
 
 
-async function proxySlateQuery(env, id, urlEnvKey, allowedParams, incomingSearchParams) {
-  const baseUrl = env[urlEnvKey];
+// Portal route parameter names that differ from the maindb query's own
+// parameter names. Anything absent here is passed through unchanged. If a
+// route returns the wrong population, check this table first.
+const MAINDB_PARAM_ALIASES = Object.freeze({
+  site: "teachingsite",
+  campus: "campus_assigned",
+});
 
-  if (!baseUrl) {
-    throw new Error(`${urlEnvKey} is missing`);
+
+async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearchParams) {
+  if (!env.SLATE_QUERY_URL) {
+    throw new Error("SLATE_QUERY_URL is missing");
   }
 
-  const url = new URL(baseUrl);
+  if (!env.SLATE_TOKEN_MAINDB) {
+    throw new Error("SLATE_TOKEN_MAINDB is missing");
+  }
+
+  const url = new URL(env.SLATE_QUERY_URL);
+  url.searchParams.set("output", "json");
 
   for (const key of allowedParams) {
-    if (incomingSearchParams.has(key)) {
-      url.searchParams.set(key, String(incomingSearchParams.get(key) || "").trim());
-    }
+    if (!incomingSearchParams.has(key)) continue;
+
+    const value = String(incomingSearchParams.get(key) || "").trim();
+
+    // Blank values are dropped rather than sent as "" — Slate's Date-typed
+    // parameters reject an empty string, which is why the teaching-site
+    // wrapper omits its inquiry date bounds for "Total (All Time)".
+    if (!value) continue;
+
+    url.searchParams.set(MAINDB_PARAM_ALIASES[key] || key, value);
   }
 
-  logInfo(id, "Slate portal proxy request", { route: urlEnvKey, url: safeUrl(url.toString()) });
+  logInfo(id, "Slate portal proxy request", { route: routeName, url: safeUrl(url.toString()) });
 
   const resp = await fetch(url.toString(), {
     method: "GET",
-    headers: { Accept: "application/json" },
+    headers: {
+      Authorization: `Bearer ${env.SLATE_TOKEN_MAINDB}`,
+      Accept: "application/json",
+    },
   });
 
   const responseText = await resp.text();
 
   if (!resp.ok) {
     logError(id, "Slate portal proxy query failed", {
-      route: urlEnvKey,
+      route: routeName,
       status: resp.status,
       body: responseText.slice(0, 2000),
     });
@@ -293,7 +310,10 @@ async function proxySlateQuery(env, id, urlEnvKey, allowedParams, incomingSearch
 }
 
 
-async function handleSlateProxyRoute(request, env, id, routeName, urlEnvKey, allowedParams) {
+// `source` picks which Slate query backs the route: "maindb" (the parameterized
+// person query, SLATE_QUERY_URL + SLATE_TOKEN_MAINDB) or "prompts" (the
+// key/value options query, SLATE_OPTIONS_URL + SLATE_TOKEN_PROMPTS).
+async function handleSlateProxyRoute(request, env, id, routeName, source, allowedParams) {
   if (!originAllowed(request, env.PORTAL_ORIGIN)) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
   }
@@ -302,7 +322,10 @@ async function handleSlateProxyRoute(request, env, id, routeName, urlEnvKey, all
     return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
   }
 
-  const data = await proxySlateQuery(env, id, urlEnvKey, allowedParams, new URL(request.url).searchParams);
+  const data = source === "prompts"
+    ? await fetchSlateOptions(env, id)
+    : await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams);
+
   return json(data, env, 200, env.PORTAL_ORIGIN);
 }
 
@@ -1902,9 +1925,11 @@ export default {
       // ======================================================
       // SLATE PORTAL PROXY ROUTES
       //
-      // One route per distinct Slate query id. Called from
-      // Slate portal wrapper pages at PORTAL_ORIGIN, not from
-      // ALLOWED_ORIGIN — see handleSlateProxyRoute.
+      // Every route is a parameter set over the shared maindb
+      // query, except portal-options, which reads the prompts
+      // query. Called from Slate portal wrapper pages at
+      // PORTAL_ORIGIN, not from ALLOWED_ORIGIN — see
+      // handleSlateProxyRoute.
       // ======================================================
 
       if (
@@ -1912,8 +1937,7 @@ export default {
         request.method === "GET"
       ) {
         return await handleSlateProxyRoute(
-          request, env, id, "teaching-site-counts",
-          "SLATE_TEACHING_SITE_COUNTS_URL",
+          request, env, id, "teaching-site-counts", "maindb",
           ["status", "year", "term", "site"]
         );
       }
@@ -1923,8 +1947,7 @@ export default {
         request.method === "GET"
       ) {
         return await handleSlateProxyRoute(
-          request, env, id, "records",
-          "SLATE_RECORDS_URL",
+          request, env, id, "records", "maindb",
           ["status", "year", "term", "teachingsite", "first", "last", "sisid", "alt_form_type"]
         );
       }
@@ -1934,8 +1957,7 @@ export default {
         request.method === "GET"
       ) {
         return await handleSlateProxyRoute(
-          request, env, id, "inquiries",
-          "SLATE_INQUIRIES_URL",
+          request, env, id, "inquiries", "maindb",
           ["campus", "teachingsite", "person_created_date_start", "person_created_date_end"]
         );
       }
@@ -1945,8 +1967,7 @@ export default {
         request.method === "GET"
       ) {
         return await handleSlateProxyRoute(
-          request, env, id, "portal-options",
-          "SLATE_PORTAL_OPTIONS_URL",
+          request, env, id, "portal-options", "prompts",
           []
         );
       }
@@ -1956,8 +1977,7 @@ export default {
         request.method === "GET"
       ) {
         return await handleSlateProxyRoute(
-          request, env, id, "regional-campus-records",
-          "SLATE_REGIONAL_CAMPUS_RECORDS_URL",
+          request, env, id, "regional-campus-records", "maindb",
           ["campus", "term", "year"]
         );
       }
@@ -1967,8 +1987,7 @@ export default {
         request.method === "GET"
       ) {
         return await handleSlateProxyRoute(
-          request, env, id, "additional-applications",
-          "SLATE_ADDITIONAL_APPLICATIONS_URL",
+          request, env, id, "additional-applications", "maindb",
           ["sisid"]
         );
       }
