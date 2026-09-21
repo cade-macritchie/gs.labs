@@ -361,6 +361,8 @@ const ANALYTICS_PATHS = new Set([
   "/gs.labs/tools/queryomatic/",
   "/gs.labs/queryomatic/admin/",
   "/gs.labs/tools/queryomatic/admin/",
+  "/gs.labs/idea-box/",
+  "/gs.labs/tools/idea-box/",
 ]);
 
 function analyticsLabel(path) {
@@ -385,6 +387,8 @@ function analyticsLabel(path) {
     "/gs.labs/tools/queryomatic/": "BetterQuery",
     "/gs.labs/queryomatic/admin/": "BetterQuery Admin",
     "/gs.labs/tools/queryomatic/admin/": "BetterQuery Admin",
+    "/gs.labs/idea-box/": "Slate Idea Box",
+    "/gs.labs/tools/idea-box/": "Slate Idea Box",
   };
 
   return labels[path] || path;
