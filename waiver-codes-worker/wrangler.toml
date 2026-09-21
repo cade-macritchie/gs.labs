@@ -11,4 +11,4 @@ ALLOWED_ORIGIN = "https://enroll.gs.edu"
 [[d1_databases]]
 binding = "DB"
 database_name = "slate-waiver-codes"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "6cb1be76-d283-44e7-b0d0-1a2871caef03"
