@@ -49,6 +49,9 @@
     .teaching-dashboard .stat-cell { border-radius: var(--nb-radius); }
     .teaching-dashboard .stat-val { color: var(--nb-black); font-family: var(--nb-font-heading); }
     .teaching-dashboard .stat-lbl { font-family: var(--nb-font-subheading); }
+    /* Shown under "Inquiries" when a period is selected: maindb has no
+       person-created date, so that stat cannot be scoped to a term. */
+    .teaching-dashboard .stat-qualifier { margin-top: 3px; color: var(--muted); font-size: .58rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
     .teaching-dashboard .stat-cell:nth-child(1)::before { background: var(--nb-black); }
     .teaching-dashboard .stat-cell:nth-child(2)::before { background: var(--nb-teal); }
     .teaching-dashboard .stat-cell:nth-child(3)::before { background: var(--nb-gold); }
@@ -98,7 +101,7 @@
 
     <div class="stat-bar teaching-overview-stat-bar">
       <div class="stat-cell"><div id="site-count" class="stat-val">0</div><div class="stat-lbl">Active Teaching Sites</div></div>
-      <div class="stat-cell"><div id="overview-inquiries" class="stat-val">0</div><div class="stat-lbl">Inquiries</div></div>
+      <div class="stat-cell"><div id="overview-inquiries" class="stat-val">0</div><div class="stat-lbl">Inquiries</div><div id="overview-inquiries-note" class="stat-qualifier" hidden>All time</div></div>
       <div class="stat-cell"><div id="overview-applications" class="stat-val">0</div><div class="stat-lbl">Applicants</div></div>
       <div class="stat-cell"><div id="overview-students" class="stat-val">0</div><div class="stat-lbl">Students</div></div>
       <div class="stat-sub"><div id="record-total" class="stat-sub-val">0</div><div class="stat-sub-lbl">total records across active teaching sites</div></div>
@@ -130,7 +133,7 @@
       </div>
 
       <div class="stat-bar site-funnel-stat-bar">
-        <div class="stat-cell"><div id="site-inquiries" class="stat-val">0</div><div class="stat-lbl">Inquiries</div></div>
+        <div class="stat-cell"><div id="site-inquiries" class="stat-val">0</div><div class="stat-lbl">Inquiries</div><div id="site-inquiries-note" class="stat-qualifier" hidden>All time</div></div>
         <div class="stat-cell"><div id="site-applications" class="stat-val">0</div><div class="stat-lbl">Applicants</div></div>
         <div class="stat-cell"><div id="site-students" class="stat-val">0</div><div class="stat-lbl">Students</div></div>
       </div>
@@ -211,6 +214,18 @@
         .sort(function (a, b) { return b.count - a.count || a.title.localeCompare(b.title); });
     }
 
+    // The inquiry stat ignores the period selector, because the Slate query
+    // behind this page exposes no person-created date to scope it by (its only
+    // date is the application's, which an inquiry does not have). Say so next
+    // to the number rather than let it read as a per-term count.
+    function markInquiryScope(noteId) {
+      const note = document.getElementById(noteId);
+      if (!note) return;
+      const qualified = Boolean(data.inquiriesAllTime && (data.filters.term || data.filters.year));
+      note.hidden = !qualified;
+      note.title = qualified ? 'Inquiries are not tied to an academic term in Slate, so this count covers all time.' : '';
+    }
+
     function sortGrouped(list) {
       return (Array.isArray(list) ? list.slice() : [])
         .sort(function (a, b) { return b.count - a.count || a.title.localeCompare(b.title); });
@@ -226,6 +241,7 @@
       data.funnelRecordErrors = data.funnelRecordErrors || {};
       data.studentsBySite = Array.isArray(data.studentsBySite) ? data.studentsBySite : [];
       data.teachingSites = Array.isArray(data.teachingSites) ? data.teachingSites : [];
+      data.inquiriesAllTime = data.inquiriesAllTime !== false;
       const detailActive = Boolean(data.filters.site);
 
       document.getElementById('overview-view').hidden = detailActive;
@@ -251,6 +267,7 @@
       document.getElementById('overview-applications').textContent = summaryUnavailable ? '\u2014' : ui.number(data.summary.applications).toLocaleString();
       document.getElementById('overview-students').textContent = summaryUnavailable ? '\u2014' : ui.number(data.summary.students).toLocaleString();
       ui.setText('record-total', recordCount.toLocaleString());
+      markInquiryScope('overview-inquiries-note');
       renderInactive(inactive);
       renderBars(sortGrouped(data.studentsBySite.filter(function (item) { return item.count > 0; })));
     }
@@ -262,6 +279,7 @@
       ui.setText('site-inquiries', ui.number(data.funnel.inquiries).toLocaleString());
       ui.setText('site-applications', ui.number(data.funnel.applications).toLocaleString());
       ui.setText('site-students', ui.number(data.funnel.students).toLocaleString());
+      markInquiryScope('site-inquiries-note');
       renderSiteFunnel();
       closeSiteStage();
     }

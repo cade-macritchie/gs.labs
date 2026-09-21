@@ -7,3 +7,6 @@ supabase/.temp/
 !.dev.vars.example
 .env*
 !.env.example
+
+# Local scratch space for one-off email/HTML tasks — never pushed
+/local-files/

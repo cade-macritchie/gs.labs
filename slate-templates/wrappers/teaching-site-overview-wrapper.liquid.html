@@ -1,74 +1,58 @@
 <!--
   Teaching Sites Slate wrapper.
-  Configure teaching_sites_persons to return all teaching-site records and use
-  only the term and year URL parameters.
-  Applicant/Student funnel counts come from the teaching-site population
-  service. Record drilldowns for those two stages use the all_people JSON
-  service from Record Lookup with teachingsite, status, term, and year. Its
-  current person fields are per_name, per_email, per_phone, per_sisid,
-  per_status, per_teachingsite, per_url, and app_degree. Legacy field aliases
-  remain as fallbacks during rollout.
-  Inquiries come from a dedicated inquiry-only JSON service instead (see
-  inquiryService below) — the same query the Regional Campus wrapper uses,
-  passing each teaching site's title through its "teachingsite" parameter,
-  plus person_created_date_start/person_created_date_end computed from the
-  selected period's calendar date range (see periodDateRanges) since
-  pre-application inquiries aren't reliably tied to an academic term/year.
-  Its count is simply the number of records returned, summed across every
-  known teaching site in overview scope (or just the selected site in detail
-  view) — there is no separate lightweight inquiry-count query.
-  The overview's per-site student counts (payload.studentsBySite) come from
-  the same countsService query the site-detail funnel's "Students" stat uses,
-  called once per known teaching site with its own "site" parameter — not
-  from grouping the population-service detail rows by their free-text
-  per_teachingsite field. That field can be blank or inconsistently
-  cased/spelled on individual records, so grouping by it under-counts and
-  mismatches the authoritative per-site count Slate returns for "site".
+
+  This page needs NO Liquid query configured on the Slate portal page. Every
+  number and every record it shows comes from one request to the GS Labs Slate
+  Gateway, which runs the shared maindb ("all people") query — the only person
+  query this repo still holds a token for.
+
+  How the data is assembled
+  -------------------------
+  The gateway route (/api/slate/teaching-site-people, see
+  handleTeachingSitePeople in tools/queryomatic/worker.js) runs maindb three
+  times, once per funnel stage, because the stages need different parameters:
+
+    inquiries     status=Inquiry                  (no term/year — see below)
+    applications  status=Applicant + term + year
+    students      status=Student   + term + year
+
+  maindb's term/year parameters filter on the APPLICATION's term and year, so
+  asking for status=Inquiry together with term/year returns zero rows every
+  time — an inquiry has no application. That is why inquiries are queried on
+  their own, and why they are ALL-TIME in every period: maindb exposes no
+  person-created date to scope them by. The gateway sets inquiriesAllTime and
+  this page passes it through so the report can label the stat on screen
+  instead of showing a number that quietly means something different from the
+  two beside it.
+
+  maindb has no "teaching site is set" parameter either, so the gateway drops
+  rows with a blank per_teachingsite before responding. The portal receives a
+  few hundred rows, already grouped into stages, and derives every count,
+  bar and drilldown table from them.
+
+  Columns this reads (all present on every maindb row):
+    per_status, per_teachingsite, per_name, per_email, per_phone,
+    per_sisid, per_degree_current, per_url
+
+  Note there is no app_degree column — the program column reads
+  per_degree_current. Fuzzy fallbacks are kept for the rest so a Slate-side
+  rename degrades a single column instead of blanking the table.
 -->
-<div id="teachingSiteOverviewData" style="display:none">
-  <div class="records">{% for record in teaching_sites_persons %}<div class="record"><span class="title">{{ record.title | escape }}</span></div>{% endfor %}</div>
-</div>
-<iframe id="teachingSiteOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/reports/teaching-site-overview/?v=teaching-sites-v2" title="Teaching Sites Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="teachingSiteOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/reports/teaching-site-overview/?v=teaching-sites-v3" title="Teaching Sites Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'teaching-site-overview';
   const frameOrigin = 'https://cade-macritchie.github.io';
-  // Every Slate query below is proxied through the GS Labs Slate Gateway
-  // Cloudflare Worker, which injects the real Slate query id/token
-  // server-side — see tools/queryomatic/worker.js. Nothing Slate-credential
-  // related is ever hardcoded here.
+  // The gateway injects the Slate query id/token server-side — see
+  // tools/queryomatic/worker.js. Nothing credential-related is ever here.
   const workerBase = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
-  const countsService = workerBase + '/api/slate/teaching-site-counts';
-  const recordsService = workerBase + '/api/slate/records';
-  // Same inquiry-only query Regional Campus uses (see
-  // slate-templates/wrappers/regional-campus-wrapper.liquid.html), now also
-  // accepting a "teachingsite" parameter (instead of Regional Campus's
-  // "campus") plus person_created_date_start/person_created_date_end.
-  const inquiryService = workerBase + '/api/slate/inquiries';
-  // Calendar bounds for each academic period, keyed "term|year" to match
-  // payload.filters — used only for the inquiries request's
-  // person_created_date_start/person_created_date_end (see loadInquiries below).
-  // Mirrors funnel-overview's funnelPeriods date ranges. Formatted M/D/YYYY
-  // (no leading zeros) per the person_created_date field's expected format.
-  // FA26 has no start bound — there's no tracked period before it, so its
-  // window is "everything up through 8/15/2026" rather than missing whatever
-  // came in before an arbitrary 1/1/2026 cutoff. Spring/FA27 already chain
-  // back-to-back off the prior period's end with no gap.
-  const periodDateRanges = {
-    'Fall|2026-2027': { start:'', end:'8/15/2026' },
-    'Spring|2026-2027': { start:'8/16/2026', end:'1/15/2027' },
-    'Fall|2027-2028': { start:'1/16/2027', end:'8/15/2027' }
-  };
-  // Same Queryomatic prompt/options service the Regional Campus wrapper reads
-  // its campus list from (see slate-templates/wrappers/regional-campus-wrapper.liquid.html);
-  // it exports every configured prompt's key/value pairs, so the teaching-site
-  // prompt's values are filtered out by key below instead of hardcoded here.
-  const optionsService = workerBase + '/api/slate/portal-options';
-  const teachingSiteOptionKeys = new Set(['teachingsite', 'teachingsites', 'site', 'teaching_site']);
+  const peopleService = workerBase + '/api/slate/teaching-site-people';
+  // Only used if the gateway is unreachable, so the "inactive sites" list still
+  // renders something. The live list arrives with the people.
   const fallbackTeachingSites = [
     'Agricola in Finland',
-    'Bakersfield Site at Kern Country Southern Baptist Association',
+    'Bakersfield Site at Kern County Southern Baptist Association',
     'Boston School of Ministry',
     'Burbank Site at Story City Church',
     'Colorado Springs Site at Cross Fellowship Church',
@@ -85,12 +69,15 @@
     'Milpitas Site at New Vision Church',
     'Phoenix Site at Valley Life Church',
     'Sacramento Site at SOL Bible Academy',
-    'San Diego Site at Grace Church'
+    'Salt Lake School of Theology',
+    'San Diego Site at Grace Church',
+    'Taipei Teaching Site',
+    'Valley Baptist University, Bakersfield',
+    'Wyoming Site in Casper'
   ];
-  const funnelStatuses = { inquiries:'inquiry', applications:'applicant', students:'student' };
+  const stages = ['inquiries', 'applications', 'students'];
+  const stageLabels = { inquiries:'Inquiry', applications:'Applicant', students:'Student' };
   const frame = document.getElementById('teachingSiteOverviewFrame');
-  const root = document.getElementById('teachingSiteOverviewData');
-  const read = (node, key) => { const el = node && node.querySelector('.' + key); return el ? el.textContent.trim() : ''; };
   const pageUrl = new URL(window.location.href);
   if (pageUrl.searchParams.has('status')) {
     pageUrl.searchParams.delete('status');
@@ -103,17 +90,18 @@
     funnel: { inquiries:0, applications:0, students:0 },
     funnelRecords: { inquiries:[], applications:[], students:[] },
     funnelRecordErrors: {},
-    records: Array.from(root.querySelectorAll('.record')).map(node => ({ title: read(node, 'title') })),
+    records: [],
     studentsBySite: [],
-    teachingSites: []
+    teachingSites: [],
+    // Set by the gateway: inquiry counts ignore the period selector because
+    // maindb has no person-created date. The report page renders a note.
+    inquiriesAllTime: true
   };
   const allowedParams = new Set(['term', 'year', 'site']);
   const removableParams = new Set(['status', 'term', 'year', 'site']);
-  function rowsFrom(response) {
-    if (Array.isArray(response)) return response;
-    if (response && Array.isArray(response.row)) return response.row;
-    return response && response.row ? [response.row] : [];
-  }
+
+  // ---------- value helpers (maindb returns HTML-ish strings in some columns)
+
   function scalar(value, preferredKeys) {
     if (!value || typeof value !== 'object') return value;
     const keys = preferredKeys || ['display','label','name','value','text','url','href'];
@@ -143,6 +131,8 @@
     if (/^manage\//i.test(candidate)) return '/' + candidate;
     return /^(?:https?:\/\/|\/)/i.test(candidate) ? candidate : '';
   }
+  // Prefers maindb's real column names, then falls back to a normalized match
+  // so a Slate-side rename degrades one column instead of blanking the table.
   function field(row, keys) {
     const names = Array.isArray(keys) ? keys : [keys];
     for (let index = 0; index < names.length; index += 1) {
@@ -158,21 +148,7 @@
     return '';
   }
   function teachingSite(row) {
-    return plain(field(row, ['per_teachingsite','title','teachingsite','teaching_site','site']));
-  }
-  function sameSite(left, right) {
-    return plain(left).toLocaleLowerCase() === plain(right).toLocaleLowerCase();
-  }
-  function countRowsForSite(rows, site) {
-    // Without a site filter, the population service returns rows for every
-    // matching person system-wide, not just teaching-site students — a
-    // populated title/teaching-site field is what marks a row as belonging to
-    // a teaching site, so only those rows should count toward the overview
-    // totals (see README "Wrapper rollout" section).
-    return rows.filter(row => {
-      const rowSite = teachingSite(row);
-      return site ? sameSite(rowSite, site) : Boolean(rowSite);
-    }).length;
+    return plain(field(row, ['per_teachingsite','teachingsite','teaching_site','site','title']));
   }
   function normalizeRecord(row, stage) {
     const rawName = field(row, ['per_name','name','display_name','full_name','person_name']);
@@ -185,163 +161,82 @@
       email: plain(field(row, ['per_email','email'])),
       phone: plain(field(row, ['per_phone','phone','mobile'])),
       sisid: sisid,
-      program: plain(field(row, ['app_degree','per_degree_current','program','program_name'])),
-      status: plain(field(row, ['per_status','status'])) || funnelStatuses[stage],
+      // maindb returns per_degree_current; there is no app_degree column.
+      program: plain(field(row, ['per_degree_current','app_degree','program','program_name'])),
+      status: plain(field(row, ['per_status','status'])) || stageLabels[stage],
       teachingSite: teachingSite(row) || payload.filters.site,
       record_url: recordLink(rawUrl || rawName) || (sisid ? window.location.origin + '/manage/database/record?lookup=' + encodeURIComponent(sisid) : '')
     };
   }
-  async function requestRows(url, label) {
+
+  // ---------- load
+
+  async function fetchPeople() {
+    const url = new URL(peopleService);
+    // The gateway applies these as Slate parameters; see its header comment for
+    // why inquiries ignore term/year.
+    if (payload.filters.term) url.searchParams.set('term', payload.filters.term);
+    if (payload.filters.year) url.searchParams.set('year', payload.filters.year);
+    if (payload.filters.site) url.searchParams.set('site', payload.filters.site);
     const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
-    if (!response.ok) throw new Error(label + ' returned ' + response.status);
-    return rowsFrom(await response.json());
+    if (!response.ok) throw new Error('Teaching site query returned ' + response.status);
+    return await response.json();
   }
-  function inquiryDateRange() {
-    const key = (payload.filters.term || '') + '|' + (payload.filters.year || '');
-    return periodDateRanges[key] || { start:'', end:'' };
-  }
-  function siteFilter(row) {
-    const rowSite = teachingSite(row);
-    return payload.filters.site ? (!rowSite || sameSite(rowSite, payload.filters.site)) : Boolean(rowSite);
-  }
-  async function fetchSiteInquiries(site) {
-    const dateRange = inquiryDateRange();
-    const url = new URL(inquiryService);
-    url.searchParams.set('teachingsite', site);
-    // Omit these entirely for "Total (All Time)" (both blank) rather than
-    // sending empty strings — the field is typed as Date in Slate, and an
-    // empty string is not a valid date value for it.
-    if (dateRange.start) url.searchParams.set('person_created_date_start', dateRange.start);
-    else url.searchParams.delete('person_created_date_start');
-    if (dateRange.end) url.searchParams.set('person_created_date_end', dateRange.end);
-    else url.searchParams.delete('person_created_date_end');
-    const rows = await requestRows(url, 'Teaching site inquiry query');
-    return rows.map(row => {
-      const record = normalizeRecord(row, 'inquiries');
-      record.teachingSite = site;
-      record.status = 'Inquiry';
-      return record;
+
+  function build(body) {
+    const sites = Array.isArray(body && body.sites) ? body.sites.map(plain).filter(Boolean) : [];
+    payload.teachingSites = sites.length ? sites : fallbackTeachingSites.slice();
+    if (typeof body.inquiriesAllTime === 'boolean') payload.inquiriesAllTime = body.inquiriesAllTime;
+
+    const studentsBySite = new Map();
+    // Seed every known site so one with no students renders as a zero instead
+    // of dropping out of the payload.
+    payload.teachingSites.forEach(site => studentsBySite.set(site, 0));
+
+    stages.forEach(stage => {
+      const rows = body && body.stages && Array.isArray(body.stages[stage]) ? body.stages[stage] : [];
+      rows.forEach(row => {
+        const record = normalizeRecord(row, stage);
+        payload.funnelRecords[stage].push(record);
+        payload.funnel[stage] += 1;
+        payload.summary[stage] += 1;
+        // The overview groups these by title for its active-site list and
+        // record total, keeping them in step with the three stats above.
+        payload.records.push({ title: record.teachingSite });
+        if (stage === 'students' && record.teachingSite) {
+          studentsBySite.set(record.teachingSite, (studentsBySite.get(record.teachingSite) || 0) + 1);
+        }
+      });
     });
-  }
-  async function loadInquiries(sites) {
-    const targets = payload.filters.site ? [payload.filters.site] : sites;
-    if (!targets.length) return { count:0, records:[], error:false };
-    const results = await Promise.all(targets.map(async site => {
-      try {
-        return { site:site, records:await fetchSiteInquiries(site), error:false };
-      } catch (error) {
-        console.error('Teaching site inquiry query failed for ' + site + '.', error);
-        return { site:site, records:[], error:true };
-      }
-    }));
-    const records = results.reduce((all, result) => all.concat(result.records), []);
-    const failedCount = results.filter(result => result.error).length;
-    return { count:records.length, records:records, error:failedCount > 0 && failedCount === targets.length };
-  }
-  async function fetchSiteStudentCount(site) {
-    const url = new URL(countsService);
-    url.searchParams.set('status', funnelStatuses.students);
-    url.searchParams.set('year', payload.filters.year);
-    url.searchParams.set('term', payload.filters.term);
-    url.searchParams.set('site', site);
-    const rows = await requestRows(url, 'Teaching site student count query');
-    return countRowsForSite(rows, site);
-  }
-  async function loadStudentCountsBySite(sites) {
-    if (!sites.length) return { counts:[], error:false };
-    const results = await Promise.all(sites.map(async site => {
-      try {
-        return { site:site, count:await fetchSiteStudentCount(site), error:false };
-      } catch (error) {
-        console.error('Teaching site student count query failed for ' + site + '.', error);
-        return { site:site, count:0, error:true };
-      }
-    }));
-    const failedCount = results.filter(result => result.error).length;
-    return { counts:results.map(result => ({ title:result.site, count:result.count })), error:failedCount > 0 && failedCount === sites.length };
-  }
-  async function loadStage(stage) {
-    const countUrl = new URL(countsService);
-    countUrl.searchParams.set('status', funnelStatuses[stage]);
-    countUrl.searchParams.set('year', payload.filters.year);
-    countUrl.searchParams.set('term', payload.filters.term);
-    if (payload.filters.site) countUrl.searchParams.set('site', payload.filters.site);
-    const countRows = await requestRows(countUrl, 'Teaching site count query');
-    const count = countRowsForSite(countRows, payload.filters.site);
-    let records = [];
-    if (count > 0) {
-      // Fetched even in overview scope (no site filter) so the "Export Records"
-      // workbook can list every teaching site's records with a Type + Teaching
-      // Site column, not just the currently selected site's drilldown rows.
-      const recordsUrl = new URL(recordsService);
-      recordsUrl.searchParams.set('status', funnelStatuses[stage]);
-      recordsUrl.searchParams.set('year', payload.filters.year);
-      recordsUrl.searchParams.set('term', payload.filters.term);
-      if (payload.filters.site) recordsUrl.searchParams.set('teachingsite', payload.filters.site);
-      try {
-        const detailRows = await requestRows(recordsUrl, 'Teaching site detail query');
-        records = detailRows.filter(siteFilter).map(row => normalizeRecord(row, stage));
-      } catch (error) {
-        payload.funnelRecordErrors[stage] = 'Unable to load record details from Slate. Please try again.';
-        console.error('Teaching site drilldown query failed for ' + stage + '.', error);
-      }
-    }
-    return { stage:stage, count:count, records:records };
-  }
-  function normalizeKey(value) { return String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9]/g, ''); }
-  async function loadTeachingSiteOptions() {
-    try {
-      const response = await fetch(optionsService, { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
-      if (!response.ok) throw new Error('Queryomatic options query returned ' + response.status);
-      const values = rowsFrom(await response.json())
-        .filter(row => teachingSiteOptionKeys.has(normalizeKey(row && row.key)))
-        .map(row => plain(scalar(row && row.value)))
-        .filter(Boolean);
-      if (!values.length) throw new Error('Queryomatic options did not return any teaching-site values.');
-      return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-    } catch (error) {
-      console.warn('Unable to load teaching sites from Queryomatic; using the wrapper fallback list.', error);
-      return fallbackTeachingSites.slice();
-    }
-  }
-  async function loadFunnel() {
-    const teachingSitesPromise = loadTeachingSiteOptions();
-    const stagesReady = (async () => {
-      try {
-        const results = await Promise.all(['applications', 'students'].map(loadStage));
-        results.forEach(result => {
-          payload.summary[result.stage] = result.count;
-          payload.funnel[result.stage] = result.count;
-          payload.funnelRecords[result.stage] = result.records;
-        });
-      } catch (error) {
-        if (payload.filters.site) payload.funnelError = 'Unable to load funnel counts from Slate. Please try again.';
-        else payload.summaryError = 'Unable to load period totals from Slate. Please try again.';
-        console.error('Teaching site funnel query failed.', error);
-      }
-    })();
-    const inquiriesReady = teachingSitesPromise.then(loadInquiries);
-    const studentsBySiteReady = payload.filters.site
-      ? Promise.resolve({ counts:[], error:false })
-      : teachingSitesPromise.then(loadStudentCountsBySite);
-    await stagesReady;
-    payload.teachingSites = await teachingSitesPromise;
-    const inquiryResult = await inquiriesReady;
-    payload.summary.inquiries = inquiryResult.count;
-    payload.funnel.inquiries = inquiryResult.count;
-    payload.funnelRecords.inquiries = inquiryResult.records;
-    if (inquiryResult.error) {
-      const message = 'Unable to load inquiry records from Slate. Please try again.';
-      if (payload.filters.site) payload.funnelError = payload.funnelError || message;
-      else payload.summaryError = payload.summaryError || message;
-    }
-    const studentsBySiteResult = await studentsBySiteReady;
-    payload.studentsBySite = studentsBySiteResult.counts;
-    if (studentsBySiteResult.error) {
-      payload.summaryError = payload.summaryError || 'Unable to load per-site student counts from Slate. Please try again.';
+
+    payload.studentsBySite = Array.from(studentsBySite, entry => ({ title: entry[0], count: entry[1] }));
+
+    const failed = Array.isArray(body && body.failedStages) ? body.failedStages : [];
+    if (failed.length) {
+      const message = 'Slate did not return ' + failed.join(' and ') + ', so these counts may be low.';
+      if (payload.filters.site) payload.funnelError = message;
+      else payload.summaryError = message;
+      failed.forEach(stage => { payload.funnelRecordErrors[stage] = 'Unable to load these records from Slate. Please try again.'; });
     }
     return payload;
   }
+
+  async function loadFunnel() {
+    try {
+      return build(await fetchPeople());
+    } catch (error) {
+      console.error('Teaching site query failed.', error);
+      const message = 'Unable to load teaching site data from Slate. Please try again.';
+      if (payload.filters.site) payload.funnelError = message;
+      else payload.summaryError = message;
+      stages.forEach(stage => { payload.funnelRecordErrors[stage] = message; });
+      payload.teachingSites = fallbackTeachingSites.slice();
+      return payload;
+    }
+  }
+
+  // ---------- frame bridge
+
   const payloadReady = loadFunnel();
   async function sendData() {
     const resolvedPayload = await payloadReady;

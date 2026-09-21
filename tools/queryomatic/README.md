@@ -52,17 +52,60 @@ requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
 
 | Route | Query | Used by | Allowed params |
 | --- | --- | --- | --- |
-| `GET /api/slate/teaching-site-counts` | maindb | Teaching Sites | `status`, `year`, `term`, `site` |
-| `GET /api/slate/records` | maindb | Teaching Sites, Record Lookup, Event Tracker | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
-| `GET /api/slate/inquiries` | maindb | Teaching Sites, Regional Campus | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
+| `GET /api/slate/teaching-site-people` | maindb x3 + prompts | Teaching Sites | `term`, `year`, `site` |
+| `GET /api/slate/teaching-site-counts` | maindb | (no portal caller) | `status`, `year`, `term`, `site` |
+| `GET /api/slate/records` | maindb | Record Lookup, Event Tracker | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
+| `GET /api/slate/inquiries` | maindb | Regional Campus | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
 | `GET /api/slate/portal-options` | prompts | Teaching Sites, Regional Campus | (none) |
 | `GET /api/slate/regional-campus-records` | maindb | Regional Campus | `campus`, `term`, `year` |
 | `GET /api/slate/additional-applications` | maindb | Record Lookup | `sisid` |
 
-Route parameter names that differ from the maindb query's own are renamed by
+Route parameter names that differ from the maindb query’s own are renamed by
 `MAINDB_PARAM_ALIASES` in `worker.js` (`site` → `teachingsite`, `campus` →
 `campus_assigned`); everything else passes through unchanged, and blank values
 are dropped rather than sent as `""`.
+
+### What maindb’s parameters actually mean
+
+Verified against the live query. Getting these wrong is the difference between
+a portal showing real numbers and a portal showing zero.
+
+- **`term` and `year` filter on the APPLICATION’s term and year.** A person
+  with no application matches neither, so `status=Inquiry&term=Fall&year=…`
+  returns **0 rows, always** — it asks for inquiries whose application is for
+  Fall, and an inquiry has no application. A portal that wants a period-scoped
+  funnel must query its pre-application stages separately, without
+  `term`/`year`.
+- **There is no person-created date.** `person_created_date_start` / `_end`
+  are accepted by the `inquiries` route but match nothing, so any
+  period-scoped inquiry count comes back 0. Inquiry counts can only honestly
+  be all-time until a person-created-date parameter is added on the Slate
+  side.
+- **There is no `app_degree` column** — the degree is `per_degree_current`.
+- **The output columns are not fixed.** The query has been observed returning
+  its `app_*` block (`app_term`, `app_year`, `app_status`, …) on one day
+  and only `app_decision_code` on another, and passing `teachingsite` narrows
+  the column set as well. Never build a portal on a client-side filter over a
+  column a parameter could take away — filter with parameters, and read only
+  the `per_*` columns, which have been stable.
+- **One row per person**, not per application (5,837 rows, 5,837 distinct
+  `per_url`), so counting rows is counting people.
+
+### The teaching-site route
+
+`teaching-site-people` is the pattern to copy when a portal needs a funnel.
+maindb has no “teaching site is set” parameter, so the route runs the query
+three times — once per funnel stage, with that stage’s correct parameters —
+drops the rows with a blank `per_teachingsite`, and returns the rest grouped
+by stage:
+
+    inquiries     status=Inquiry                  (no term/year, see above)
+    applications  status=Applicant + term + year
+    students      status=Student   + term + year
+
+The result is cached in KV for five minutes per `term|year|site` combination.
+The portal makes one request and derives every count, bar and drilldown table
+from the response, so ~4,800 unrelated people never reach the browser.
 
 **Adding a new Slate query to a portal:** never hardcode a query `id`/`h` in a
 wrapper file. Add a route in `worker.js` that calls `handleSlateProxyRoute`

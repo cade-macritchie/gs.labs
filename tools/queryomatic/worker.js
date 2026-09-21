@@ -56,9 +56,10 @@
  *
  * SLATE PORTAL PROXY ROUTES (/api/slate/*), one per distinct Slate query id:
  *
- * - GET /api/slate/teaching-site-counts       (teaching-site-overview wrapper)
- * - GET /api/slate/records                    (teaching-site-overview, student-lookup, event-tracker wrappers)
- * - GET /api/slate/inquiries                  (teaching-site-overview, regional-campus wrappers)
+ * - GET /api/slate/teaching-site-people       (teaching-site-overview wrapper)
+ * - GET /api/slate/teaching-site-counts       (no portal caller; kept for ad-hoc use)
+ * - GET /api/slate/records                    (student-lookup, event-tracker wrappers)
+ * - GET /api/slate/inquiries                  (regional-campus wrapper)
  * - GET /api/slate/portal-options             (teaching-site-overview, regional-campus wrappers)
  * - GET /api/slate/regional-campus-records    (regional-campus wrapper)
  * - GET /api/slate/additional-applications    (student-lookup wrapper)
@@ -331,6 +332,180 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
     : await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams, fixedParams);
 
   return json(data, env, 200, env.PORTAL_ORIGIN);
+}
+
+
+// ============================================================
+// TEACHING SITE PEOPLE
+//
+// One route, three maindb calls, everything the Teaching Sites portal draws.
+//
+// Why three and not one: maindb's "term" and "year" parameters filter on the
+// APPLICATION's term and year. An Inquiry has no application, so asking for
+// status=Inquiry together with term/year returns zero rows every time. The
+// funnel's three stages therefore need three different parameter sets:
+//
+//   inquiries     status=Inquiry                  (no term/year -- see below)
+//   applications  status=Applicant + term + year
+//   students      status=Student   + term + year
+//
+// Inquiries are all-time in every period because maindb exposes no
+// person-created date to scope them by. The response says so via
+// inquiriesAllTime, and the portal labels the stat on screen rather than
+// showing a number that quietly means something different from its neighbours.
+//
+// Why the grouping happens here: maindb has no "teaching site is set"
+// parameter, but it does return per_teachingsite on every row, and that column
+// agrees exactly with what the teachingsite parameter matches (verified site by
+// site). So each stage is fetched unscoped and the rows without a teaching site
+// are dropped here -- which also keeps ~4,800 unrelated people out of the
+// browser. The portal receives at most a few hundred rows.
+//
+// Do NOT "optimise" this by adding teachingsite to the request: the Slate query
+// returns a narrower column set when that parameter is present.
+// ============================================================
+
+const TEACHING_SITE_OPTION_KEYS = new Set([
+  "teachingsite",
+  "teachingsites",
+  "site",
+]);
+const TEACHING_SITE_CACHE_SECONDS = 300;
+
+// status value -> the funnel stage the portal draws it in. Prospects are not
+// part of the funnel, matching the inquiry-only query this replaced.
+const TEACHING_SITE_STAGES = Object.freeze({
+  inquiries: "Inquiry",
+  applications: "Applicant",
+  students: "Student",
+});
+
+
+function normalizeOptionKey(value) {
+  return String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+
+function teachingSiteNamesFrom(optionsData) {
+  const rows = Array.isArray(optionsData?.row) ? optionsData.row : [];
+
+  const names = rows
+    .filter((row) => TEACHING_SITE_OPTION_KEYS.has(normalizeOptionKey(row?.key)))
+    .map((row) => String(row?.value == null ? "" : row.value).trim())
+    .filter(Boolean);
+
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+
+function plainText(value) {
+  if (value == null) return "";
+  const raw = typeof value === "object"
+    ? String(value.display ?? value.label ?? value.name ?? value.value ?? value.text ?? "")
+    : String(value);
+  return raw.replace(/<[^>]*>/g, " ").replace(/s+/g, " ").trim();
+}
+
+
+async function fetchTeachingSiteStage(env, id, stage, filters) {
+  const params = new URLSearchParams({ status: TEACHING_SITE_STAGES[stage] });
+
+  // Inquiries deliberately ignore the period -- see the header comment.
+  if (stage !== "inquiries") {
+    if (filters.term) params.set("term", filters.term);
+    if (filters.year) params.set("year", filters.year);
+  }
+
+  const data = await proxySlateQuery(
+    env, id, `teaching-site-people:${stage}`, ["status", "term", "year"], params, null
+  );
+
+  const rows = Array.isArray(data?.row) ? data.row : (data?.row ? [data.row] : []);
+
+  return rows.filter((row) => {
+    const site = plainText(row?.per_teachingsite);
+    if (!site) return false;
+    return filters.site ? site.toLowerCase() === filters.site.toLowerCase() : true;
+  });
+}
+
+
+async function handleTeachingSitePeople(request, env, id) {
+  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "teaching-site-people"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+  }
+
+  const search = new URL(request.url).searchParams;
+  const filters = {
+    term: String(search.get("term") || "").trim(),
+    year: String(search.get("year") || "").trim(),
+    site: String(search.get("site") || "").trim(),
+  };
+
+  const cacheKey = `teaching-site-people:v2:${filters.term}|${filters.year}|${filters.site}`;
+  const cached = await env.OPTIONS_CACHE.get(cacheKey, "json").catch(() => null);
+
+  if (cached) {
+    logInfo(id, "Teaching site people served from cache", { cacheKey });
+    return json(cached, env, 200, env.PORTAL_ORIGIN);
+  }
+
+  const stageNames = Object.keys(TEACHING_SITE_STAGES);
+
+  const [options, ...settled] = await Promise.all([
+    fetchSlateOptions(env, id),
+    ...stageNames.map(async (stage) => {
+      try {
+        return { stage, rows: await fetchTeachingSiteStage(env, id, stage, filters) };
+      } catch (error) {
+        // One bad stage must not blank the whole portal.
+        logError(id, "Teaching site stage query failed", {
+          stage,
+          message: String(error && error.message ? error.message : error),
+        });
+        return { stage, rows: [], failed: true };
+      }
+    }),
+  ]);
+
+  const failedStages = settled.filter((entry) => entry.failed).map((entry) => entry.stage);
+
+  if (failedStages.length === stageNames.length) {
+    throw new Error("Every teaching site stage query failed");
+  }
+
+  const payload = {
+    sites: teachingSiteNamesFrom(options),
+    scope: filters.site,
+    filters: { term: filters.term, year: filters.year },
+    // maindb has no person-created date, so this stage cannot be scoped to a
+    // period. The portal says so on screen.
+    inquiriesAllTime: true,
+    failedStages,
+    stages: Object.fromEntries(settled.map((entry) => [entry.stage, entry.rows])),
+  };
+
+  logInfo(id, "Teaching site people assembled", {
+    term: filters.term,
+    year: filters.year,
+    site: filters.site,
+    counts: Object.fromEntries(settled.map((entry) => [entry.stage, entry.rows.length])),
+    failed: failedStages.length,
+  });
+
+  // Only cache a complete result -- a partial one would pin a stage at zero
+  // for the whole TTL.
+  if (!failedStages.length) {
+    await env.OPTIONS_CACHE
+      .put(cacheKey, JSON.stringify(payload), { expirationTtl: TEACHING_SITE_CACHE_SECONDS })
+      .catch(() => {});
+  }
+
+  return json(payload, env, 200, env.PORTAL_ORIGIN);
 }
 
 
@@ -1939,6 +2114,13 @@ export default {
       // PORTAL_ORIGIN, not from ALLOWED_ORIGIN — see
       // handleSlateProxyRoute.
       // ======================================================
+
+      if (
+        url.pathname === "/api/slate/teaching-site-people" &&
+        request.method === "GET"
+      ) {
+        return await handleTeachingSitePeople(request, env, id);
+      }
 
       if (
         url.pathname === "/api/slate/teaching-site-counts" &&
