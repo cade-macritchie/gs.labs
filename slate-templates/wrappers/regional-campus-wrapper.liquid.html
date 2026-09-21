@@ -1,29 +1,57 @@
 <!--
   Regional Campus Slate wrapper.
 
-  The wrapper reads the campus values from Queryomatic's Slate
-  prompt/options service. It calls the records JSON service with campus, term,
-  and year for applicants and students. Inquiries come from a separate,
-  inquiry-only JSON service that accepts campus.
-  The wrapper normalizes and combines the rows before sending them to the iframe.
+  This page needs NO Liquid query configured on the Slate portal page. Every
+  record comes from one request to the GS Labs Slate Gateway, which runs the
+  shared maindb ("all people") query — the only person query this repo still
+  holds a token for.
 
-  General JSON fields: first, last, email, phone, sisid, program, status, app_status
-  Inquiry JSON fields: first, last, email, phone, sisid
+  How the data is assembled
+  -------------------------
+  The gateway route (/api/slate/regional-campus-people, see
+  handleRegionalCampusPeople in tools/queryomatic/worker.js) runs maindb once
+  per campus per person status, because the statuses need different parameters:
+
+    Inquiry, Prospect      person_created_date_start / _end  (the period window)
+    Applicant, Student     term + year
+
+  maindb's term/year parameters filter on the APPLICATION's term and year, so
+  asking for status=Inquiry together with term/year returns zero rows every
+  time — an inquiry has no application. That was why this portal's inquiry
+  counts were empty. Pre-application statuses are scoped by when the person
+  record was created instead.
+
+  The campus lives in the campus_assigned PARAMETER and is not one of the
+  columns maindb returns, so there is nothing to group by — the gateway asks
+  for each campus by name and stamps the answer onto its rows as "campus".
+  campus_assigned partitions the population exactly (the campuses sum to the
+  full 5,837-person total), so no record is lost or double-counted. Hawaii and
+  Boston legitimately come back empty: people affiliated with them sit in a
+  pipeline or a teaching site rather than being assigned there.
+
+  Selecting a campus or a status narrows the fan-out; the result is cached for
+  five minutes per campus|term|year|status combination.
+
+  Columns this reads (all present on every maindb row):
+    per_status, per_name, per_email, per_phone, per_sisid,
+    per_degree_current, per_url
+
+  There is no app_degree column — the program column reads per_degree_current.
+  The unprefixed spellings are kept as fallbacks so a differently-shaped row
+  still renders.
 -->
-<iframe id="regionalCampusFrame" src="https://cade-macritchie.github.io/gs.labs/reports/regional-campus/?v=regional-campus-v2" title="Regional Campus Portal" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="regionalCampusFrame" src="https://cade-macritchie.github.io/gs.labs/reports/regional-campus/?v=regional-campus-v3" title="Regional Campus Portal" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'regional-campus';
   const frameOrigin = 'https://cade-macritchie.github.io';
-  // Every Slate query below is proxied through the GS Labs Slate Gateway
-  // Cloudflare Worker, which injects the real Slate query id/token
-  // server-side — see tools/queryomatic/worker.js. Nothing Slate-credential
-  // related is ever hardcoded here.
+  // The gateway injects the Slate query id/token server-side — see
+  // tools/queryomatic/worker.js. Nothing credential-related is ever here.
   const workerBase = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
-  const optionsService = workerBase + '/api/slate/portal-options';
-  const recordsService = workerBase + '/api/slate/regional-campus-records';
-  const inquiryService = workerBase + '/api/slate/inquiries';
+  const peopleService = workerBase + '/api/slate/regional-campus-people';
+  // Only used if the gateway is unreachable, so the campus picker still
+  // renders. The live list arrives with the people.
   const fallbackCampuses = [
     'Arizona Regional Campus',
     'Bay Area Campus',
@@ -44,7 +72,10 @@
       status: pageUrl.searchParams.get('status') || ''
     },
     campuses: [],
-    records: []
+    records: [],
+    // Set by the gateway. True means the period could not be applied to the
+    // pre-application statuses, so their counts are all-time.
+    preApplicationAllTime: false
   };
   const allowedParams = new Set(['campus', 'term', 'year', 'status']);
   let frameReady = false;
@@ -63,32 +94,6 @@
     if (Array.isArray(response)) return response;
     if (response && Array.isArray(response.row)) return response.row;
     return response && response.row ? [response.row] : [];
-  }
-
-  async function loadCampusValues() {
-    const controller = new AbortController();
-    const timeout = window.setTimeout(function () { controller.abort(); }, 10000);
-    try {
-      const response = await fetch(optionsService, {
-        credentials: 'same-origin',
-        cache: 'no-store',
-        signal: controller.signal,
-        headers: { Accept:'application/json' }
-      });
-      if (!response.ok) throw new Error('Queryomatic options query returned ' + response.status);
-      const campuses = rowsFrom(await response.json()).filter(function (row) {
-        return text(row && row.key).toLowerCase() === 'campus';
-      }).map(function (row) { return text(row && row.value); }).filter(function (campus) {
-        return campus && campus.toLowerCase() !== 'doctor of ministry';
-      });
-      if (!campuses.length) throw new Error('Queryomatic options did not return any campus values.');
-      return campuses;
-    } catch (error) {
-      console.warn('Unable to load campuses from Queryomatic; using the wrapper fallback list.', error);
-      return fallbackCampuses.slice();
-    } finally {
-      window.clearTimeout(timeout);
-    }
   }
 
   // The maindb query names its columns per_*/app_*; the unprefixed spellings
@@ -130,100 +135,59 @@
     };
   }
 
-  async function fetchRecords(url) {
-    const response = await fetch(url.toString().replace(/\+/g, '%20'), {
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: { Accept:'application/json' }
+  async function fetchPeople() {
+    const url = new URL(peopleService);
+    // The gateway turns these into the right Slate parameters per status; see
+    // its header comment.
+    Object.keys(payload.filters).forEach(function (key) {
+      const value = text(payload.filters[key]);
+      if (value) url.searchParams.set(key, value);
     });
-    if (!response.ok) throw new Error('Regional campus query returned ' + response.status);
-    return rowsFrom(await response.json());
-  }
-
-  async function fetchCampusGeneralRecords(campus) {
-    const url = new URL(recordsService);
-    url.searchParams.set('campus', campus);
-    url.searchParams.set('term', payload.filters.term);
-    url.searchParams.set('year', payload.filters.year);
-    return (await fetchRecords(url)).map(function (row) { return normalize(row, campus); });
-  }
-
-  async function fetchCampusInquiries(campus) {
-    const url = new URL(inquiryService);
-    url.searchParams.set('campus', campus);
-    return (await fetchRecords(url)).map(function (row) {
-      const record = normalize(row, campus);
-      record.status = 'Inquiry';
-      return record;
-    });
-  }
-
-  async function fetchCampusRecords(campus) {
-    const selectedStatus = text(payload.filters.status).toLowerCase();
-    const requests = [{ type:'general', promise:fetchCampusGeneralRecords(campus) }];
-    if (!selectedStatus || selectedStatus === 'inquiry') {
-      requests.push({ type:'inquiries', promise:fetchCampusInquiries(campus) });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(function () { controller.abort(); }, 60000);
+    try {
+      const response = await fetch(url.toString().replace(/\+/g, '%20'), {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: { Accept:'application/json' }
+      });
+      if (!response.ok) throw new Error('Regional campus query returned ' + response.status);
+      return await response.json();
+    } finally {
+      window.clearTimeout(timeout);
     }
-
-    const results = await Promise.all(requests.map(async function (request) {
-      try {
-        return { type:request.type, records:await request.promise, error:false };
-      } catch (error) {
-        console.error('Regional campus ' + request.type + ' query failed for ' + campus + '.', error);
-        return { type:request.type, records:[], error:true };
-      }
-    }));
-
-    const general = results.find(function (result) { return result.type === 'general'; }) || { records:[], error:true };
-    const inquiries = results.find(function (result) { return result.type === 'inquiries'; });
-    const generalInquiries = general.records.filter(function (record) { return isInquiryStatus(record.status); });
-    const generalNonInquiries = general.records.filter(function (record) { return !isInquiryStatus(record.status); });
-    const resolvedInquiries = inquiries && inquiries.records.length ? inquiries.records : generalInquiries;
-    const records = selectedStatus === 'inquiry'
-      ? resolvedInquiries
-      : generalNonInquiries.concat(selectedStatus ? [] : resolvedInquiries);
-
-    const generalUnavailable = general.error && selectedStatus !== 'inquiry';
-    const inquiryUnavailable = inquiries && inquiries.error && !generalInquiries.length;
-    return {
-      records: records,
-      error: Boolean(generalUnavailable || inquiryUnavailable)
-    };
   }
 
-  async function loadRecords(campuses) {
+  function build(body) {
+    const campuses = Array.isArray(body && body.campuses) ? body.campuses.map(text).filter(Boolean) : [];
+    payload.campuses = campuses.length ? campuses : fallbackCampuses.slice();
     const selectedCampus = text(payload.filters.campus);
-    payload.campuses = Array.from(new Set(campuses.map(text).filter(Boolean))).sort(function (a, b) { return a.localeCompare(b); });
     if (selectedCampus && !payload.campuses.includes(selectedCampus)) payload.campuses.push(selectedCampus);
-    const requestedCampuses = selectedCampus ? [selectedCampus] : payload.campuses;
+    if (typeof body.preApplicationAllTime === 'boolean') payload.preApplicationAllTime = body.preApplicationAllTime;
 
-    if (!requestedCampuses.length) {
-      payload.loadError = 'Unable to load the regional campus list.';
-      return payload;
-    }
+    // The gateway already applied the campus, period and status filters, so
+    // every row it returns belongs in the table.
+    payload.records = rowsFrom(body).map(function (row) {
+      return normalize(row, text(row && row.campus) || selectedCampus);
+    });
 
-    const results = await Promise.all(requestedCampuses.map(async function (campus) {
-      const result = await fetchCampusRecords(campus);
-      return { campus:campus, records:result.records, error:result.error };
-    }));
-
-    payload.records = results.reduce(function (records, result) { return records.concat(result.records); }, []);
-    const failedCampuses = results.filter(function (result) { return result.error; }).map(function (result) { return result.campus; });
-    if (failedCampuses.length) {
-      payload.loadError = failedCampuses.length === requestedCampuses.length
-        ? 'Unable to load regional campus records from Slate. Please try again.'
-        : 'Some campus records could not be loaded: ' + failedCampuses.join(', ') + '.';
-    }
-
-    const selectedStatus = text(payload.filters.status).toLowerCase();
-    if (selectedStatus) {
-      payload.records = payload.records.filter(function (record) { return text(record.status).toLowerCase() === selectedStatus; });
+    const failed = Array.isArray(body && body.failedCampuses) ? body.failedCampuses : [];
+    if (failed.length) {
+      payload.loadError = 'Some campus records could not be loaded: ' + failed.join(', ') + '.';
     }
     return payload;
   }
 
   async function loadData() {
-    return loadRecords(await loadCampusValues());
+    try {
+      return build(await fetchPeople());
+    } catch (error) {
+      console.error('Regional campus query failed.', error);
+      payload.loadError = 'Unable to load regional campus records from Slate. Please try again.';
+      payload.campuses = fallbackCampuses.slice();
+      return payload;
+    }
   }
 
   async function sendData() {

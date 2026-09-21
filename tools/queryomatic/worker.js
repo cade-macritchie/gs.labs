@@ -57,6 +57,8 @@
  * SLATE PORTAL PROXY ROUTES (/api/slate/*), one per distinct Slate query id:
  *
  * - GET /api/slate/teaching-site-people       (teaching-site-overview wrapper)
+ * - GET /api/slate/regional-campus-people     (regional-campus wrapper)
+ * - GET /api/slate/pipeline-people            (pipeline-overview wrapper)
  * - GET /api/slate/teaching-site-counts       (no portal caller; kept for ad-hoc use)
  * - GET /api/slate/records                    (student-lookup, event-tracker wrappers)
  * - GET /api/slate/inquiries                  (regional-campus wrapper)
@@ -336,49 +338,81 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 
 
 // ============================================================
-// TEACHING SITE PEOPLE
+// PORTAL FUNNELS
 //
-// One route, three maindb calls, everything the Teaching Sites portal draws.
+// Three portals -- Teaching Sites, Regional Campus, Pipeline Overview -- all
+// draw the same shape: a population split by person status, narrowed to an
+// academic period, grouped by some affiliation. All three are served from the
+// shared maindb ("all people") query by the helpers in this section.
 //
-// Why three and not one: maindb's "term" and "year" parameters filter on the
-// APPLICATION's term and year. An Inquiry has no application, so asking for
-// status=Inquiry together with term/year returns zero rows every time. The
-// funnel's three stages therefore need three different parameter sets:
+// The one rule that matters
+// -------------------------
+// maindb's "term" and "year" parameters filter on the APPLICATION's term and
+// year. A person with no application -- every Inquiry, every Prospect -- has
+// them blank, so "status=Inquiry&term=Fall&year=2026-2027" returns ZERO rows.
+// That is not a bug to work around; it is the question being asked (inquiries
+// whose application is for Fall), and an inquiry has no application.
 //
-//   inquiries     status=Inquiry                  (no term/year -- see below)
-//   applications  status=Applicant + term + year
-//   students      status=Student   + term + year
+// So each funnel stage is fetched with the parameters that mean something for
+// it, in its own call:
 //
-// Inquiries are all-time in every period because maindb exposes no
-// person-created date to scope them by. The response says so via
-// inquiriesAllTime, and the portal labels the stat on screen rather than
-// showing a number that quietly means something different from its neighbours.
+//   pre-application (Inquiry, Prospect)  status + person_created_date_start/end
+//   application     (Applicant, Student) status + term + year
 //
-// Why the grouping happens here: maindb has no "teaching site is set"
-// parameter, but it does return per_teachingsite on every row, and that column
-// agrees exactly with what the teachingsite parameter matches (verified site by
-// site). So each stage is fetched unscoped and the rows without a teaching site
-// are dropped here -- which also keeps ~4,800 unrelated people out of the
-// browser. The portal receives at most a few hundred rows.
-//
-// Do NOT "optimise" this by adding teachingsite to the request: the Slate query
-// returns a narrower column set when that parameter is present.
+// The pre-application stages are scoped by when the person record was created,
+// using the calendar window for the selected period.
 // ============================================================
 
-const TEACHING_SITE_OPTION_KEYS = new Set([
-  "teachingsite",
-  "teachingsites",
-  "site",
-]);
-const TEACHING_SITE_CACHE_SECONDS = 300;
+const PORTAL_FUNNEL_CACHE_SECONDS = 300;
 
-// status value -> the funnel stage the portal draws it in. Prospects are not
-// part of the funnel, matching the inquiry-only query this replaced.
-const TEACHING_SITE_STAGES = Object.freeze({
+// Academic period -> the calendar window a person must have been CREATED in to
+// count toward that period. Keyed "term|year" to match the period selector in
+// assets/dashboard-common.js (Total / FA26 / SP27 / FA27).
+//
+// FA26 has no start bound on purpose: nothing is tracked before it, so its
+// window is "everything up to 8/15/2026" rather than losing whatever arrived
+// before an arbitrary cutoff. Later periods chain off the previous one's end
+// with no gap, so the windows tile the whole population -- verified against the
+// live query: 2,256 + 46 + 0 = 2,302, exactly the all-time inquiry count.
+//
+// Dates are M/D/YYYY with no leading zeros, the format the Slate field expects.
+const PERSON_CREATED_WINDOWS = Object.freeze({
+  "Fall|2026-2027": { start: "", end: "8/15/2026" },
+  "Spring|2026-2027": { start: "8/16/2026", end: "1/15/2027" },
+  "Fall|2027-2028": { start: "1/16/2027", end: "8/15/2027" },
+});
+
+// per_status value for each funnel stage.
+const FUNNEL_STAGE_STATUS = Object.freeze({
   inquiries: "Inquiry",
+  prospects: "Prospect",
   applications: "Applicant",
   students: "Student",
 });
+
+// The stages whose people have an application, and so answer to term/year.
+const APPLICATION_STAGES = new Set(["applications", "students"]);
+
+// Every maindb parameter any funnel route is allowed to send.
+const FUNNEL_PARAMS = Object.freeze([
+  "status",
+  "term",
+  "year",
+  "person_created_date_start",
+  "person_created_date_end",
+  "teachingsite",
+  "campus_assigned",
+  "pipeline",
+]);
+
+
+// Returns the person-created window for a period, or null for "Total (All
+// Time)" and for any period this table does not know about -- in which case the
+// caller falls back to an unbounded query and says so in its response.
+function personCreatedWindow(term, year) {
+  if (!term && !year) return null;
+  return PERSON_CREATED_WINDOWS[`${term}|${year}`] || null;
+}
 
 
 function normalizeOptionKey(value) {
@@ -386,15 +420,18 @@ function normalizeOptionKey(value) {
 }
 
 
-function teachingSiteNamesFrom(optionsData) {
+// Pulls one prompt's values out of the prompts query, by any of several
+// spellings of its key.
+function optionValues(optionsData, keys) {
+  const wanted = new Set([...keys].map(normalizeOptionKey));
   const rows = Array.isArray(optionsData?.row) ? optionsData.row : [];
 
-  const names = rows
-    .filter((row) => TEACHING_SITE_OPTION_KEYS.has(normalizeOptionKey(row?.key)))
+  const values = rows
+    .filter((row) => wanted.has(normalizeOptionKey(row?.key)))
     .map((row) => String(row?.value == null ? "" : row.value).trim())
     .filter(Boolean);
 
-  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
 
@@ -403,42 +440,139 @@ function plainText(value) {
   const raw = typeof value === "object"
     ? String(value.display ?? value.label ?? value.name ?? value.value ?? value.text ?? "")
     : String(value);
-  return raw.replace(/<[^>]*>/g, " ").replace(/s+/g, " ").trim();
+  return raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 
-async function fetchTeachingSiteStage(env, id, stage, filters) {
-  const params = new URLSearchParams({ status: TEACHING_SITE_STAGES[stage] });
+function rowsOf(data) {
+  if (Array.isArray(data?.row)) return data.row;
+  return data?.row ? [data.row] : [];
+}
 
-  // Inquiries deliberately ignore the period -- see the header comment.
-  if (stage !== "inquiries") {
-    if (filters.term) params.set("term", filters.term);
-    if (filters.year) params.set("year", filters.year);
-  }
 
-  const data = await proxySlateQuery(
-    env, id, `teaching-site-people:${stage}`, ["status", "term", "year"], params, null
+// Bounded-concurrency map. Cloudflare caps a request at 50 subrequests, and
+// firing two dozen Slate queries at once is a good way to get throttled.
+async function mapWithLimit(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      for (let index = next++; index < items.length; index = next++) {
+        results[index] = await worker(items[index]);
+      }
+    }
   );
 
-  const rows = Array.isArray(data?.row) ? data.row : (data?.row ? [data.row] : []);
-
-  return rows.filter((row) => {
-    const site = plainText(row?.per_teachingsite);
-    if (!site) return false;
-    return filters.site ? site.toLowerCase() === filters.site.toLowerCase() : true;
-  });
+  await Promise.all(runners);
+  return results;
 }
 
 
-async function handleTeachingSitePeople(request, env, id) {
+// One maindb call for one funnel stage.
+//
+// `scope` optionally narrows to one affiliation, e.g.
+// { param: "campus_assigned", value: "Bay Area Campus" }. Note that passing a
+// scope parameter can change which columns Slate returns -- `teachingsite`
+// drops the app_* block -- so nothing downstream may depend on a column that a
+// scope parameter could take away.
+async function fetchFunnelStage(env, id, routeName, stage, filters, scope) {
+  const params = new URLSearchParams({ status: FUNNEL_STAGE_STATUS[stage] });
+
+  if (APPLICATION_STAGES.has(stage)) {
+    if (filters.term) params.set("term", filters.term);
+    if (filters.year) params.set("year", filters.year);
+  } else {
+    const window = personCreatedWindow(filters.term, filters.year);
+    if (window) {
+      // Blank bounds are omitted rather than sent as "" -- the Slate field is
+      // Date-typed and rejects an empty string.
+      if (window.start) params.set("person_created_date_start", window.start);
+      if (window.end) params.set("person_created_date_end", window.end);
+    }
+  }
+
+  if (scope && scope.value) params.set(scope.param, scope.value);
+
+  const data = await proxySlateQuery(
+    env, id, `${routeName}:${stage}`, FUNNEL_PARAMS, params, null
+  );
+
+  return rowsOf(data);
+}
+
+
+// Runs several stages, letting one failure through as an empty stage rather
+// than blanking the portal. Throws only if every stage failed.
+async function fetchFunnelStages(env, id, routeName, stageNames, filters, scope) {
+  const settled = await Promise.all(stageNames.map(async (stage) => {
+    try {
+      return { stage, rows: await fetchFunnelStage(env, id, routeName, stage, filters, scope) };
+    } catch (error) {
+      logError(id, "Funnel stage query failed", {
+        route: routeName,
+        stage,
+        scope: scope?.value || "",
+        message: String(error && error.message ? error.message : error),
+      });
+      return { stage, rows: [], failed: true };
+    }
+  }));
+
+  if (settled.every((entry) => entry.failed)) {
+    throw new Error(`Every stage of ${routeName} failed`);
+  }
+
+  return settled;
+}
+
+
+// Shared entry: origin check, rate limit, KV cache. `build` does the work.
+async function serveFunnelRoute(request, env, id, routeName, cacheKey, build) {
   if (!originAllowed(request, env.PORTAL_ORIGIN)) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
   }
 
-  if (!(await checkRateLimit(env, request, "teaching-site-people"))) {
+  if (!(await checkRateLimit(env, request, routeName))) {
     return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
   }
 
+  const cached = await env.OPTIONS_CACHE.get(cacheKey, "json").catch(() => null);
+  if (cached) {
+    logInfo(id, "Portal funnel served from cache", { route: routeName, cacheKey });
+    return json(cached, env, 200, env.PORTAL_ORIGIN);
+  }
+
+  const { payload, complete } = await build();
+
+  // Only cache a complete result -- a partial one would pin a missing stage or
+  // scope at zero for the whole TTL.
+  if (complete) {
+    await env.OPTIONS_CACHE
+      .put(cacheKey, JSON.stringify(payload), { expirationTtl: PORTAL_FUNNEL_CACHE_SECONDS })
+      .catch(() => {});
+  }
+
+  return json(payload, env, 200, env.PORTAL_ORIGIN);
+}
+
+
+// ============================================================
+// TEACHING SITE PEOPLE
+//
+// maindb has no "teaching site is set" parameter, but it does return
+// per_teachingsite on every row, and that column agrees exactly with what the
+// teachingsite parameter matches (verified site by site). So each stage is
+// fetched unscoped and the rows without a teaching site are dropped here --
+// which also keeps ~4,800 unrelated people out of the browser.
+// ============================================================
+
+const TEACHING_SITE_OPTION_KEYS = ["teachingsite", "teachingsites", "site"];
+const TEACHING_SITE_STAGES = ["inquiries", "applications", "students"];
+
+
+async function handleTeachingSitePeople(request, env, id) {
   const search = new URL(request.url).searchParams;
   const filters = {
     term: String(search.get("term") || "").trim(),
@@ -446,66 +580,229 @@ async function handleTeachingSitePeople(request, env, id) {
     site: String(search.get("site") || "").trim(),
   };
 
-  const cacheKey = `teaching-site-people:v2:${filters.term}|${filters.year}|${filters.site}`;
-  const cached = await env.OPTIONS_CACHE.get(cacheKey, "json").catch(() => null);
+  const cacheKey = `teaching-site-people:v3:${filters.term}|${filters.year}|${filters.site}`;
 
-  if (cached) {
-    logInfo(id, "Teaching site people served from cache", { cacheKey });
-    return json(cached, env, 200, env.PORTAL_ORIGIN);
-  }
+  return serveFunnelRoute(request, env, id, "teaching-site-people", cacheKey, async () => {
+    const [options, settled] = await Promise.all([
+      fetchSlateOptions(env, id),
+      fetchFunnelStages(env, id, "teaching-site-people", TEACHING_SITE_STAGES, filters, null),
+    ]);
 
-  const stageNames = Object.keys(TEACHING_SITE_STAGES);
+    const keep = (row) => {
+      const site = plainText(row?.per_teachingsite);
+      if (!site) return false;
+      return filters.site ? site.toLowerCase() === filters.site.toLowerCase() : true;
+    };
 
-  const [options, ...settled] = await Promise.all([
-    fetchSlateOptions(env, id),
-    ...stageNames.map(async (stage) => {
-      try {
-        return { stage, rows: await fetchTeachingSiteStage(env, id, stage, filters) };
-      } catch (error) {
-        // One bad stage must not blank the whole portal.
-        logError(id, "Teaching site stage query failed", {
-          stage,
-          message: String(error && error.message ? error.message : error),
-        });
-        return { stage, rows: [], failed: true };
-      }
-    }),
-  ]);
+    const failedStages = settled.filter((entry) => entry.failed).map((entry) => entry.stage);
 
-  const failedStages = settled.filter((entry) => entry.failed).map((entry) => entry.stage);
+    const payload = {
+      sites: optionValues(options, TEACHING_SITE_OPTION_KEYS),
+      scope: filters.site,
+      filters: { term: filters.term, year: filters.year },
+      // False once the period was applied as a person-created-date window. It
+      // stays true for "Total (All Time)", and for a period missing from
+      // PERSON_CREATED_WINDOWS, so the portal can label the stat rather than
+      // let it be mistaken for a per-period count.
+      inquiriesAllTime: !personCreatedWindow(filters.term, filters.year),
+      failedStages,
+      stages: Object.fromEntries(settled.map((e) => [e.stage, e.rows.filter(keep)])),
+    };
 
-  if (failedStages.length === stageNames.length) {
-    throw new Error("Every teaching site stage query failed");
-  }
+    logInfo(id, "Teaching site people assembled", {
+      ...filters,
+      counts: Object.fromEntries(Object.entries(payload.stages).map(([k, v]) => [k, v.length])),
+      failed: failedStages.length,
+    });
 
-  const payload = {
-    sites: teachingSiteNamesFrom(options),
-    scope: filters.site,
-    filters: { term: filters.term, year: filters.year },
-    // maindb has no person-created date, so this stage cannot be scoped to a
-    // period. The portal says so on screen.
-    inquiriesAllTime: true,
-    failedStages,
-    stages: Object.fromEntries(settled.map((entry) => [entry.stage, entry.rows])),
+    return { payload, complete: !failedStages.length };
+  });
+}
+
+
+// ============================================================
+// REGIONAL CAMPUS PEOPLE
+//
+// The campus lives in the campus_assigned PARAMETER but is not among the
+// columns maindb returns, so there is no column to group by -- each campus has
+// to be asked for by name and the answer stamped onto its rows. The campus
+// names come from the prompts query.
+//
+// campus_assigned partitions the whole population cleanly (the eight campuses
+// sum to exactly the 5,837-person total), so no row is dropped or counted
+// twice. Hawaii and Boston legitimately return 0: people affiliated with them
+// sit in a pipeline or a teaching site rather than being assigned there.
+//
+// Worst case -- every campus, every stage -- is 8 x 4 = 32 Slate calls, under
+// Cloudflare's 50-subrequest cap, returning the whole population between them.
+// Selecting a campus or a status cuts that sharply, and the result is cached.
+// ============================================================
+
+const REGIONAL_CAMPUS_OPTION_KEYS = ["campus", "campuses"];
+// The campus prompt carries one value that is not a campus. Excluded here so it
+// costs no Slate calls; the wrapper has always left it out of the picker too.
+const REGIONAL_CAMPUS_EXCLUDED = new Set(["doctor of ministry"]);
+const REGIONAL_CAMPUS_STAGES = ["inquiries", "prospects", "applications", "students"];
+const REGIONAL_CAMPUS_FANOUT_LIMIT = 8;
+
+
+async function handleRegionalCampusPeople(request, env, id) {
+  const search = new URL(request.url).searchParams;
+  const filters = {
+    term: String(search.get("term") || "").trim(),
+    year: String(search.get("year") || "").trim(),
+    campus: String(search.get("campus") || "").trim(),
+    status: String(search.get("status") || "").trim().toLowerCase(),
   };
 
-  logInfo(id, "Teaching site people assembled", {
-    term: filters.term,
-    year: filters.year,
-    site: filters.site,
-    counts: Object.fromEntries(settled.map((entry) => [entry.stage, entry.rows.length])),
-    failed: failedStages.length,
+  const cacheKey = `regional-campus-people:v1:${filters.term}|${filters.year}|${filters.campus}|${filters.status}`;
+
+  return serveFunnelRoute(request, env, id, "regional-campus-people", cacheKey, async () => {
+    const options = await fetchSlateOptions(env, id);
+    const campuses = optionValues(options, REGIONAL_CAMPUS_OPTION_KEYS)
+      .filter((name) => !REGIONAL_CAMPUS_EXCLUDED.has(name.toLowerCase()));
+
+    const targets = filters.campus ? [filters.campus] : campuses;
+
+    // A selected status narrows the fan-out to the one stage that can match it.
+    const stages = filters.status
+      ? REGIONAL_CAMPUS_STAGES.filter(
+          (stage) => FUNNEL_STAGE_STATUS[stage].toLowerCase() === filters.status
+        )
+      : REGIONAL_CAMPUS_STAGES;
+
+    if (!targets.length || !stages.length) {
+      return {
+        payload: { campuses, scope: filters.campus, filters, failedCampuses: [], row: [] },
+        complete: false,
+      };
+    }
+
+    const perCampus = await mapWithLimit(targets, REGIONAL_CAMPUS_FANOUT_LIMIT, async (campus) => {
+      try {
+        const settled = await fetchFunnelStages(
+          env, id, "regional-campus-people", stages, filters,
+          { param: "campus_assigned", value: campus }
+        );
+        const failed = settled.filter((entry) => entry.failed).length > 0;
+        // Stamp the campus on: it is what was asked for, and no column carries it.
+        const rows = settled.flatMap((entry) =>
+          entry.rows.map((row) => ({ ...row, campus }))
+        );
+        return { campus, rows, failed };
+      } catch (error) {
+        logError(id, "Regional campus query failed", {
+          campus,
+          message: String(error && error.message ? error.message : error),
+        });
+        return { campus, rows: [], failed: true };
+      }
+    });
+
+    const failedCampuses = perCampus.filter((entry) => entry.failed).map((entry) => entry.campus);
+
+    if (failedCampuses.length === targets.length) {
+      throw new Error("Every regional campus query failed");
+    }
+
+    const payload = {
+      campuses,
+      scope: filters.campus,
+      filters,
+      // As on Teaching Sites: true means the pre-application stages were not
+      // scoped to the period, so the portal should say so.
+      preApplicationAllTime: !personCreatedWindow(filters.term, filters.year),
+      failedCampuses,
+      row: perCampus.flatMap((entry) => entry.rows),
+    };
+
+    logInfo(id, "Regional campus people assembled", {
+      ...filters,
+      campuses: targets.length,
+      stages: stages.length,
+      rows: payload.row.length,
+      failed: failedCampuses.length,
+    });
+
+    return { payload, complete: !failedCampuses.length };
   });
+}
 
-  // Only cache a complete result -- a partial one would pin a stage at zero
-  // for the whole TTL.
-  if (!failedStages.length) {
-    await env.OPTIONS_CACHE
-      .put(cacheKey, JSON.stringify(payload), { expirationTtl: TEACHING_SITE_CACHE_SECONDS })
-      .catch(() => {});
-  }
 
-  return json(payload, env, 200, env.PORTAL_ORIGIN);
+// ============================================================
+// PIPELINE PEOPLE
+//
+// per_pipeline IS returned on every row, so unlike Regional Campus this needs
+// no fan-out: one call for the selected status, grouped by that column here.
+//
+// The totals are a fixed comparison population -- every person by status,
+// ignoring the period -- so they come from one unparameterized call that is
+// tallied rather than four status calls returning the same 5,837 rows between
+// them.
+// ============================================================
+
+const PIPELINE_OPTION_KEYS = ["pipelines", "pipeline"];
+const PIPELINE_TOTAL_KEYS = Object.freeze({
+  Applicant: "applications",
+  Inquiry: "inquiries",
+  Prospect: "prospects",
+  Student: "students",
+});
+
+
+async function handlePipelinePeople(request, env, id) {
+  const search = new URL(request.url).searchParams;
+  const filters = {
+    term: String(search.get("term") || "").trim(),
+    year: String(search.get("year") || "").trim(),
+    status: String(search.get("status") || "applicant").trim().toLowerCase(),
+  };
+
+  const stage = Object.keys(FUNNEL_STAGE_STATUS).find(
+    (key) => FUNNEL_STAGE_STATUS[key].toLowerCase() === filters.status
+  ) || "applications";
+
+  const cacheKey = `pipeline-people:v1:${filters.term}|${filters.year}|${stage}`;
+
+  return serveFunnelRoute(request, env, id, "pipeline-people", cacheKey, async () => {
+    const [options, totalsData, settled] = await Promise.all([
+      fetchSlateOptions(env, id),
+      // Unparameterized: the whole population, tallied by status below.
+      proxySlateQuery(env, id, "pipeline-people:totals", [], new URLSearchParams(), null),
+      fetchFunnelStages(env, id, "pipeline-people", [stage], filters, null),
+    ]);
+
+    const totals = { applications: 0, inquiries: 0, prospects: 0, students: 0 };
+    for (const row of rowsOf(totalsData)) {
+      const key = PIPELINE_TOTAL_KEYS[plainText(row?.per_status)];
+      if (key) totals[key] += 1;
+    }
+
+    const failedStages = settled.filter((entry) => entry.failed).map((entry) => entry.stage);
+
+    const payload = {
+      pipelines: optionValues(options, PIPELINE_OPTION_KEYS),
+      filters: { ...filters, stage },
+      totals,
+      preApplicationAllTime: !personCreatedWindow(filters.term, filters.year),
+      failedStages,
+      // Only people who actually sit in a pipeline; the rest are not this
+      // portal's subject.
+      row: settled
+        .flatMap((entry) => entry.rows)
+        .filter((row) => plainText(row?.per_pipeline)),
+    };
+
+    logInfo(id, "Pipeline people assembled", {
+      ...filters,
+      stage,
+      totals,
+      rows: payload.row.length,
+      failed: failedStages.length,
+    });
+
+    return { payload, complete: !failedStages.length };
+  });
 }
 
 
@@ -2120,6 +2417,20 @@ export default {
         request.method === "GET"
       ) {
         return await handleTeachingSitePeople(request, env, id);
+      }
+
+      if (
+        url.pathname === "/api/slate/regional-campus-people" &&
+        request.method === "GET"
+      ) {
+        return await handleRegionalCampusPeople(request, env, id);
+      }
+
+      if (
+        url.pathname === "/api/slate/pipeline-people" &&
+        request.method === "GET"
+      ) {
+        return await handlePipelinePeople(request, env, id);
       }
 
       if (

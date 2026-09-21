@@ -53,12 +53,17 @@ requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
 | Route | Query | Used by | Allowed params |
 | --- | --- | --- | --- |
 | `GET /api/slate/teaching-site-people` | maindb x3 + prompts | Teaching Sites | `term`, `year`, `site` |
-| `GET /api/slate/teaching-site-counts` | maindb | (no portal caller) | `status`, `year`, `term`, `site` |
+| `GET /api/slate/regional-campus-people` | maindb x(campuses x stages) + prompts | Regional Campus | `campus`, `term`, `year`, `status` |
+| `GET /api/slate/pipeline-people` | maindb x2 + prompts | Pipeline Overview | `status`, `term`, `year` |
+| `GET /api/slate/portal-options` | prompts | (all three above, via the route) | (none) |
 | `GET /api/slate/records` | maindb | Record Lookup, Event Tracker | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
-| `GET /api/slate/inquiries` | maindb | Regional Campus | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
-| `GET /api/slate/portal-options` | prompts | Teaching Sites, Regional Campus | (none) |
-| `GET /api/slate/regional-campus-records` | maindb | Regional Campus | `campus`, `term`, `year` |
 | `GET /api/slate/additional-applications` | maindb | Record Lookup | `sisid` |
+| `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
+| `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
+| `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
+
+The last three have no caller since the portal rebuild and are kept only for
+ad-hoc use. Nothing should be built on them.
 
 Route parameter names that differ from the maindb query’s own are renamed by
 `MAINDB_PARAM_ALIASES` in `worker.js` (`site` → `teachingsite`, `campus` →
@@ -76,11 +81,15 @@ a portal showing real numbers and a portal showing zero.
   Fall, and an inquiry has no application. A portal that wants a period-scoped
   funnel must query its pre-application stages separately, without
   `term`/`year`.
-- **There is no person-created date.** `person_created_date_start` / `_end`
-  are accepted by the `inquiries` route but match nothing, so any
-  period-scoped inquiry count comes back 0. Inquiry counts can only honestly
-  be all-time until a person-created-date parameter is added on the Slate
-  side.
+- **`person_created_date_start` / `person_created_date_end` are how you
+  scope a pre-application stage to a period.** They filter on when the PERSON
+  record was created, which is the only anchor in time an inquiry or prospect
+  has. The period windows live in `PERSON_CREATED_WINDOWS` in `worker.js` and
+  tile the population exactly (2,256 + 46 + 0 = 2,302, the all-time inquiry
+  count). Dates are M/D/YYYY. Send no bound rather than an empty string --
+  the field is Date-typed and rejects `""`.
+  (These returned nothing before 2026-09-21; the query has since been changed
+  on the Slate side, so re-probe before trusting an old note about them.)
 - **There is no `app_degree` column** — the degree is `per_degree_current`.
 - **The output columns are not fixed.** The query has been observed returning
   its `app_*` block (`app_term`, `app_year`, `app_status`, …) on one day
@@ -91,22 +100,46 @@ a portal showing real numbers and a portal showing zero.
 - **One row per person**, not per application (5,837 rows, 5,837 distinct
   `per_url`), so counting rows is counting people.
 
-### The teaching-site route
+### The three portal funnel routes
 
-`teaching-site-people` is the pattern to copy when a portal needs a funnel.
-maindb has no “teaching site is set” parameter, so the route runs the query
-three times — once per funnel stage, with that stage’s correct parameters —
-drops the rows with a blank `per_teachingsite`, and returns the rest grouped
-by stage:
+Teaching Sites, Regional Campus and Pipeline Overview all draw the same shape:
+a population split by person status, narrowed to a period, grouped by some
+affiliation. They share the helpers under PORTAL FUNNELS in `worker.js`,
+which fetch each stage with the parameters that stage can answer to:
 
-    inquiries     status=Inquiry                  (no term/year, see above)
-    applications  status=Applicant + term + year
-    students      status=Student   + term + year
+    pre-application (Inquiry, Prospect)   status + person_created_date_start/end
+    application     (Applicant, Student)  status + term + year
 
-The result is cached in KV for five minutes per `term|year|site` combination.
-The portal makes one request and derives every count, bar and drilldown table
-from the response, so ~4,800 unrelated people never reach the browser.
+What differs between them is how the grouping field is reached:
 
+- **Teaching Sites** -- `per_teachingsite` is returned on every row, so each
+  stage is fetched once, unscoped, and rows without a site are dropped in the
+  worker. 3 Slate calls.
+- **Pipeline Overview** -- `per_pipeline` is returned too, so the same trick
+  applies. Its comparison totals come from one unparameterized call tallied by
+  status rather than four status calls returning the same rows. 2 Slate calls.
+- **Regional Campus** -- the campus exists only as the `campus_assigned`
+  PARAMETER, never as a column, so there is nothing to group by. Each campus is
+  asked for by name and the answer is stamped onto its rows. Worst case (every
+  campus, every status) is 8 x 4 = 32 calls, under Cloudflare’s 50-subrequest
+  cap; picking a campus or status cuts it sharply. `campus_assigned` partitions
+  the population exactly -- the campuses sum to the full 5,837 -- so nothing is
+  lost or double-counted. Hawaii and Boston really are 0.
+
+Every result is cached in KV for five minutes, keyed by the filter combination.
+Each portal makes one request and derives its counts, bars, funnel and
+drilldown tables from the response.
+
+### Portals still on Liquid
+
+**Funnel Overview** and the two event portals cannot move to maindb yet:
+
+- Funnel Overview needs "awaiting approval" and "admitted". maindb returns
+  `app_decision_code` (values `DF`/`WT`/`AT`/`DN`/`WD`/`ADP`, blank for 608
+  of 751 applicants) with no dictionary, and neither it nor `app_status` is a
+  parameter. Its F-1 list needs a flag maindb no longer returns.
+- Event Tracker and Public Event Registrants need event titles and a working
+  event-type filter. maindb has neither.
 **Adding a new Slate query to a portal:** never hardcode a query `id`/`h` in a
 wrapper file. Add a route in `worker.js` that calls `handleSlateProxyRoute`
 with an explicit parameter whitelist, then point the wrapper at

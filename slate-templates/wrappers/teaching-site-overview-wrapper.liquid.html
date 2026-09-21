@@ -12,18 +12,20 @@
   handleTeachingSitePeople in tools/queryomatic/worker.js) runs maindb three
   times, once per funnel stage, because the stages need different parameters:
 
-    inquiries     status=Inquiry                  (no term/year — see below)
+    inquiries     status=Inquiry   + person_created_date_start/_end
     applications  status=Applicant + term + year
     students      status=Student   + term + year
 
   maindb's term/year parameters filter on the APPLICATION's term and year, so
   asking for status=Inquiry together with term/year returns zero rows every
-  time — an inquiry has no application. That is why inquiries are queried on
-  their own, and why they are ALL-TIME in every period: maindb exposes no
-  person-created date to scope them by. The gateway sets inquiriesAllTime and
-  this page passes it through so the report can label the stat on screen
-  instead of showing a number that quietly means something different from the
-  two beside it.
+  time — an inquiry has no application. Inquiries are scoped by when the person
+  record was created instead, using the calendar window for the selected period
+  (PERSON_CREATED_WINDOWS in the worker).
+
+  If a period has no window configured the gateway falls back to an all-time
+  inquiry count and sets inquiriesAllTime; this page passes that through so the
+  report can label the stat rather than let it be mistaken for a per-period
+  count.
 
   maindb has no "teaching site is set" parameter either, so the gateway drops
   rows with a blank per_teachingsite before responding. The portal receives a
@@ -93,8 +95,8 @@
     records: [],
     studentsBySite: [],
     teachingSites: [],
-    // Set by the gateway: inquiry counts ignore the period selector because
-    // maindb has no person-created date. The report page renders a note.
+    // Set by the gateway. True only when the period could not be applied to
+    // the inquiry stage, in which case the report page renders a note.
     inquiriesAllTime: true
   };
   const allowedParams = new Set(['term', 'year', 'site']);
@@ -173,8 +175,8 @@
 
   async function fetchPeople() {
     const url = new URL(peopleService);
-    // The gateway applies these as Slate parameters; see its header comment for
-    // why inquiries ignore term/year.
+    // The gateway turns these into the right Slate parameters per stage; see
+    // its header comment.
     if (payload.filters.term) url.searchParams.set('term', payload.filters.term);
     if (payload.filters.year) url.searchParams.set('year', payload.filters.year);
     if (payload.filters.site) url.searchParams.set('site', payload.filters.site);

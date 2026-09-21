@@ -1,31 +1,108 @@
 <!--
   Pipeline Overview Slate wrapper.
-  Configure pipeline_persons to use the status, term, and year URL parameters.
-  The total_* exports are fixed comparison populations and should not use the
-  term or year parameters.
+
+  This page needs NO Liquid query configured on the Slate portal page. Both the
+  comparison totals and the per-pipeline records come from one request to the
+  GS Labs Slate Gateway, which runs the shared maindb ("all people") query.
+
+  How the data is assembled
+  -------------------------
+  The gateway route (/api/slate/pipeline-people, see handlePipelinePeople in
+  tools/queryomatic/worker.js) makes two maindb calls:
+
+    totals   no parameters, tallied by per_status. These are a fixed
+             comparison population and deliberately ignore the period.
+    records  the selected status, with the parameters that status can answer to
+
+  That second point is the one that matters. maindb's term/year parameters
+  filter on the APPLICATION's term and year, so asking for status=Inquiry (or
+  Prospect) together with term/year returns zero rows every time — neither has
+  an application. Those two statuses are scoped by when the person record was
+  created instead, using the calendar window for the selected period.
+
+  Unlike Regional Campus, no fan-out is needed here: per_pipeline is returned on
+  every row, so the gateway drops the people who sit in no pipeline and this
+  page groups the rest by that column.
 -->
-<div id="pipelineOverviewData" style="display:none">
-  <div class="totals"><span class="applications">{{ total_apps.size }}</span><span class="inquiries">{{ total_inquiries.size }}</span><span class="prospects">{{ total_prospects.size }}</span><span class="students">{{ total_students.size }}</span></div>
-  <div class="records">{% for record in pipeline_persons %}<div class="record"><span class="title">{{ record.title | escape }}</span></div>{% endfor %}</div>
-</div>
-<iframe id="pipelineOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/pipeline-overview/" title="Pipeline Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="pipelineOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/pipeline-overview/?v=pipeline-v2" title="Pipeline Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
   const dashboard = 'pipeline-overview';
   const frameOrigin = 'https://cade-macritchie.github.io';
+  // The gateway injects the Slate query id/token server-side — see
+  // tools/queryomatic/worker.js. Nothing credential-related is ever here.
+  const workerBase = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
+  const peopleService = workerBase + '/api/slate/pipeline-people';
   const frame = document.getElementById('pipelineOverviewFrame');
-  const root = document.getElementById('pipelineOverviewData');
-  const read = (node, key) => { const el = node && node.querySelector('.' + key); return el ? el.textContent.trim() : ''; };
-  const number = value => Number(value) || 0;
   const pageUrl = new URL(window.location.href);
   const payload = {
-    filters: { status: pageUrl.searchParams.get('status') || 'applicant', term: pageUrl.searchParams.get('term') || '', year: pageUrl.searchParams.get('year') || '' },
-    totals: { applications: number(read(root.querySelector('.totals'), 'applications')), inquiries: number(read(root.querySelector('.totals'), 'inquiries')), prospects: number(read(root.querySelector('.totals'), 'prospects')), students: number(read(root.querySelector('.totals'), 'students')) },
-    records: Array.from(root.querySelectorAll('.record')).map(node => ({ title: read(node, 'title') }))
+    filters: {
+      status: pageUrl.searchParams.get('status') || 'applicant',
+      term: pageUrl.searchParams.get('term') || '',
+      year: pageUrl.searchParams.get('year') || ''
+    },
+    totals: { applications:0, inquiries:0, prospects:0, students:0 },
+    records: [],
+    // Set by the gateway. True means the period could not be applied to the
+    // pre-application statuses, so an inquiry or prospect view is all-time.
+    preApplicationAllTime: false
   };
   const allowedParams = new Set(['status', 'term', 'year']);
-  function sendData() { if (frame.contentWindow) frame.contentWindow.postMessage({ type:'enrollment-dashboard-data', dashboard, payload }, frameOrigin); }
+
+  function text(value) {
+    return value == null ? '' : String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function rowsFrom(response) {
+    if (Array.isArray(response)) return response;
+    if (response && Array.isArray(response.row)) return response.row;
+    return response && response.row ? [response.row] : [];
+  }
+
+  async function fetchPeople() {
+    const url = new URL(peopleService);
+    Object.keys(payload.filters).forEach(function (key) {
+      const value = text(payload.filters[key]);
+      if (value) url.searchParams.set(key, value);
+    });
+    const response = await fetch(url.toString().replace(/\+/g, '%20'), {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { Accept:'application/json' }
+    });
+    if (!response.ok) throw new Error('Pipeline query returned ' + response.status);
+    return await response.json();
+  }
+
+  function build(body) {
+    if (body && body.totals) {
+      Object.keys(payload.totals).forEach(function (key) {
+        payload.totals[key] = Number(body.totals[key]) || 0;
+      });
+    }
+    if (typeof body.preApplicationAllTime === 'boolean') payload.preApplicationAllTime = body.preApplicationAllTime;
+    // The report groups these by title, the same shape the Liquid loop produced.
+    payload.records = rowsFrom(body)
+      .map(function (row) { return { title: text(row && row.per_pipeline) }; })
+      .filter(function (record) { return record.title; });
+    return payload;
+  }
+
+  async function loadData() {
+    try {
+      return build(await fetchPeople());
+    } catch (error) {
+      console.error('Pipeline query failed.', error);
+      payload.loadError = 'Unable to load pipeline records from Slate. Please try again.';
+      return payload;
+    }
+  }
+
+  const dataPromise = loadData();
+  async function sendData() {
+    const resolvedPayload = await dataPromise;
+    if (frame.contentWindow) frame.contentWindow.postMessage({ type:'enrollment-dashboard-data', dashboard, payload:resolvedPayload }, frameOrigin);
+  }
   function navigate(message) {
     const url = new URL(window.location.href);
     Object.keys(message.set || {}).forEach(key => { const value = String(message.set[key] || '').trim(); if (allowedParams.has(key) && value.length <= 100) url.searchParams.set(key, value); });
