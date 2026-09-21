@@ -1,13 +1,5 @@
 # Slate template folders
 
-## `branded-form.css`
-
-Drop-in CSS for a standalone Slate form (the query-form builder, not the portal
-dashboards). Scoped under the form's `#form_<guid>_container` id and built on
-the same navy/teal/gold palette as `assets/dashboard.css`. Swap the id in the
-file for the target form's actual container id before pasting into Slate's
-form CSS block.
-
 ## `wrappers/` — paste these into Slate
 
 These are the current production templates. Each file sends Slate query results to its matching GitHub-hosted page:
