@@ -1,0 +1,14 @@
+name = "slate-waiver-codes"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://enroll.gs.edu"
+
+# Create with: wrangler d1 create slate-waiver-codes
+# Then paste the returned database_id below and apply schema.sql:
+#   wrangler d1 execute slate-waiver-codes --remote --file ./schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "slate-waiver-codes"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
