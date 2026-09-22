@@ -87,6 +87,44 @@ export default {
         return json({ waiverCode: result }, 201, cors);
       }
 
+      // POST /api/waiver-codes/sync — admin only, bulk-add from a nightly
+      // Slate export. Body: { codes: [{ code, amount }, ...] }. Inserts
+      // codes it hasn't seen before; an already-known code is left alone
+      // so a code someone used earlier today doesn't get its amount reset
+      // back to the export's original value on the next sync.
+      if (parts.length === 3 && parts[2] === 'sync' && request.method === 'POST') {
+        if (!isAdmin(request, env)) return json({ error: 'unauthorized' }, 401, cors);
+        const body = await request.json().catch(() => ({}));
+        const rows = Array.isArray(body.codes) ? body.codes : [];
+        if (!rows.length) return json({ error: 'codes array is required' }, 400, cors);
+
+        const created = [];
+        const skipped = [];
+        const invalid = [];
+        const seen = new Set();
+
+        for (const row of rows) {
+          const rowCode = normalizeCode(row && row.code);
+          const rowAmount = Number(row && row.amount);
+          if (!rowCode || !Number.isInteger(rowAmount) || rowAmount < 0) {
+            invalid.push((row && row.code) || '(blank)');
+            continue;
+          }
+          if (seen.has(rowCode)) continue;
+          seen.add(rowCode);
+
+          const result = await env.DB.prepare(
+            `INSERT INTO waiver_codes (code, amount, created_at, updated_at)
+             VALUES (?, ?, datetime('now'), datetime('now'))
+             ON CONFLICT(code) DO NOTHING
+             RETURNING code`
+          ).bind(rowCode, rowAmount).first();
+          if (result) created.push(rowCode); else skipped.push(rowCode);
+        }
+
+        return json({ created, skipped, invalid }, 200, cors);
+      }
+
       const code = parts.length >= 3 ? normalizeCode(parts[2]) : '';
       if (parts.length >= 3 && !code) {
         return json({ error: 'invalid code' }, 400, cors);
