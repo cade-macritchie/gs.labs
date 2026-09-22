@@ -62,6 +62,7 @@ requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
 | `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
 | `GET /api/slate/checkin-search` | maindb | Check-In (`tools/checkin/`) | `first`, `last`, `sisid` |
+| `GET /api/slate/checkin-qr-image` | (proxies a Slate-rendered PNG, not maindb) | Check-In (`tools/checkin/`) | `url` (validated against `CHECKIN_QR_IMAGE_PATTERN`) |
 
 The last three (before `checkin-search`) have no caller since the portal
 rebuild and are kept only for ad-hoc use. Nothing should be built on them.
@@ -110,11 +111,15 @@ a portal showing real numbers and a portal showing zero.
   the `per_*` columns, which have been stable.
 - **One row per person**, not per application (5,837 rows, 5,837 distinct
   `per_url`), so counting rows is counting people.
-- **The check-in portal needs `per_qr` exported.** `tools/checkin/` reads
-  `per_qr` off each row and encodes it as the printed QR code. If it comes
-  back blank, check that the maindb query's export list includes it — the
-  Worker passes columns through unchanged, so there's nothing to fix here if
-  Slate isn't sending the field.
+- **The check-in portal's QR field is `per_qr_url` (verified live
+  2026-09-22), and it's a URL, not a code.** `tools/checkin/` reads
+  `per_qr_url` off each row; its value is a link to a PNG Slate already
+  renders (`https://enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person`),
+  which the checkin-qr-image route (below) re-serves with CORS headers so
+  the page can print it. If it comes back blank, check that the maindb
+  query's export list includes it — the Worker passes columns through
+  unchanged, so there's nothing to fix here if Slate isn't sending the
+  field.
 
 ### The three portal funnel routes
 

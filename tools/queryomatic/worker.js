@@ -69,6 +69,8 @@
  * - GET /api/slate/checkin-search             (tools/checkin/, called directly from GitHub
  *   Pages — NOT a Slate wrapper, so this one route checks Origin against
  *   ALLOWED_ORIGIN instead of PORTAL_ORIGIN. See handlePagesSlateProxyRoute.)
+ * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
+ *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
  *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
@@ -367,6 +369,60 @@ async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedPa
 // add it here, e.g. { alt_form_type: "Event" }, the same way the /inquiries
 // route pins { status: "Inquiry" }.
 const CHECKIN_FIXED_PARAMS = Object.freeze({});
+
+
+// ============================================================
+// CHECK-IN QR IMAGE PROXY
+//
+// maindb's per_qr_url column (verified live 2026-09-22) is not an opaque
+// code to encode ourselves — it's a link to a PNG Slate already renders at
+// enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person. That
+// response carries no Access-Control-Allow-Origin header, so a browser on
+// GitHub Pages can display it in a plain <img> (tag loads aren't
+// CORS-gated) but cannot read its pixel bytes via fetch()/canvas — which
+// tools/checkin/ needs to do to hand the image to the Dymo SDK for
+// printing. This route does that read server-side, where CORS doesn't
+// apply, and re-serves the bytes with CORS headers for ALLOWED_ORIGIN.
+//
+// The `url` parameter is checked against an exact pattern (Slate's own
+// host/path/query shape, GUID-validated) rather than fetched blind, so this
+// can't be turned into an open image-fetching proxy for arbitrary URLs.
+// ============================================================
+
+const CHECKIN_QR_IMAGE_PATTERN =
+  /^https:\/\/enroll\.gs\.edu\/register\/mobile\?id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}&cmd=barcode&type=person$/i;
+
+async function handleCheckinQrImage(request, env, id) {
+  if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "checkin-qr-image"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
+  }
+
+  const target = new URL(request.url).searchParams.get("url") || "";
+  if (!CHECKIN_QR_IMAGE_PATTERN.test(target)) {
+    return json({ error: "Unrecognized QR image URL", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+
+  logInfo(id, "Checkin QR image proxy request", { url: safeUrl(target) });
+
+  const resp = await fetch(target, { headers: { Accept: "image/png" } });
+  if (!resp.ok) {
+    return json({ error: `QR image fetch failed: HTTP ${resp.status}`, requestId: id }, env, 502, env.ALLOWED_ORIGIN);
+  }
+
+  const bytes = await resp.arrayBuffer();
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      "Content-Type": resp.headers.get("content-type") || "image/png",
+      "Cache-Control": "no-store",
+      ...corsHeaders(env, env.ALLOWED_ORIGIN),
+    },
+  });
+}
 
 
 // ============================================================
@@ -2560,6 +2616,15 @@ export default {
         );
       }
 
+      // Re-serves a per_qr_url PNG with CORS headers so tools/checkin/ can
+      // read its bytes for Dymo printing — see handleCheckinQrImage.
+      if (
+        url.pathname === "/api/slate/checkin-qr-image" &&
+        request.method === "GET"
+      ) {
+        return await handleCheckinQrImage(request, env, id);
+      }
+
       if (
         url.pathname === "/api/analytics/summary" &&
         request.method === "GET"
@@ -2843,7 +2908,7 @@ export default {
         },
         env,
         500,
-        url.pathname === "/api/slate/checkin-search"
+        url.pathname === "/api/slate/checkin-search" || url.pathname === "/api/slate/checkin-qr-image"
           ? env.ALLOWED_ORIGIN
           : url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
       );

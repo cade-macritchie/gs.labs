@@ -114,7 +114,7 @@
     .profile-meta { margin: 10px 0 0; color: var(--muted); font-size: .92rem; }
 
     .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 24px 0; padding: 22px; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--canvas); }
-    .qr-wrap canvas { display: block; max-width: 100%; height: auto; background: #fff; padding: 10px; border-radius: var(--radius); }
+    .qr-wrap canvas, .qr-wrap img { display: block; max-width: 100%; height: auto; background: #fff; padding: 10px; border-radius: var(--radius); }
     .qr-missing { color: var(--muted); text-align: center; font-size: .9rem; }
 
     .print-row { display: flex; flex-direction: column; gap: 10px; }
@@ -138,7 +138,7 @@
     @media print {
       body > *:not(#print-fallback) { display: none !important; }
       #print-fallback.printing { display: flex !important; flex-direction: column; align-items: center; gap: 8px; padding: 0; }
-      #print-fallback canvas { width: 200px; height: 200px; }
+      #print-fallback canvas, #print-fallback img { width: 200px; height: 200px; }
       #print-fallback .print-name { font: 700 14pt var(--font-subheading, Arial, sans-serif); }
     }
 
@@ -194,6 +194,12 @@
     // /api/slate/records — see tools/queryomatic/worker.js and its README.
     const WORKER_URL = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
     const CHECKIN_SERVICE = WORKER_URL + '/api/slate/checkin-search';
+    // per_qr_url (verified live 2026-09-22) is a link to a PNG Slate already
+    // renders, not an opaque code — enroll.gs.edu sends no CORS headers, so
+    // this route re-serves the bytes with CORS for the Dymo print path,
+    // which needs to read pixels, not just display them. See
+    // handleCheckinQrImage in tools/queryomatic/worker.js.
+    const CHECKIN_QR_IMAGE_SERVICE = WORKER_URL + '/api/slate/checkin-qr-image';
 
     const searchForm = document.getElementById('search-form');
     const searchInput = document.getElementById('search-input');
@@ -211,7 +217,7 @@
     // Field parsing — same shape as the other portals' field()/plain()
     // helpers (see slate-templates/wrappers/student-lookup-wrapper.liquid.html),
     // trimmed down to what this page needs: name, email, status, SIS ID, and
-    // the new per_qr field.
+    // per_qr_url.
     // ----------------------------------------------------------------
 
     function text(value) { return value == null ? '' : String(value).trim(); }
@@ -260,6 +266,8 @@
       return response && response.row ? [response.row] : [];
     }
 
+    // per_qr is kept as a fallback name in case Slate's export ever gets
+    // renamed back — the live field as of 2026-09-22 is per_qr_url.
     function normalize(row) {
       const rawName = field(row, ['per_name', 'name', 'full_name']);
       return {
@@ -267,8 +275,18 @@
         email: plain(field(row, ['per_email', 'email'])),
         status: plain(field(row, ['per_status', 'status'])),
         sisid: plain(field(row, ['per_sisid', 'sisid', 'SIS_ID'])),
-        qr: plain(field(row, ['per_qr', 'qr'])),
+        qrUrl: plain(field(row, ['per_qr_url', 'per_qr', 'qr'])),
       };
+    }
+
+    // per_qr_url is a link to an already-rendered PNG; treat anything else
+    // (a bare code string) as text to encode ourselves instead.
+    function isProbablyUrl(value) { return /^https?:\/\//i.test(value); }
+
+    function qrImageProxyUrl(qrUrl) {
+      const url = new URL(CHECKIN_QR_IMAGE_SERVICE);
+      url.searchParams.set('url', qrUrl);
+      return url.toString();
     }
 
     // Splits "first last" into every first/last/sisid combination worth
@@ -376,19 +394,31 @@
 
       const qrArea = profile.querySelector('.qr-area');
       const printBtn = profile.querySelector('#print-btn');
-      if (person.qr) {
+      if (person.qrUrl && isProbablyUrl(person.qrUrl)) {
+        const wrap = document.createElement('div');
+        wrap.className = 'qr-wrap';
+        const img = document.createElement('img');
+        img.alt = 'QR code for ' + person.name;
+        img.width = 220;
+        img.height = 220;
+        img.src = qrImageProxyUrl(person.qrUrl);
+        img.addEventListener('error', function () { setBanner('Could not load the QR code image for this person.', 'error'); }, { once: true });
+        wrap.appendChild(img);
+        qrArea.appendChild(wrap);
+      } else if (person.qrUrl) {
+        // Not URL-shaped — treat it as a raw value to encode client-side.
         const wrap = document.createElement('div');
         wrap.className = 'qr-wrap';
         const canvas = document.createElement('canvas');
         wrap.appendChild(canvas);
         qrArea.appendChild(wrap);
-        window.QRCode.toCanvas(canvas, person.qr, { width: 220, margin: 1 }, function (err) {
+        window.QRCode.toCanvas(canvas, person.qrUrl, { width: 220, margin: 1 }, function (err) {
           if (err) setBanner('Could not render the QR code for this person.', 'error');
         });
       } else {
         const missing = document.createElement('p');
         missing.className = 'qr-missing';
-        missing.textContent = 'No QR code on file for this person (per_qr is blank).';
+        missing.textContent = 'No QR code on file for this person (per_qr_url is blank).';
         qrArea.appendChild(missing);
         printBtn.disabled = true;
       }
@@ -418,7 +448,67 @@
 
     // Default label: 30334 (2-1/4in x 1-1/4in), a QR code on the left and the
     // person's name on the right. Twips (1/1440 in). Edit to match your stock.
-    const LABEL_XML =
+    //
+    // Two variants of the QR object, since per_qr_url turned out (verified
+    // live) to be a link to Slate's own rendered PNG rather than a code to
+    // encode ourselves: LABEL_XML_IMAGE places that PNG via an ImageObject
+    // (the normal path); LABEL_XML_TEXT keeps the original QRCodeObject
+    // approach as a fallback for a bare/non-URL value. Both carry a 1x1
+    // transparent PNG / empty placeholder that gets overwritten before
+    // printing — see printLabel().
+    const PLACEHOLDER_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+    const NAME_OBJECT_XML =
+      '<ObjectInfo>' +
+        '<TextObject>' +
+          '<Name>NAME</Name>' +
+          '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
+          '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
+          '<Rotation>Rotation0</Rotation>' +
+          '<IsMirrored>False</IsMirrored>' +
+          '<IsVariable>True</IsVariable>' +
+          '<HorizontalAlignment>Center</HorizontalAlignment>' +
+          '<VerticalAlignment>Middle</VerticalAlignment>' +
+          '<TextFitMode>ShrinkToFit</TextFitMode>' +
+          '<UseFullFontHeight>True</UseFullFontHeight>' +
+          '<Verticalized>False</Verticalized>' +
+          '<StyledText>' +
+            '<Element>' +
+              '<String>PLACEHOLDER</String>' +
+              '<Attributes><Font Family="Arial" Size="10" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes>' +
+            '</Element>' +
+          '</StyledText>' +
+        '</TextObject>' +
+        '<Bounds X="850" Y="90" Width="700" Height="720" />' +
+      '</ObjectInfo>';
+
+    const LABEL_XML_IMAGE =
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<DieCutLabel Version="8.0" Units="twips">' +
+        '<PaperOrientation>Landscape</PaperOrientation>' +
+        '<Id>Small</Id>' +
+        '<PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>' +
+        '<DrawCommands><RoundRectangle X="0" Y="0" Width="1620" Height="900" Rx="270" Ry="270" /></DrawCommands>' +
+        '<ObjectInfo>' +
+          '<ImageObject>' +
+            '<Name>QR</Name>' +
+            '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
+            '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
+            '<Rotation>Rotation0</Rotation>' +
+            '<IsMirrored>False</IsMirrored>' +
+            '<IsVariable>True</IsVariable>' +
+            '<Image>' + PLACEHOLDER_PNG_BASE64 + '</Image>' +
+            '<ScaleMode>Uniform</ScaleMode>' +
+            '<BorderWidth>0</BorderWidth>' +
+            '<HorizontalAlignment>Center</HorizontalAlignment>' +
+            '<VerticalAlignment>Middle</VerticalAlignment>' +
+          '</ImageObject>' +
+          '<Bounds X="90" Y="90" Width="720" Height="720" />' +
+        '</ObjectInfo>' +
+        NAME_OBJECT_XML +
+      '</DieCutLabel>';
+
+    const LABEL_XML_TEXT =
       '<?xml version="1.0" encoding="utf-8"?>' +
       '<DieCutLabel Version="8.0" Units="twips">' +
         '<PaperOrientation>Landscape</PaperOrientation>' +
@@ -441,28 +531,7 @@
           '</QRCodeObject>' +
           '<Bounds X="90" Y="90" Width="720" Height="720" />' +
         '</ObjectInfo>' +
-        '<ObjectInfo>' +
-          '<TextObject>' +
-            '<Name>NAME</Name>' +
-            '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
-            '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
-            '<Rotation>Rotation0</Rotation>' +
-            '<IsMirrored>False</IsMirrored>' +
-            '<IsVariable>True</IsVariable>' +
-            '<HorizontalAlignment>Center</HorizontalAlignment>' +
-            '<VerticalAlignment>Middle</VerticalAlignment>' +
-            '<TextFitMode>ShrinkToFit</TextFitMode>' +
-            '<UseFullFontHeight>True</UseFullFontHeight>' +
-            '<Verticalized>False</Verticalized>' +
-            '<StyledText>' +
-              '<Element>' +
-                '<String>PLACEHOLDER</String>' +
-                '<Attributes><Font Family="Arial" Size="10" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes>' +
-              '</Element>' +
-            '</StyledText>' +
-          '</TextObject>' +
-          '<Bounds X="850" Y="90" Width="700" Height="720" />' +
-        '</ObjectInfo>' +
+        NAME_OBJECT_XML +
       '</DieCutLabel>';
 
     function dymoAvailable() {
@@ -487,7 +556,17 @@
       }
     }
 
-    function printLabel(person) {
+    // Reads a fetch Response's body as a "data:image/png;base64,...." URI.
+    function blobToDataUrl(blob) {
+      return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function printLabel(person) {
       const statusEl = profile.querySelector('#print-status');
       const fallbackBtn = profile.querySelector('#print-fallback-btn');
       statusEl.textContent = '';
@@ -507,10 +586,23 @@
           fallbackBtn.hidden = false;
           return;
         }
-        const label = window.dymo.label.framework.openLabelXml(LABEL_XML);
-        label.setObjectText('QR', person.qr);
-        label.setObjectText('NAME', person.name);
-        label.print(labelPrinter.name);
+
+        if (isProbablyUrl(person.qrUrl)) {
+          statusEl.textContent = 'Fetching QR image…';
+          const response = await fetch(qrImageProxyUrl(person.qrUrl), { cache: 'no-store' });
+          if (!response.ok) throw new Error('QR image request returned ' + response.status);
+          const dataUrl = await blobToDataUrl(await response.blob());
+          const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          const label = window.dymo.label.framework.openLabelXml(LABEL_XML_IMAGE);
+          label.setObjectImage('QR', base64);
+          label.setObjectText('NAME', person.name);
+          label.print(labelPrinter.name);
+        } else {
+          const label = window.dymo.label.framework.openLabelXml(LABEL_XML_TEXT);
+          label.setObjectText('QR', person.qrUrl);
+          label.setObjectText('NAME', person.name);
+          label.print(labelPrinter.name);
+        }
         statusEl.textContent = 'Sent to ' + labelPrinter.name + '.';
       } catch (err) {
         statusEl.textContent = 'Printing failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
@@ -523,11 +615,23 @@
     // so check-in can still produce a printable QR (on whatever printer the
     // OS print dialog offers) rather than being fully blocked.
     function printViaBrowser(person) {
-      if (!person.qr) return;
+      if (!person.qrUrl) return;
+      if (isProbablyUrl(person.qrUrl)) {
+        printFallback.innerHTML = '<img alt="">' + '<div class="print-name"></div>';
+        printFallback.querySelector('.print-name').textContent = person.name;
+        const img = printFallback.querySelector('img');
+        img.addEventListener('load', function () {
+          printFallback.classList.add('printing');
+          window.print();
+          printFallback.classList.remove('printing');
+        }, { once: true });
+        img.src = qrImageProxyUrl(person.qrUrl);
+        return;
+      }
       printFallback.innerHTML = '<canvas></canvas><div class="print-name"></div>';
       printFallback.querySelector('.print-name').textContent = person.name;
       const canvas = printFallback.querySelector('canvas');
-      window.QRCode.toCanvas(canvas, person.qr, { width: 300, margin: 1 }, function (err) {
+      window.QRCode.toCanvas(canvas, person.qrUrl, { width: 300, margin: 1 }, function (err) {
         if (err) return;
         printFallback.classList.add('printing');
         window.print();
