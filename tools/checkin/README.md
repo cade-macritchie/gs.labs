@@ -47,23 +47,35 @@ only, no record of who checked in or when.
 
 Printing goes through DYMO's own browser SDK (`dymo.label.framework.*`),
 which talks to the DYMO Connect desktop app running locally on the check-in
-device. Two things to do before relying on this live:
+device. `vendor/dymo.connect.framework.js` is committed here (fetched
+2026-09-22 straight from `dymosoftware/dymo-connect-framework`, DYMO's own
+GitHub org) — nothing to download separately.
 
-1. **Get the SDK file.** See `vendor/README.md` — download
-   `dymo.connect.framework.js` from DYMO's SDK and commit it into `vendor/`.
-   Without it, the page still works but only offers the browser-print
-   fallback (a plain `window.print()` of the QR image and name).
-2. **Verify the label XML.** `LABEL_XML_IMAGE` in `index.html` targets a
-   30334 (2-1/4in x 1-1/4in) label with an `ImageObject` on the left (fed
-   Slate's PNG via `label.setObjectImage`) and the person's name on the
-   right, built from the documented DYMO Label XML schema — it has **not**
-   been tested against a physical LabelWriter. Do one real test print, and
-   if it's misaligned or on the wrong stock, adjust `<PaperName>` and each
-   `<Bounds>` to match. The easiest way to get a known-good template is to
-   design a label once in the DYMO Connect desktop app, save it, and copy
-   its XML into this constant instead of hand-tuning bounds. `LABEL_XML_TEXT`
-   is the original QR-code-object template, kept only as the fallback path
-   for a non-URL QR value.
+Its actual source (not just the documented API) was checked to get the
+implementation right:
+
+- **There is no `setObjectImage()`.** `setObjectText(name, value)` is the
+  only setter; called on an `ImageObject` it dispatches internally to a
+  handler that only has a working code path when the label XML is authored
+  in the older `<DieCutLabel>` schema (used here, same as every official
+  DYMO sample label) — it then finds that object's `<Image>` element and
+  overwrites its content. That's what `printLabel()` in `index.html` does.
+- **A `QRCodeObject`'s value can't be set dynamically in this schema at
+  all** — the SDK's internal handler for it has no code path for
+  `<DieCutLabel>`-schema labels, only for DYMO's newer `<DYMOLabel>` schema.
+  So there's one printing code path, not two: a non-URL QR value (never seen
+  live, but handled) is rendered to a PNG via QRCode.js first, then printed
+  through the same `ImageObject` path as the normal `per_qr_url` case.
+- **`getPrinters()` printer-type value is `"LabelWriterPrinter"`** —
+  confirmed present in the SDK source; nothing else is checked for.
+
+**What's still unverified is physical alignment.** `LABEL_XML_IMAGE` in
+`index.html` targets a 30334 (2-1/4in x 1-1/4in) label with the QR image on
+the left and the person's name on the right — do one real test print, and if
+it's misaligned or on the wrong stock, adjust `<PaperName>` and each
+`<Bounds>` to match. The easiest way to get a known-good template is to
+design a label once in the DYMO Connect desktop app, save it, and copy its
+XML into this constant instead of hand-tuning bounds.
 
 The header shows a live "DYMO ready — <printer name>" / "DYMO Connect not
 detected" status so staff can tell at a glance whether printing will work,
