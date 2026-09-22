@@ -1,0 +1,13 @@
+<!--
+  Check-In Slate wrapper.
+
+  Unlike every other wrapper in this folder, this one needs no Slate query
+  export and does no postMessage data handoff — the Check-In page
+  (tools/checkin/) calls the gs-labs-slate-gateway Worker's checkin-search
+  and checkin-qr-image routes directly with its own script (see
+  tools/checkin/README.md), the same way tools/idea-box/ calls its own
+  Worker directly rather than going through a Slate query. This wrapper is
+  just an iframe embed so the tool can also be reached from inside a Slate
+  portal page, alongside its standalone GitHub Pages URL.
+-->
+<iframe id="checkinFrame" src="https://cade-macritchie.github.io/gs.labs/tools/checkin/?v=checkin-v1" title="Check-In" referrerpolicy="origin" style="width:100%;height:100vh;min-height:700px;border:0;display:block"></iframe>

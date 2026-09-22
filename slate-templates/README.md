@@ -11,6 +11,7 @@ These are the current production templates. Each file sends Slate query results 
 - `funnel-overview-wrapper.liquid.html`
 - `student-lookup-wrapper.liquid.html`
 - `regional-campus-wrapper.liquid.html`
+- `checkin-wrapper.liquid.html`
 
 The live hosted HTML is kept in each tool's top-level folder—for example, `pipeline-overview/index.html`. Those locations must not be moved without also updating the iframe URLs in the wrappers.
 
@@ -23,3 +24,5 @@ The Record Lookup wrapper does not require a portal query. It fetches the config
 The Event Tracker wrapper also fetches `all_people`, always passing `alt_form_type=Event`. Its `event_people` portal query needs only the event title plus a stable person identity (`sisid`/`per_sisid` or `email`/`per_email`) so the fetched person details can be associated with the correct event without rendering complex person exports through Liquid.
 
 The Public Event Registrants wrapper uses only the `public_events_registrants` Liquid query export. Each registrant row must expose `ev_title`, `reg_date`, `ev_date`, and `ev_link_slate`. `reg_date` is when that registrant registered, `ev_date` is the event date repeated on each row, and `ev_link_slate` links to the Slate event record. Liquid renders all rows and supplies the source total with `public_events_registrants | size`; JavaScript groups matching event titles into one event, counts their rows, and retains their registration dates for the cumulative growth chart. It does not fetch an API.
+
+The Check-In wrapper is different from every other wrapper here: it requires no Liquid query export at all. `tools/checkin/`'s own script calls the `gs-labs-slate-gateway` Worker's `checkin-search` and `checkin-qr-image` routes directly, the same way `tools/idea-box/` talks to its own Worker rather than a Slate query — see `tools/checkin/README.md`. The wrapper is a bare iframe embed, useful only so the tool can also be opened from inside a Slate portal page; it's optional, since the tool already works standalone at its GitHub Pages URL.
