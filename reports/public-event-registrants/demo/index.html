@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="origin">
+  <meta name="robots" content="noindex">
+  <title>Conference Breakout Data — Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Playfair+Display:wght@600;700&amp;family=Montserrat:wght@400;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../assets/dashboard.css">
+  <style>
+    /* GS 2026 brand refresh. Scoped to .conference-demo-dashboard, using
+       namespaced --nb-* vars rather than assets/dashboard.css's shared
+       --navy/--teal/--gold/--border/--radius (those stay untouched — see
+       BRANDGUIDE.md). */
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+    .conference-demo-dashboard {
+      --nb-black:#0c0f14; --nb-darkgray:#2c343a; --nb-teal:#234048; --nb-rust:#c44329; --nb-gold:#d3a422; --nb-grayblue:#708aa2;
+      --nb-radius:4px;
+      --nb-font-heading:'Tiempos Fine',Georgia,serif; --nb-font-subheading:Montserrat,'Segoe UI',sans-serif; --nb-font-body:'Open Sans',system-ui,sans-serif;
+    }
+    .conference-demo-dashboard .gs-header { background: linear-gradient(120deg, var(--nb-black), var(--nb-darkgray)); }
+    .conference-demo-dashboard .wordmark { display: flex; align-items: center; }
+    .conference-demo-dashboard .wordmark-logo { height: 26px; width: auto; }
+    .conference-demo-dashboard .header-title { display: inline-flex; align-items: center; gap: 10px; color: var(--nb-gold); font-family: var(--nb-font-subheading); }
+    .conference-demo-dashboard .header-title::before, .conference-demo-dashboard .header-title::after { content: ''; width: 16px; height: 1px; background: var(--nb-gold); }
+
+    .conference-demo-dashboard .page-intro { background: linear-gradient(122deg, var(--nb-black), var(--nb-darkgray)); border-radius: var(--nb-radius); }
+    .conference-demo-dashboard .page-intro::before {
+      border: 0; box-shadow: none; border-radius: 0;
+      width: 260px; height: 260px; top: auto; right: -30px; bottom: -30px;
+      background: url('../../../assets/brand-new/gs-logomark-white.png') no-repeat center / contain;
+      opacity: .14;
+    }
+    .conference-demo-dashboard .page-intro::after { background: var(--nb-gold); }
+    .conference-demo-dashboard .intro-heading { font-family: var(--nb-font-heading); }
+    .conference-demo-dashboard .intro-subtitle { color: rgba(255,255,255,.82); }
+    .conference-demo-dashboard .demo-tag {
+      display: inline-flex; align-items: center; gap: 7px; margin-bottom: 14px; padding: 5px 12px;
+      border: 1px solid rgba(211,164,34,.45); border-radius: 999px;
+      color: var(--nb-gold); font-family: var(--nb-font-subheading); font-size: .68rem; font-weight: 800;
+      letter-spacing: .12em; text-transform: uppercase; background: rgba(211,164,34,.1);
+    }
+
+    .conference-demo-dashboard .stat-cell { border-radius: var(--nb-radius); }
+    .conference-demo-dashboard .stat-val { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .conference-demo-dashboard .stat-lbl { font-family: var(--nb-font-subheading); }
+
+    .conference-demo-dashboard .section-heading { font-family: var(--nb-font-heading); }
+    .conference-demo-dashboard .section-eyebrow { font-family: var(--nb-font-subheading); }
+    .conference-demo-dashboard .section-copy { margin: 4px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.55; max-width: 66ch; }
+
+    .conference-demo-dashboard .bar-chart { border-radius: var(--nb-radius); padding: 24px 22px; }
+    .conference-demo-dashboard .bar-label { font-family: var(--nb-font-body); }
+    .conference-demo-dashboard .bar-fill { background: linear-gradient(90deg, var(--nb-teal), #3c6a72); }
+    .conference-demo-dashboard .bar-value { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .conference-demo-dashboard .attendance-chart .bar-row { grid-template-columns: minmax(160px, 300px) 1fr 58px 82px; }
+    .conference-demo-dashboard .bar-rate { display: flex; justify-content: flex-end; }
+    .conference-demo-dashboard .badge { font-family: var(--nb-font-subheading); }
+    .conference-demo-dashboard .footnote { margin: 18px 2px 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
+
+    @media (max-width: 720px) {
+      .conference-demo-dashboard .attendance-chart .bar-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+      .conference-demo-dashboard .attendance-chart .bar-track { grid-column: 1/-1; }
+      .conference-demo-dashboard .attendance-chart .bar-rate { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body class="conference-demo-dashboard">
+  <header class="gs-header">
+    <a class="wordmark portal-home" href="../../../" aria-label="Admissions hub"><img class="wordmark-logo" src="../../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></a>
+    <div class="header-divider"></div>
+    <a class="header-title" href="../" aria-label="Back to Public Event Registrants">&larr; Public Event Registrants</a>
+    <div class="header-spacer"></div>
+    <a class="header-title header-home" href="../../../" aria-label="Return to Admissions">Home</a>
+  </header>
+
+  <main class="container">
+    <div class="page-intro">
+      <span class="demo-tag">Demo &middot; sample data</span>
+      <h1 class="intro-heading">Conference Breakout Data</h1>
+      <p class="intro-subtitle">A concept for showing interest and attendance across a conference's breakout sessions. Every number on this page is invented for layout review — nothing here is wired to Slate yet.</p>
+    </div>
+
+    <div id="summary-stats" class="stat-bar"></div>
+
+    <div class="section-divider">
+      <div class="section-eyebrow">Interest</div>
+      <div class="section-heading">Selections by Breakout Session</div>
+      <p class="section-copy">How many registrants marked each breakout as something they plan to attend, captured at registration.</p>
+    </div>
+    <div id="interest-bars" class="bar-chart interest-chart"></div>
+
+    <div class="section-divider">
+      <div class="section-eyebrow">Attendance</div>
+      <div class="section-heading">Check-ins by Breakout Session</div>
+      <p class="section-copy">Actual attendance at each breakout, with the share of interested registrants who showed up.</p>
+    </div>
+    <div id="attendance-bars" class="bar-chart attendance-chart"></div>
+
+    <p class="footnote">Breakout attendance totals more than overall conference attendance because most attendees take in several sessions across the schedule.</p>
+  </main>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // Sample data only — shape it to match whatever the eventual Slate
+    // breakout-session export looks like once this page is wired up for real.
+    var CONFERENCE_ATTENDANCE = 860;
+    var BREAKOUTS = [
+      { title: 'Preaching with Clarity in a Distracted Age', interest: 412, attendance: 358 },
+      { title: 'Sustaining Pastoral Longevity', interest: 389, attendance: 331 },
+      { title: 'Discipleship Pathways That Actually Work', interest: 355, attendance: 289 },
+      { title: 'Shepherding Through Grief and Loss', interest: 340, attendance: 276 },
+      { title: 'Reaching Your Neighborhood for Christ', interest: 318, attendance: 241 },
+      { title: 'Biblical Counseling Fundamentals', interest: 296, attendance: 254 },
+      { title: 'Building Healthy Elder Boards', interest: 274, attendance: 198 },
+      { title: 'Church Planting in Under-Resourced Communities', interest: 251, attendance: 205 },
+      { title: 'Cross-Cultural Missions Today', interest: 233, attendance: 187 },
+      { title: 'Worship Leading and Theological Integrity', interest: 219, attendance: 176 },
+      { title: 'Youth Ministry That Outlasts the Youth Group', interest: 204, attendance: 149 },
+      { title: 'Women in Ministry Leadership', interest: 188, attendance: 152 },
+      { title: 'Financial Stewardship for Small Churches', interest: 162, attendance: 101 },
+      { title: 'Digital Tools for Modern Ministry', interest: 121, attendance: 58 }
+    ];
+
+    function rateBadge(rate) {
+      var pct = Math.round(rate * 100) + '%';
+      var cls = rate >= 0.8 ? 'badge-good' : rate >= 0.6 ? 'badge-gold' : 'badge-bad';
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + cls;
+      badge.textContent = pct;
+      return badge;
+    }
+
+    function renderStats() {
+      var totalInterest = BREAKOUTS.reduce(function (sum, row) { return sum + row.interest; }, 0);
+      var totalAttendance = BREAKOUTS.reduce(function (sum, row) { return sum + row.attendance; }, 0);
+      var overallRate = totalInterest ? totalAttendance / totalInterest : 0;
+      var cells = [
+        { val: CONFERENCE_ATTENDANCE.toLocaleString(), lbl: 'Conference Attendance' },
+        { val: totalInterest.toLocaleString(), lbl: 'Breakout Interest' },
+        { val: totalAttendance.toLocaleString(), lbl: 'Breakout Attendance' },
+        { val: Math.round(overallRate * 100) + '%', lbl: 'Overall Show Rate' }
+      ];
+      var bar = document.getElementById('summary-stats');
+      cells.forEach(function (cell) {
+        var el = document.createElement('div');
+        el.className = 'stat-cell';
+        var val = document.createElement('div');
+        val.className = 'stat-val';
+        val.textContent = cell.val;
+        var lbl = document.createElement('div');
+        lbl.className = 'stat-lbl';
+        lbl.textContent = cell.lbl;
+        el.append(val, lbl);
+        bar.appendChild(el);
+      });
+    }
+
+    function renderInterestChart() {
+      var rows = BREAKOUTS.slice().sort(function (a, b) { return b.interest - a.interest; });
+      var max = Math.max.apply(null, rows.map(function (row) { return row.interest; }));
+      var chart = document.getElementById('interest-bars');
+      rows.forEach(function (row) {
+        var el = document.createElement('div');
+        el.className = 'bar-row';
+        var label = document.createElement('div');
+        label.className = 'bar-label';
+        label.textContent = row.title;
+        label.title = row.title;
+        var track = document.createElement('div');
+        track.className = 'bar-track';
+        var fill = document.createElement('div');
+        fill.className = 'bar-fill';
+        fill.style.width = (row.interest / max * 100) + '%';
+        track.appendChild(fill);
+        var value = document.createElement('div');
+        value.className = 'bar-value';
+        value.textContent = row.interest.toLocaleString();
+        el.append(label, track, value);
+        chart.appendChild(el);
+      });
+    }
+
+    function renderAttendanceChart() {
+      var rows = BREAKOUTS.slice().sort(function (a, b) { return b.attendance - a.attendance; });
+      var max = Math.max.apply(null, rows.map(function (row) { return row.attendance; }));
+      var chart = document.getElementById('attendance-bars');
+      rows.forEach(function (row) {
+        var el = document.createElement('div');
+        el.className = 'bar-row';
+        var label = document.createElement('div');
+        label.className = 'bar-label';
+        label.textContent = row.title;
+        label.title = row.title;
+        var track = document.createElement('div');
+        track.className = 'bar-track';
+        var fill = document.createElement('div');
+        fill.className = 'bar-fill';
+        fill.style.width = (row.attendance / max * 100) + '%';
+        track.appendChild(fill);
+        var value = document.createElement('div');
+        value.className = 'bar-value';
+        value.textContent = row.attendance.toLocaleString();
+        var rateCell = document.createElement('div');
+        rateCell.className = 'bar-rate';
+        rateCell.appendChild(rateBadge(row.attendance / row.interest));
+        el.append(label, track, value, rateCell);
+        chart.appendChild(el);
+      });
+    }
+
+    renderStats();
+    renderInterestChart();
+    renderAttendanceChart();
+  }());
+  </script>
+</body>
+</html>
