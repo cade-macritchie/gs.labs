@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="referrer" content="origin">
+  <title>Check-In</title>
+  <script defer src="../../assets/portal-analytics.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <!-- DYMO Connect Framework SDK, self-hosted — see tools/checkin/README.md.
+       Not on any public CDN; download it from DYMO's own SDK and drop it in
+       vendor/. Loading it with a plain <script> (no `defer`) means it's
+       parsed before our own script below runs, but the file itself is
+       optional at runtime — see dymoAvailable() in the script. A missing
+       file 404s quietly in the console and the page still works, just
+       without the "Print to Dymo" path. -->
+  <script src="vendor/dymo.connect.framework.js" onerror="window.__dymoLoadFailed = true;"></script>
+  <style>
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+    /* GS 2026 brand refresh - see ../../BRANDGUIDE.md. Colors are the guide's
+       7 swatches only, plus the neutral canvas/border/muted values already
+       established elsewhere. Built tablet/mobile-first on purpose (see
+       README): this page is meant to run full-screen on a check-in table,
+       not on a desk monitor, so touch targets are large (56px) and the
+       default layout IS the narrow one — a min-width media query widens it
+       for a desk browser, rather than the usual max-width-narrows pattern. */
+    :root {
+      --navy: #0c0f14; --navy-mid: #2c343a; --teal: #234048; --gold: #d3a422;
+      --accent3: #708aa2; --red: #c44329;
+      --ink: #2c343a; --muted: #5c6670; --border: #dcd8d0; --canvas: #f4f2ee; --white: #fff;
+      --radius: 4px; --shadow: 0 4px 16px rgba(12,15,20,.08);
+      --font-heading: 'Tiempos Fine', Georgia, serif;
+      --font-subheading: Montserrat, 'Segoe UI', sans-serif;
+      --font-body: 'Open Sans', system-ui, sans-serif;
+      --tap: 56px;
+      font-family: var(--font-body);
+      color: var(--ink);
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    [hidden] { display: none !important; }
+    html, body { height: 100%; }
+    body { margin: 0; min-height: 100vh; background: var(--canvas); overscroll-behavior-y: contain; }
+    button, input { font: inherit; }
+
+    header.top {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px;
+      color: #fff; background: linear-gradient(120deg, var(--navy), var(--navy-mid));
+      border-bottom: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 4px 18px rgba(12,15,20,.14);
+    }
+    header.top .wordmark { display: flex; align-items: center; color: inherit; text-decoration: none; }
+    header.top .wordmark-logo { height: 22px; width: auto; }
+    header.top .divider { width: 1px; height: 30px; background: rgba(255,255,255,.28); }
+    header.top .page-title { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); font: 700 .74rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+    header.top .page-title::before, header.top .page-title::after { content: ''; width: 14px; height: 1px; background: var(--gold); }
+    header.top .spacer { flex: 1; }
+    header.top .device-status { font-size: .68rem; color: rgba(255,255,255,.6); text-align: right; line-height: 1.3; }
+
+    main { width: min(640px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 60px; }
+
+    .intro { margin: 0 0 20px; }
+    .intro h1 { margin: 0; color: var(--navy); font: 700 clamp(1.5rem,6vw,2rem)/1.15 var(--font-heading); letter-spacing: -.015em; }
+    .intro h1::after { content: ''; display: block; margin: 12px 0 12px; width: 44px; height: 3px; background: var(--gold); }
+    .intro p { margin: 0; color: var(--muted); line-height: 1.5; font-size: .95rem; }
+
+    form#search-form { display: flex; gap: 10px; margin-bottom: 18px; }
+    .search-field { position: relative; flex: 1; min-width: 0; }
+    input#search-input {
+      width: 100%; height: var(--tap); padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--ink); background: var(--white); font-size: 1.05rem;
+    }
+    input#search-input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(35,64,72,.14); }
+    button.primary {
+      height: var(--tap); padding: 0 20px; border: 1px solid var(--teal); border-radius: var(--radius);
+      color: #fff; background: var(--teal); cursor: pointer;
+      font: 700 .82rem var(--font-subheading); letter-spacing: .07em; text-transform: uppercase;
+      transition: background-color .18s ease, border-color .18s ease;
+    }
+    button.primary:hover:not(:disabled) { background: var(--navy); border-color: var(--navy); }
+    button.primary:disabled { opacity: .55; cursor: default; }
+    button.secondary {
+      height: var(--tap); padding: 0 20px; border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--ink); background: var(--white); cursor: pointer;
+      font: 700 .82rem var(--font-subheading); letter-spacing: .07em; text-transform: uppercase;
+    }
+    button.secondary:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
+    button.secondary:disabled { opacity: .55; cursor: default; }
+    button.link {
+      height: auto; padding: 0; border: 0; background: none; color: var(--teal); cursor: pointer;
+      font: 700 .82rem var(--font-subheading); letter-spacing: .04em; text-decoration: underline;
+    }
+
+    .state, .empty { padding: 26px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); color: var(--muted); text-align: center; }
+    .state.error { border-color: var(--red); color: var(--red); }
+
+    .results { display: grid; gap: 10px; }
+    .result-card {
+      width: 100%; text-align: left; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--white); cursor: pointer; min-height: var(--tap);
+    }
+    .result-card:hover, .result-card:focus-visible { border-color: var(--teal); outline: none; }
+    .result-name { display: block; font: 600 1.05rem var(--font-heading); color: var(--navy); }
+    .result-meta { display: block; margin-top: 4px; color: var(--muted); font-size: .85rem; }
+
+    .profile-card { padding: 26px 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); box-shadow: var(--shadow); }
+    .profile-eyebrow { display: block; margin-bottom: 6px; color: var(--muted); font: 700 .68rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; }
+    .profile-name { margin: 0; color: var(--navy); font: 700 clamp(1.4rem,5vw,1.8rem)/1.2 var(--font-heading); }
+    .profile-meta { margin: 10px 0 0; color: var(--muted); font-size: .92rem; }
+
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 24px 0; padding: 22px; border: 1px dashed var(--border); border-radius: var(--radius); background: var(--canvas); }
+    .qr-wrap canvas { display: block; max-width: 100%; height: auto; background: #fff; padding: 10px; border-radius: var(--radius); }
+    .qr-missing { color: var(--muted); text-align: center; font-size: .9rem; }
+
+    .print-row { display: flex; flex-direction: column; gap: 10px; }
+    .print-row .row { display: flex; gap: 10px; }
+    .print-row button { flex: 1; }
+
+    .banner {
+      margin-bottom: 18px; padding: 14px 16px; border: 1px solid var(--gold); border-radius: var(--radius);
+      background: var(--white); color: var(--ink); font-size: .88rem; line-height: 1.5;
+    }
+    .banner strong { color: var(--navy); }
+    .banner.success { border-color: var(--teal); }
+    .banner.error { border-color: var(--red); }
+
+    .profile-actions { margin-top: 20px; display: flex; justify-content: center; }
+
+    /* Print-only fallback layout, used when DYMO Connect isn't available:
+       hidden on screen, shown (and everything else hidden) via @media print
+       once #print-fallback is populated and window.print() is triggered. */
+    #print-fallback { display: none; }
+    @media print {
+      body > *:not(#print-fallback) { display: none !important; }
+      #print-fallback.printing { display: flex !important; flex-direction: column; align-items: center; gap: 8px; padding: 0; }
+      #print-fallback canvas { width: 200px; height: 200px; }
+      #print-fallback .print-name { font: 700 14pt var(--font-subheading, Arial, sans-serif); }
+    }
+
+    /* Tablet/mobile IS the default layout above. This widens things for a
+       desk browser instead of narrowing a desktop-first layout down. */
+    @media (min-width: 720px) {
+      header.top { padding: 16px 28px; }
+      main { padding-top: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="wordmark" href="../../">
+      <img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary">
+    </a>
+    <div class="divider"></div>
+    <div class="page-title">Check-In</div>
+    <div class="spacer"></div>
+    <div id="device-status" class="device-status">Checking for DYMO Connect&hellip;</div>
+  </header>
+
+  <main>
+    <div class="intro">
+      <h1>Find a registrant</h1>
+      <p>Search by name, then print their QR code to the Dymo label maker.</p>
+    </div>
+
+    <div id="banners"></div>
+
+    <form id="search-form">
+      <label class="search-field">
+        <span class="visually-hidden" style="position:absolute;left:-9999px;">Search by name</span>
+        <input id="search-input" type="search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="First or last name" required>
+      </label>
+      <button class="primary" type="submit">Search</button>
+    </form>
+
+    <section id="results" class="results" hidden></section>
+    <section id="profile" hidden></section>
+    <div id="empty" class="empty">Enter a name above to begin.</div>
+  </main>
+
+  <div id="print-fallback"></div>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // Same Cloudflare Worker every other portal talks to (gs-labs-slate-gateway).
+    // This tool calls it directly from GitHub Pages, not through a Slate
+    // wrapper, so it hits the dedicated checkin-search route rather than
+    // /api/slate/records — see tools/queryomatic/worker.js and its README.
+    const WORKER_URL = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
+    const CHECKIN_SERVICE = WORKER_URL + '/api/slate/checkin-search';
+
+    const searchForm = document.getElementById('search-form');
+    const searchInput = document.getElementById('search-input');
+    const results = document.getElementById('results');
+    const profile = document.getElementById('profile');
+    const empty = document.getElementById('empty');
+    const banners = document.getElementById('banners');
+    const deviceStatus = document.getElementById('device-status');
+    const printFallback = document.getElementById('print-fallback');
+
+    let searchToken = 0;
+    let currentPerson = null;
+
+    // ----------------------------------------------------------------
+    // Field parsing — same shape as the other portals' field()/plain()
+    // helpers (see slate-templates/wrappers/student-lookup-wrapper.liquid.html),
+    // trimmed down to what this page needs: name, email, status, SIS ID, and
+    // the new per_qr field.
+    // ----------------------------------------------------------------
+
+    function text(value) { return value == null ? '' : String(value).trim(); }
+
+    function scalar(value) {
+      if (!value || typeof value !== 'object') return value;
+      const keys = ['display', 'label', 'name', 'value', 'text', 'url', 'href'];
+      for (let i = 0; i < keys.length; i += 1) { if (value[keys[i]] != null) return value[keys[i]]; }
+      return '';
+    }
+
+    function decodeEntities(value) {
+      const el = document.createElement('textarea');
+      el.innerHTML = text(value);
+      return el.value;
+    }
+
+    function plain(value) {
+      return decodeEntities(scalar(value)).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function readableName(value) {
+      const normalized = plain(value);
+      const parts = normalized.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+      return parts.length > 1 ? parts.slice(1).concat(parts[0]).join(' ') : normalized;
+    }
+
+    function field(row, names) {
+      if (!row || typeof row !== 'object') return '';
+      const requested = Array.isArray(names) ? names : [names];
+      for (let i = 0; i < requested.length; i += 1) {
+        if (row[requested[i]] != null && text(scalar(row[requested[i]]))) return row[requested[i]];
+      }
+      const keys = Object.keys(row);
+      for (let i = 0; i < requested.length; i += 1) {
+        const normalized = requested[i].toLowerCase().replace(/[^a-z0-9]/g, '');
+        const match = keys.find(function (key) { return key.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized && text(scalar(row[key])); });
+        if (match) return row[match];
+      }
+      return '';
+    }
+
+    function rowsFrom(response) {
+      if (Array.isArray(response)) return response;
+      if (response && Array.isArray(response.row)) return response.row;
+      return response && response.row ? [response.row] : [];
+    }
+
+    function normalize(row) {
+      const rawName = field(row, ['per_name', 'name', 'full_name']);
+      return {
+        name: readableName(rawName) || 'Unnamed record',
+        email: plain(field(row, ['per_email', 'email'])),
+        status: plain(field(row, ['per_status', 'status'])),
+        sisid: plain(field(row, ['per_sisid', 'sisid', 'SIS_ID'])),
+        qr: plain(field(row, ['per_qr', 'qr'])),
+      };
+    }
+
+    // Splits "first last" into every first/last/sisid combination worth
+    // trying against maindb, same approach as Record Lookup's wrapper —
+    // maindb has no single "name contains" parameter.
+    function searchVariants(search) {
+      const normalized = text(search).replace(/\s+/g, ' ');
+      if (!normalized) return [];
+      const parts = Array.from(new Set(normalized.split(' '))).sort(function (a, b) { return b.length - a.length; });
+      const variants = [];
+      parts.forEach(function (part) {
+        variants.push({ first: part, last: '', sisid: '' });
+        variants.push({ first: '', last: part, sisid: '' });
+        if (/\d/.test(part)) variants.push({ first: '', last: '', sisid: part });
+      });
+      return variants;
+    }
+
+    function matchesSearch(candidate, search) {
+      const normalized = text(search).toLocaleLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+      const terms = normalized.split(' ').filter(Boolean);
+      if (!terms.length) return true;
+      if (terms.length === 1 && /\d/.test(terms[0])) return candidate.sisid.toLocaleLowerCase().includes(terms[0]);
+      const candidateName = candidate.name.toLocaleLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '');
+      return terms.every(function (term) { return candidateName.includes(term); });
+    }
+
+    async function findCandidates(search) {
+      const variants = searchVariants(search);
+      const settled = await Promise.allSettled(variants.map(async function (values) {
+        const url = new URL(CHECKIN_SERVICE);
+        url.searchParams.set('first', values.first);
+        url.searchParams.set('last', values.last);
+        url.searchParams.set('sisid', values.sisid);
+        const response = await fetch(url.toString().replace(/\+/g, '%20'), { cache: 'no-store', headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error('Search request returned ' + response.status);
+        return rowsFrom(await response.json());
+      }));
+      const successful = settled.filter(function (r) { return r.status === 'fulfilled'; });
+      if (!successful.length && settled.length) throw settled[0].reason;
+      const candidates = successful.flatMap(function (r) { return r.value; }).map(normalize).filter(function (c) { return matchesSearch(c, search); });
+      const seen = new Set();
+      return candidates.filter(function (c) {
+        const key = c.sisid || [c.name, c.email].join('|').toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Rendering
+    // ----------------------------------------------------------------
+
+    function showOnly(section) {
+      results.hidden = section !== 'results';
+      profile.hidden = section !== 'profile';
+      empty.hidden = section !== 'empty';
+    }
+
+    function setBanner(message, kind) {
+      banners.innerHTML = '';
+      if (!message) return;
+      const div = document.createElement('div');
+      div.className = 'banner' + (kind ? ' ' + kind : '');
+      div.textContent = message;
+      banners.appendChild(div);
+    }
+
+    function renderResults(candidates) {
+      results.innerHTML = '';
+      candidates.forEach(function (person) {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'result-card';
+        card.innerHTML = '<span class="result-name"></span><span class="result-meta"></span>';
+        card.querySelector('.result-name').textContent = person.name;
+        card.querySelector('.result-meta').textContent = [person.status, person.email].filter(Boolean).join(' · ') || 'No additional details on file';
+        card.addEventListener('click', function () { renderProfile(person); });
+        results.appendChild(card);
+      });
+      showOnly('results');
+    }
+
+    function renderProfile(person) {
+      currentPerson = person;
+      profile.innerHTML =
+        '<div class="profile-card">' +
+          '<span class="profile-eyebrow">Registrant</span>' +
+          '<h2 class="profile-name"></h2>' +
+          '<p class="profile-meta"></p>' +
+          '<div class="qr-area"></div>' +
+          '<div class="print-row">' +
+            '<div class="row">' +
+              '<button class="primary" id="print-btn" type="button">Print to Dymo</button>' +
+            '</div>' +
+            '<button class="secondary" id="print-fallback-btn" type="button" hidden>Print via browser dialog instead</button>' +
+          '</div>' +
+          '<p id="print-status" class="qr-missing" role="status" aria-live="polite"></p>' +
+        '</div>' +
+        '<div class="profile-actions"><button class="link" id="search-again" type="button">&larr; Search again</button></div>';
+
+      profile.querySelector('.profile-name').textContent = person.name;
+      profile.querySelector('.profile-meta').textContent = [person.status, person.email, person.sisid].filter(Boolean).join(' · ') || 'No additional details on file';
+
+      const qrArea = profile.querySelector('.qr-area');
+      const printBtn = profile.querySelector('#print-btn');
+      if (person.qr) {
+        const wrap = document.createElement('div');
+        wrap.className = 'qr-wrap';
+        const canvas = document.createElement('canvas');
+        wrap.appendChild(canvas);
+        qrArea.appendChild(wrap);
+        window.QRCode.toCanvas(canvas, person.qr, { width: 220, margin: 1 }, function (err) {
+          if (err) setBanner('Could not render the QR code for this person.', 'error');
+        });
+      } else {
+        const missing = document.createElement('p');
+        missing.className = 'qr-missing';
+        missing.textContent = 'No QR code on file for this person (per_qr is blank).';
+        qrArea.appendChild(missing);
+        printBtn.disabled = true;
+      }
+
+      profile.querySelector('#search-again').addEventListener('click', function () {
+        currentPerson = null;
+        searchInput.value = '';
+        searchInput.focus();
+        showOnly('empty');
+      });
+      printBtn.addEventListener('click', function () { printLabel(person); });
+      profile.querySelector('#print-fallback-btn').addEventListener('click', function () { printViaBrowser(person); });
+
+      showOnly('profile');
+    }
+
+    // ----------------------------------------------------------------
+    // Dymo Connect printing
+    //
+    // Best-effort against the documented DYMO Label Framework JS API
+    // (dymo.label.framework.*) and DYMO Label XML schema — this has not been
+    // verified against a physical Dymo LabelWriter yet. Before relying on it
+    // for a live event, do one real test print and adjust LABEL_XML's
+    // <PaperName>/<Bounds> to match the actual label stock. See
+    // tools/checkin/README.md.
+    // ----------------------------------------------------------------
+
+    // Default label: 30334 (2-1/4in x 1-1/4in), a QR code on the left and the
+    // person's name on the right. Twips (1/1440 in). Edit to match your stock.
+    const LABEL_XML =
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<DieCutLabel Version="8.0" Units="twips">' +
+        '<PaperOrientation>Landscape</PaperOrientation>' +
+        '<Id>Small</Id>' +
+        '<PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>' +
+        '<DrawCommands><RoundRectangle X="0" Y="0" Width="1620" Height="900" Rx="270" Ry="270" /></DrawCommands>' +
+        '<ObjectInfo>' +
+          '<QRCodeObject>' +
+            '<Name>QR</Name>' +
+            '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
+            '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
+            '<Rotation>Rotation0</Rotation>' +
+            '<IsMirrored>False</IsMirrored>' +
+            '<IsVariable>True</IsVariable>' +
+            '<Text>PLACEHOLDER</Text>' +
+            '<Version>1</Version>' +
+            '<QRCodeVersion>Automatic</QRCodeVersion>' +
+            '<ECLevel>0</ECLevel>' +
+            '<ModuleSize>Automatic</ModuleSize>' +
+          '</QRCodeObject>' +
+          '<Bounds X="90" Y="90" Width="720" Height="720" />' +
+        '</ObjectInfo>' +
+        '<ObjectInfo>' +
+          '<TextObject>' +
+            '<Name>NAME</Name>' +
+            '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
+            '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
+            '<Rotation>Rotation0</Rotation>' +
+            '<IsMirrored>False</IsMirrored>' +
+            '<IsVariable>True</IsVariable>' +
+            '<HorizontalAlignment>Center</HorizontalAlignment>' +
+            '<VerticalAlignment>Middle</VerticalAlignment>' +
+            '<TextFitMode>ShrinkToFit</TextFitMode>' +
+            '<UseFullFontHeight>True</UseFullFontHeight>' +
+            '<Verticalized>False</Verticalized>' +
+            '<StyledText>' +
+              '<Element>' +
+                '<String>PLACEHOLDER</String>' +
+                '<Attributes><Font Family="Arial" Size="10" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes>' +
+              '</Element>' +
+            '</StyledText>' +
+          '</TextObject>' +
+          '<Bounds X="850" Y="90" Width="700" Height="720" />' +
+        '</ObjectInfo>' +
+      '</DieCutLabel>';
+
+    function dymoAvailable() {
+      try {
+        return Boolean(window.dymo && window.dymo.label && window.dymo.label.framework && typeof window.dymo.label.framework.getPrinters === 'function');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function refreshDeviceStatus() {
+      if (!dymoAvailable()) {
+        deviceStatus.textContent = 'DYMO Connect not detected';
+        return;
+      }
+      try {
+        const printers = window.dymo.label.framework.getPrinters();
+        const labelPrinters = (printers || []).filter(function (p) { return p.printerType === 'LabelWriterPrinter' || p.printerType === 'LabelWriterHorizontalPrinter'; });
+        deviceStatus.textContent = labelPrinters.length ? ('DYMO ready — ' + labelPrinters[0].name) : 'DYMO Connect running, no label printer found';
+      } catch (e) {
+        deviceStatus.textContent = 'DYMO Connect present but unreachable';
+      }
+    }
+
+    function printLabel(person) {
+      const statusEl = profile.querySelector('#print-status');
+      const fallbackBtn = profile.querySelector('#print-fallback-btn');
+      statusEl.textContent = '';
+      fallbackBtn.hidden = true;
+
+      if (!dymoAvailable()) {
+        statusEl.textContent = 'DYMO Connect isn’t available on this device.';
+        fallbackBtn.hidden = false;
+        return;
+      }
+
+      try {
+        const printers = window.dymo.label.framework.getPrinters();
+        const labelPrinter = (printers || []).find(function (p) { return p.printerType === 'LabelWriterPrinter' || p.printerType === 'LabelWriterHorizontalPrinter'; });
+        if (!labelPrinter) {
+          statusEl.textContent = 'No Dymo label printer is connected.';
+          fallbackBtn.hidden = false;
+          return;
+        }
+        const label = window.dymo.label.framework.openLabelXml(LABEL_XML);
+        label.setObjectText('QR', person.qr);
+        label.setObjectText('NAME', person.name);
+        label.print(labelPrinter.name);
+        statusEl.textContent = 'Sent to ' + labelPrinter.name + '.';
+      } catch (err) {
+        statusEl.textContent = 'Printing failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
+        fallbackBtn.hidden = false;
+      }
+    }
+
+    // Fallback when DYMO Connect isn't installed/running: render the QR into
+    // a print-only element and hand off to the browser's own print dialog,
+    // so check-in can still produce a printable QR (on whatever printer the
+    // OS print dialog offers) rather than being fully blocked.
+    function printViaBrowser(person) {
+      if (!person.qr) return;
+      printFallback.innerHTML = '<canvas></canvas><div class="print-name"></div>';
+      printFallback.querySelector('.print-name').textContent = person.name;
+      const canvas = printFallback.querySelector('canvas');
+      window.QRCode.toCanvas(canvas, person.qr, { width: 300, margin: 1 }, function (err) {
+        if (err) return;
+        printFallback.classList.add('printing');
+        window.print();
+        printFallback.classList.remove('printing');
+      });
+    }
+
+    // ----------------------------------------------------------------
+    // Search
+    // ----------------------------------------------------------------
+
+    searchForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const search = searchInput.value.trim();
+      if (!search) return;
+      searchToken += 1;
+      const token = searchToken;
+      setBanner('');
+      showOnly('empty');
+      empty.textContent = 'Searching…';
+      try {
+        const candidates = await findCandidates(search);
+        if (token !== searchToken) return;
+        if (!candidates.length) { showOnly('empty'); empty.textContent = 'No records matched that search.'; return; }
+        if (candidates.length === 1) { renderProfile(candidates[0]); return; }
+        renderResults(candidates);
+      } catch (err) {
+        if (token !== searchToken) return;
+        showOnly('empty');
+        empty.textContent = 'Search failed. Check your connection and try again.';
+      }
+    });
+
+    refreshDeviceStatus();
+    setInterval(refreshDeviceStatus, 15000);
+    searchInput.focus();
+  }());
+  </script>
+</body>
+</html>

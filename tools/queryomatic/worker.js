@@ -66,6 +66,10 @@
  * - GET /api/slate/regional-campus-records    (regional-campus wrapper)
  * - GET /api/slate/additional-applications    (student-lookup wrapper)
  *
+ * - GET /api/slate/checkin-search             (tools/checkin/, called directly from GitHub
+ *   Pages — NOT a Slate wrapper, so this one route checks Origin against
+ *   ALLOWED_ORIGIN instead of PORTAL_ORIGIN. See handlePagesSlateProxyRoute.)
+ *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
  * - SLATE_TOKEN_PROMPTS                        (prompts query: options refresh + /api/slate/portal-options)
@@ -335,6 +339,34 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 
   return json(data, env, 200, env.PORTAL_ORIGIN);
 }
+
+
+// Same shape as handleSlateProxyRoute, but for a route called directly from a
+// GitHub Pages tool page's own script (like tools/idea-box/ calls its own
+// Worker) rather than from a Slate wrapper's inline <script>. The only
+// difference that matters is which origin the request is allowed to come
+// from — ALLOWED_ORIGIN (GitHub Pages) here, not PORTAL_ORIGIN (Slate).
+async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedParams, fixedParams) {
+  if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, routeName))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
+  }
+
+  const data = await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams, fixedParams);
+  return json(data, env, 200, env.ALLOWED_ORIGIN);
+}
+
+
+// Fixed params always sent on every /api/slate/checkin-search call, on top of
+// whatever the caller sends. Empty for now — the check-in portal is still
+// being tested against the whole maindb population. Once there's a
+// parameter that should scope every check-in search (e.g. a specific event),
+// add it here, e.g. { alt_form_type: "Event" }, the same way the /inquiries
+// route pins { status: "Inquiry" }.
+const CHECKIN_FIXED_PARAMS = Object.freeze({});
 
 
 // ============================================================
@@ -848,6 +880,8 @@ const ANALYTICS_PATHS = new Set([
   "/gs.labs/tools/queryomatic/admin/",
   "/gs.labs/idea-box/",
   "/gs.labs/tools/idea-box/",
+  "/gs.labs/checkin/",
+  "/gs.labs/tools/checkin/",
 ]);
 
 function analyticsLabel(path) {
@@ -874,6 +908,8 @@ function analyticsLabel(path) {
     "/gs.labs/tools/queryomatic/admin/": "BetterQuery Admin",
     "/gs.labs/idea-box/": "Slate Idea Box",
     "/gs.labs/tools/idea-box/": "Slate Idea Box",
+    "/gs.labs/checkin/": "Check-In",
+    "/gs.labs/tools/checkin/": "Check-In",
   };
 
   return labels[path] || path;
@@ -2511,6 +2547,19 @@ export default {
         );
       }
 
+      // Called directly from tools/checkin/'s own script (GitHub Pages
+      // origin), not a Slate wrapper — see handlePagesSlateProxyRoute.
+      if (
+        url.pathname === "/api/slate/checkin-search" &&
+        request.method === "GET"
+      ) {
+        return await handlePagesSlateProxyRoute(
+          request, env, id, "checkin-search",
+          ["first", "last", "sisid"],
+          CHECKIN_FIXED_PARAMS
+        );
+      }
+
       if (
         url.pathname === "/api/analytics/summary" &&
         request.method === "GET"
@@ -2794,7 +2843,9 @@ export default {
         },
         env,
         500,
-        url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
+        url.pathname === "/api/slate/checkin-search"
+          ? env.ALLOWED_ORIGIN
+          : url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
       );
     }
   },

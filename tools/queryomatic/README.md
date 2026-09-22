@@ -61,9 +61,20 @@ requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
 | `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
 | `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
+| `GET /api/slate/checkin-search` | maindb | Check-In (`tools/checkin/`) | `first`, `last`, `sisid` |
 
-The last three have no caller since the portal rebuild and are kept only for
-ad-hoc use. Nothing should be built on them.
+The last three (before `checkin-search`) have no caller since the portal
+rebuild and are kept only for ad-hoc use. Nothing should be built on them.
+
+`checkin-search` is different from every other `/api/slate/*` route: it's
+called directly from `tools/checkin/`'s own script running on GitHub Pages,
+not from a Slate wrapper's inline `<script>` running on `enroll.gs.edu`. It
+therefore checks `Origin`/`Referer` against `ALLOWED_ORIGIN` instead of
+`PORTAL_ORIGIN` — see `handlePagesSlateProxyRoute` in `worker.js`. It also
+always sends `CHECKIN_FIXED_PARAMS` (currently empty) on top of the caller's
+params, the same mechanism `/api/slate/inquiries` uses to pin `status:
+"Inquiry"` — add a parameter there once the check-in portal needs to be
+scoped to a specific event instead of the whole maindb population.
 
 Route parameter names that differ from the maindb query’s own are renamed by
 `MAINDB_PARAM_ALIASES` in `worker.js` (`site` → `teachingsite`, `campus` →
@@ -99,6 +110,11 @@ a portal showing real numbers and a portal showing zero.
   the `per_*` columns, which have been stable.
 - **One row per person**, not per application (5,837 rows, 5,837 distinct
   `per_url`), so counting rows is counting people.
+- **The check-in portal needs `per_qr` exported.** `tools/checkin/` reads
+  `per_qr` off each row and encodes it as the printed QR code. If it comes
+  back blank, check that the maindb query's export list includes it — the
+  Worker passes columns through unchanged, so there's nothing to fix here if
+  Slate isn't sending the field.
 
 ### The three portal funnel routes
 

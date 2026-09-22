@@ -18,6 +18,7 @@ paths" below).
 | `tools/queryomatic/index.html` (BetterQuery) | New brand |
 | `tools/student-lookup/index.html` (Record Lookup) | New brand |
 | `tools/idea-box/index.html` (Slate Idea Box) | New brand |
+| `tools/checkin/index.html` (Check-In) | New brand, permanent (no toggle); built tablet/mobile-first |
 | `training/slate-concepts/` (Slate Concepts lesson) | Current brand, unchanged |
 | The 5 report dashboards (`reports/funnel-overview/`, `reports/teaching-site-overview/`, `reports/regional-campus/`, `reports/event-tracker/`, `reports/public-event-registrants/`) | Current brand, unchanged |
 | `pipeline-overview/` (not linked from the homepage) | Current brand, unchanged |

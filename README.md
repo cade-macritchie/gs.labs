@@ -14,6 +14,7 @@ This repository is the single source of truth for the Admissions hub and its ass
 - `slate-templates/wrappers/regional-campus-wrapper.liquid.html` — the Slate query wrapper for the Regional Campus portal.
 - `reports/public-event-registrants/` — GitHub-hosted public-event registrant count interface.
 - `tools/idea-box/` and `idea-box-worker/` — Slate Idea Box: a standalone submission/voting board for Slate improvement ideas (with an optional reference URL), backed by a small Cloudflare Worker + D1 database. No Slate integration or scheduled sync — see `idea-box-worker/README.md` for deploy steps.
+- `tools/checkin/` — GitHub-hosted, tablet/mobile-first check-in portal: search `all_people`/maindb by name and print the matched person's `per_qr` field to a Dymo label maker via DYMO Connect. Calls the `gs-labs-slate-gateway` Worker's `/api/slate/checkin-search` route directly (no Slate wrapper). No logging/persistence — search and print only. See `tools/checkin/README.md`.
 - `pipeline-overview/`, `reports/teaching-site-overview/`, `reports/event-tracker/`, and `reports/funnel-overview/` — GitHub-hosted dashboard interfaces.
 - `assets/dashboard.css` and `assets/dashboard-common.js` — shared dashboard presentation, iframe bridge, and academic-period definitions.
 - `slate-templates/wrappers/*-wrapper.liquid.html` — thin Slate templates that serialize query results and host the corresponding dashboard iframe.
