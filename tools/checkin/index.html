@@ -438,24 +438,38 @@
     // ----------------------------------------------------------------
     // Dymo Connect printing
     //
-    // Best-effort against the documented DYMO Label Framework JS API
-    // (dymo.label.framework.*) and DYMO Label XML schema — this has not been
-    // verified against a physical Dymo LabelWriter yet. Before relying on it
-    // for a live event, do one real test print and adjust LABEL_XML's
-    // <PaperName>/<Bounds> to match the actual label stock. See
-    // tools/checkin/README.md.
-    // ----------------------------------------------------------------
-
-    // Default label: 30334 (2-1/4in x 1-1/4in), a QR code on the left and the
-    // person's name on the right. Twips (1/1440 in). Edit to match your stock.
+    // Verified 2026-09-22 against the actual SDK source (dymosoftware's
+    // official dymo-connect-framework repo on GitHub, the same file
+    // vendor/dymo.connect.framework.js should be — see its README), not just
+    // the documented API surface:
     //
-    // Two variants of the QR object, since per_qr_url turned out (verified
-    // live) to be a link to Slate's own rendered PNG rather than a code to
-    // encode ourselves: LABEL_XML_IMAGE places that PNG via an ImageObject
-    // (the normal path); LABEL_XML_TEXT keeps the original QRCodeObject
-    // approach as a fallback for a bare/non-URL value. Both carry a 1x1
-    // transparent PNG / empty placeholder that gets overwritten before
-    // printing — see printLabel().
+    // - There is NO setObjectImage(). setObjectText(name, value) is the only
+    //   setter, and it dispatches by the target object's tag — for an
+    //   ImageObject it calls an internal _setImageObjectText.
+    // - _setImageObjectText branches on label.isDCDLabel() (true only when
+    //   the label's live XML contains a literal "</DYMOLabel>" — i.e. only
+    //   for labels already written in DYMO's newer <DYMOLabel> schema).
+    //   Since this label is authored in the older, universally-documented
+    //   <DieCutLabel> schema (same as every official DYMO sample .label
+    //   file), isDCDLabel() is false here, so it takes the legacy branch:
+    //   find the <Image> element and set its text content to whatever
+    //   setObjectText was called with. That's why the ImageObject below
+    //   carries an <Image> placeholder, not a <Data> element.
+    // - The QRCodeObject equivalent (_setQRCodeObjectText) has NO legacy
+    //   branch at all — for a non-DCD label it's a silent no-op, so a
+    //   QRCodeObject's value can't be set dynamically in this schema. That's
+    //   why there's only one code path below: whatever the QR value is (a
+    //   fetched image or a client-side-generated one), it's always placed
+    //   as a PNG into the ImageObject, never as text into a QRCodeObject.
+    // - getPrinters() rows use the printerType value "LabelWriterPrinter" —
+    //   confirmed present in the SDK; "LabelWriterHorizontalPrinter" (used
+    //   in an earlier version of this file) does not appear anywhere in it
+    //   and was a guess, now removed.
+    //
+    // Still unverified: physical print alignment/scale on your actual label
+    // stock. Default label below is 30334 (2-1/4in x 1-1/4in) — do one real
+    // test print and adjust <PaperName>/<Bounds> to match. See
+    // tools/checkin/README.md.
     const PLACEHOLDER_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
     const NAME_OBJECT_XML =
@@ -508,32 +522,6 @@
         NAME_OBJECT_XML +
       '</DieCutLabel>';
 
-    const LABEL_XML_TEXT =
-      '<?xml version="1.0" encoding="utf-8"?>' +
-      '<DieCutLabel Version="8.0" Units="twips">' +
-        '<PaperOrientation>Landscape</PaperOrientation>' +
-        '<Id>Small</Id>' +
-        '<PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>' +
-        '<DrawCommands><RoundRectangle X="0" Y="0" Width="1620" Height="900" Rx="270" Ry="270" /></DrawCommands>' +
-        '<ObjectInfo>' +
-          '<QRCodeObject>' +
-            '<Name>QR</Name>' +
-            '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
-            '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
-            '<Rotation>Rotation0</Rotation>' +
-            '<IsMirrored>False</IsMirrored>' +
-            '<IsVariable>True</IsVariable>' +
-            '<Text>PLACEHOLDER</Text>' +
-            '<Version>1</Version>' +
-            '<QRCodeVersion>Automatic</QRCodeVersion>' +
-            '<ECLevel>0</ECLevel>' +
-            '<ModuleSize>Automatic</ModuleSize>' +
-          '</QRCodeObject>' +
-          '<Bounds X="90" Y="90" Width="720" Height="720" />' +
-        '</ObjectInfo>' +
-        NAME_OBJECT_XML +
-      '</DieCutLabel>';
-
     function dymoAvailable() {
       try {
         return Boolean(window.dymo && window.dymo.label && window.dymo.label.framework && typeof window.dymo.label.framework.getPrinters === 'function');
@@ -542,15 +530,18 @@
       }
     }
 
+    function findLabelPrinter(printers) {
+      return (printers || []).find(function (p) { return p.printerType === 'LabelWriterPrinter'; });
+    }
+
     function refreshDeviceStatus() {
       if (!dymoAvailable()) {
         deviceStatus.textContent = 'DYMO Connect not detected';
         return;
       }
       try {
-        const printers = window.dymo.label.framework.getPrinters();
-        const labelPrinters = (printers || []).filter(function (p) { return p.printerType === 'LabelWriterPrinter' || p.printerType === 'LabelWriterHorizontalPrinter'; });
-        deviceStatus.textContent = labelPrinters.length ? ('DYMO ready — ' + labelPrinters[0].name) : 'DYMO Connect running, no label printer found';
+        const labelPrinter = findLabelPrinter(window.dymo.label.framework.getPrinters());
+        deviceStatus.textContent = labelPrinter ? ('DYMO ready — ' + labelPrinter.name) : 'DYMO Connect running, no label printer found';
       } catch (e) {
         deviceStatus.textContent = 'DYMO Connect present but unreachable';
       }
@@ -563,6 +554,17 @@
         reader.onload = function () { resolve(reader.result); };
         reader.onerror = reject;
         reader.readAsDataURL(blob);
+      });
+    }
+
+    // Renders a QRCode.js-encoded value straight to a base64 PNG, for the
+    // (currently never seen live) case where per_qr_url isn't URL-shaped.
+    function qrTextToBase64Png(value) {
+      return new Promise(function (resolve, reject) {
+        window.QRCode.toDataURL(value, { width: 300, margin: 1 }, function (err, dataUrl) {
+          if (err) reject(err);
+          else resolve(dataUrl.replace(/^data:image\/\w+;base64,/, ''));
+        });
       });
     }
 
@@ -579,30 +581,30 @@
       }
 
       try {
-        const printers = window.dymo.label.framework.getPrinters();
-        const labelPrinter = (printers || []).find(function (p) { return p.printerType === 'LabelWriterPrinter' || p.printerType === 'LabelWriterHorizontalPrinter'; });
+        const labelPrinter = findLabelPrinter(window.dymo.label.framework.getPrinters());
         if (!labelPrinter) {
           statusEl.textContent = 'No Dymo label printer is connected.';
           fallbackBtn.hidden = false;
           return;
         }
 
+        let base64;
         if (isProbablyUrl(person.qrUrl)) {
           statusEl.textContent = 'Fetching QR image…';
           const response = await fetch(qrImageProxyUrl(person.qrUrl), { cache: 'no-store' });
           if (!response.ok) throw new Error('QR image request returned ' + response.status);
           const dataUrl = await blobToDataUrl(await response.blob());
-          const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-          const label = window.dymo.label.framework.openLabelXml(LABEL_XML_IMAGE);
-          label.setObjectImage('QR', base64);
-          label.setObjectText('NAME', person.name);
-          label.print(labelPrinter.name);
+          base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
         } else {
-          const label = window.dymo.label.framework.openLabelXml(LABEL_XML_TEXT);
-          label.setObjectText('QR', person.qrUrl);
-          label.setObjectText('NAME', person.name);
-          label.print(labelPrinter.name);
+          base64 = await qrTextToBase64Png(person.qrUrl);
         }
+
+        // setObjectText, not setObjectImage (which doesn't exist in the SDK)
+        // — see the comment block above LABEL_XML_IMAGE for why this works.
+        const label = window.dymo.label.framework.openLabelXml(LABEL_XML_IMAGE);
+        label.setObjectText('QR', base64);
+        label.setObjectText('NAME', person.name);
+        label.print(labelPrinter.name);
         statusEl.textContent = 'Sent to ' + labelPrinter.name + '.';
       } catch (err) {
         statusEl.textContent = 'Printing failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
