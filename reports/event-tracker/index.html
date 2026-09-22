@@ -103,6 +103,7 @@
         <label class="ctrl-label" for="event-search">Event name</label>
         <input id="event-search" class="event-search-input" type="search" autocomplete="off" placeholder="Search events">
       </div>
+      <label class="adjustment-toggle" for="show-past-events"><input id="show-past-events" type="checkbox"> Show past events</label>
       <label class="adjustment-toggle" for="use-adjusted-applicants"><input id="use-adjusted-applicants" type="checkbox"> Advanced</label>
       <div id="event-advanced-controls" class="event-advanced-controls" hidden>
         <div class="control-group">
@@ -221,6 +222,7 @@
     let selectedStartDate = '';
     let selectedEndDate = '';
     let eventSearch = '';
+    let showPastEvents = false;
     let useAdjustedApplicants = false;
     let adjustmentPercentage = 0;
     const eventBridge = window.DashboardBridge.create('event-tracker', render);
@@ -282,6 +284,14 @@
       return Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])) + (endOfDay ? 86399999 : 0);
     }
 
+    function isPastEvent(event) {
+      const end = event.enddateValue == null ? event.startdateValue : event.enddateValue;
+      if (end == null) return false;
+      const now = new Date();
+      const todayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      return end < todayStart;
+    }
+
     function filteredEvents() {
       let events = eventRecords.slice();
       const searchTerms = eventSearch.toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -291,6 +301,7 @@
           return searchTerms.every(function (term) { return title.includes(term); });
         });
       }
+      if (!showPastEvents) events = events.filter(function (event) { return !isPastEvent(event); });
       if (!useAdjustedApplicants) return events;
       const start = dateBoundary(selectedStartDate, false);
       const end = dateBoundary(selectedEndDate, true);
@@ -563,7 +574,7 @@
     function renderTable(events, blended) {
       const body = document.getElementById('event-table'); body.replaceChildren();
       if (!events.length) {
-        const row = body.insertRow(); const cell = row.insertCell(); cell.colSpan = 8; cell.appendChild(ui.emptyState(eventSearch || selectedStartDate || selectedEndDate ? 'No events match the current filters.' : 'No event data available.')); return;
+        const row = body.insertRow(); const cell = row.insertCell(); cell.colSpan = 8; cell.appendChild(ui.emptyState(eventSearch || selectedStartDate || selectedEndDate || !showPastEvents ? 'No events match the current filters.' : 'No event data available.')); return;
       }
       events.forEach(function (event) {
         const applicants = applicantCount(event);
@@ -650,6 +661,11 @@
     document.getElementById('event-date-end').addEventListener('change', function (event) { updateDateRange(event.target); });
     document.getElementById('event-search').addEventListener('input', function (event) {
       eventSearch = event.target.value.trim();
+      currentPage = 1;
+      renderView();
+    });
+    document.getElementById('show-past-events').addEventListener('change', function (event) {
+      showPastEvents = event.target.checked;
       currentPage = 1;
       renderView();
     });
