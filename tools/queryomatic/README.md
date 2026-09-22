@@ -61,7 +61,7 @@ requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
 | `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
 | `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
-| `GET /api/slate/checkin-search` | maindb | Check-In (`tools/checkin/`) | `first`, `last`, `sisid` |
+| `GET /api/slate/checkin-search` | maindb | Check-In (`tools/checkin/`) | `first`, `last`, `sisid`, `per_guid` |
 | `GET /api/slate/checkin-qr-image` | (proxies a Slate-rendered PNG, not maindb) | Check-In (`tools/checkin/`) | `url` (validated against `CHECKIN_QR_IMAGE_PATTERN`) |
 
 The last three (before `checkin-search`) have no caller since the portal
@@ -111,15 +111,30 @@ a portal showing real numbers and a portal showing zero.
   the `per_*` columns, which have been stable.
 - **One row per person**, not per application (5,837 rows, 5,837 distinct
   `per_url`), so counting rows is counting people.
-- **The check-in portal's QR field is `per_qr_url` (verified live
-  2026-09-22), and it's a URL, not a code.** `tools/checkin/` reads
-  `per_qr_url` off each row; its value is a link to a PNG Slate already
-  renders (`https://enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person`),
+- **The check-in portal's QR field is `per_qr_url`, and it's a URL, not a
+  code.** `tools/checkin/` reads `per_qr_url` off each row; its value is a
+  link to a PNG Slate already renders
+  (`https://enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person`),
   which the checkin-qr-image route (below) re-serves with CORS headers so
   the page can print it. If it comes back blank, check that the maindb
   query's export list includes it — the Worker passes columns through
   unchanged, so there's nothing to fix here if Slate isn't sending the
   field.
+- **`per_guid` is maindb's filter for looking a person up by that same
+  GUID — but only once it's added as an actual filter/prompt on this
+  specific query**, not just present as an export column. Confirmed
+  2026-09-22: before it was added as a filter here, `per_guid=<any value>`
+  was silently ignored (returned the whole unfiltered population, same as
+  any unrecognized parameter); after adding it, `per_guid=<dashed-guid>`
+  returns exactly the matching row, and the no-dash form returns zero rows
+  — the filter compares against the dashed format. This is what
+  `tools/checkin/`'s scan/paste-link lookup uses: a scanned badge decodes
+  to `person:<32 hex, no dashes>` (confirmed by actually decoding one, not
+  guessing from the barcode-image URL), which the page reformats to the
+  dashed form before querying. If a *different* maindb-backed portal ever
+  needs this same lookup and gets zero rows, check whether `per_guid` is
+  configured as a filter on the query it's actually calling — it's
+  per-query, not global.
 
 ### The three portal funnel routes
 

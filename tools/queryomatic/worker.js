@@ -2611,7 +2611,7 @@ export default {
       ) {
         return await handlePagesSlateProxyRoute(
           request, env, id, "checkin-search",
-          ["first", "last", "sisid"],
+          ["first", "last", "sisid", "per_guid"],
           CHECKIN_FIXED_PARAMS
         );
       }

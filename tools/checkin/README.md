@@ -1,21 +1,40 @@
 # Check-In
 
-Tablet/mobile-first check-in portal: search `all_people`/maindb by name, then
-print the matched person's QR code to a Dymo label printer. GitHub-hosted,
-like `tools/idea-box/`; the backend is two routes on the existing
-`gs-labs-slate-gateway` Cloudflare Worker.
+Tablet/mobile-first check-in portal: scan a registrant's badge/QR code (or
+search by name), then print their QR code to a Dymo label printer.
+GitHub-hosted, like `tools/idea-box/`; the backend is two routes on the
+existing `gs-labs-slate-gateway` Cloudflare Worker.
 
-There is no logging or persistence here on purpose — this is search-and-print
-only, no record of who checked in or when.
+There is no logging or persistence here on purpose — this is
+scan/search-and-print only, no record of who checked in or when.
 
 ## How it's wired
 
 - The page calls `GET /api/slate/checkin-search` on `gs-labs-slate-gateway`
   directly (no Slate wrapper/iframe involved) with `first`/`last`/`sisid`
-  params, the same name-splitting search strategy Record Lookup's wrapper
-  uses against maindb. See the route's entry in
+  params for name search, the same name-splitting strategy Record Lookup's
+  wrapper uses against maindb. See the route's entry in
   `tools/queryomatic/README.md` and `handlePagesSlateProxyRoute` in
   `tools/queryomatic/worker.js`.
+- **Scanning a badge looks the person up by `per_guid` instead.** A scanned
+  QR code decodes to `person:<32 hex chars, no dashes>` — confirmed by
+  actually decoding a real barcode image, not by guessing from the URL that
+  renders it. `index.html`'s `extractGuid()` pulls that GUID out of whatever
+  gets scanned or pasted into the same input (a raw scan, a pasted
+  `.../register/mobile?id=<guid>...` link, or a bare GUID with or without
+  dashes all work), reformats it to the standard dashed form, and calls
+  `checkin-search` with `per_guid=<dashed-guid>`. This is a maindb filter
+  Cade added directly in Slate's query builder for the maindb query behind
+  `SLATE_QUERY_URL` on 2026-09-22 — it has to be configured as an actual
+  filter/prompt on *that specific query*, not just present as an export
+  column, or it's silently ignored (returns the whole unfiltered
+  population instead of erroring). See the "What maindb's parameters
+  actually mean" note in `tools/queryomatic/README.md` if this ever seems to
+  stop working, e.g. after the query gets rebuilt.
+- The scan input is focused by default and refocused after every lookup,
+  since a USB/Bluetooth badge scanner behaves like a keyboard — it just
+  needs whatever field is focused to receive its keystrokes, then submits on
+  the Enter it sends at the end.
 - **Currently searches the whole maindb population** — there's no event
   scoping yet. `tools/queryomatic/worker.js` has a `CHECKIN_FIXED_PARAMS`
   constant (currently `{}`) specifically for adding a parameter that should

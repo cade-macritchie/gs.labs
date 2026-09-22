@@ -69,7 +69,8 @@
     .intro h1::after { content: ''; display: block; margin: 12px 0 12px; width: 44px; height: 3px; background: var(--gold); }
     .intro p { margin: 0; color: var(--muted); line-height: 1.5; font-size: .95rem; }
 
-    form#search-form { display: flex; gap: 10px; margin-bottom: 18px; }
+    form#scan-form, form#search-form { display: flex; gap: 10px; margin-bottom: 18px; }
+    .or-divider { margin: -6px 0 14px; color: var(--muted); font: 700 .68rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; text-align: center; }
     .search-field { position: relative; flex: 1; min-width: 0; }
     input#search-input {
       width: 100%; height: var(--tap); padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius);
@@ -163,23 +164,33 @@
 
   <main>
     <div class="intro">
-      <h1>Find a registrant</h1>
-      <p>Search by name, then print their QR code to the Dymo label maker.</p>
+      <h1>Check in a registrant</h1>
+      <p>Scan their badge or QR code, or search by name, then print to the Dymo label maker.</p>
     </div>
 
     <div id="banners"></div>
 
+    <form id="scan-form">
+      <label class="search-field">
+        <span class="visually-hidden" style="position:absolute;left:-9999px;">Scan or paste a registration code</span>
+        <input id="scan-input" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Scan a badge, or paste a registration link/code">
+      </label>
+      <button class="primary" type="submit">Look up</button>
+    </form>
+
+    <p class="or-divider">or search by name</p>
+
     <form id="search-form">
       <label class="search-field">
         <span class="visually-hidden" style="position:absolute;left:-9999px;">Search by name</span>
-        <input id="search-input" type="search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="First or last name" required>
+        <input id="search-input" type="search" inputmode="search" autocomplete="off" autocorrect="off" autocapitalize="words" placeholder="First or last name">
       </label>
-      <button class="primary" type="submit">Search</button>
+      <button class="secondary" type="submit">Search</button>
     </form>
 
     <section id="results" class="results" hidden></section>
     <section id="profile" hidden></section>
-    <div id="empty" class="empty">Enter a name above to begin.</div>
+    <div id="empty" class="empty">Scan a badge, paste a registration link, or search by name to begin.</div>
   </main>
 
   <div id="print-fallback"></div>
@@ -201,6 +212,8 @@
     // handleCheckinQrImage in tools/queryomatic/worker.js.
     const CHECKIN_QR_IMAGE_SERVICE = WORKER_URL + '/api/slate/checkin-qr-image';
 
+    const scanForm = document.getElementById('scan-form');
+    const scanInput = document.getElementById('scan-input');
     const searchForm = document.getElementById('search-form');
     const searchInput = document.getElementById('search-input');
     const results = document.getElementById('results');
@@ -277,6 +290,33 @@
         sisid: plain(field(row, ['per_sisid', 'sisid', 'SIS_ID'])),
         qrUrl: plain(field(row, ['per_qr_url', 'per_qr', 'qr'])),
       };
+    }
+
+    // A scanned badge's QR code decodes (confirmed 2026-09-22 by actually
+    // decoding one, not just guessing from the barcode-image URL) to
+    // "person:<32 hex chars, no dashes>" — e.g.
+    // "person:07f59624160e47eea4c10394429ea33f". That's a different value
+    // from per_qr_url (which points to a rendered image of that same code)
+    // and from per_url (a Slate record-lookup link that happens to carry
+    // the same GUID, dashed, in its own "id" query param). This pattern
+    // matches any of those shapes — a raw scan, a pasted link containing
+    // "id=<guid>", or a bare GUID with or without dashes — and normalizes
+    // whatever it finds to the standard dashed form maindb's per_guid filter
+    // expects (confirmed live: per_guid=<dashed-guid> returns exactly the
+    // matching row; the no-dash form returns zero rows).
+    const GUID_PATTERN = /([0-9a-f]{8})-?([0-9a-f]{4})-?([0-9a-f]{4})-?([0-9a-f]{4})-?([0-9a-f]{12})/i;
+
+    function extractGuid(raw) {
+      const match = GUID_PATTERN.exec(String(raw || ''));
+      return match ? match.slice(1, 6).join('-').toLowerCase() : '';
+    }
+
+    async function lookupByGuid(guid) {
+      const url = new URL(CHECKIN_SERVICE);
+      url.searchParams.set('per_guid', guid);
+      const response = await fetch(url.toString(), { cache: 'no-store', headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('Lookup request returned ' + response.status);
+      return rowsFrom(await response.json()).map(normalize);
     }
 
     // per_qr_url is a link to an already-rendered PNG; treat anything else
@@ -426,7 +466,8 @@
       profile.querySelector('#search-again').addEventListener('click', function () {
         currentPerson = null;
         searchInput.value = '';
-        searchInput.focus();
+        scanInput.value = '';
+        scanInput.focus();
         showOnly('empty');
       });
       printBtn.addEventListener('click', function () { printLabel(person); });
@@ -642,6 +683,37 @@
     }
 
     // ----------------------------------------------------------------
+    // Scan / paste lookup
+    // ----------------------------------------------------------------
+
+    scanForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const raw = scanInput.value.trim();
+      if (!raw) return;
+      const guid = extractGuid(raw);
+      if (!guid) {
+        setBanner('That doesn’t look like a registration code or link — couldn’t find an id in it.', 'error');
+        return;
+      }
+      searchToken += 1;
+      const token = searchToken;
+      setBanner('');
+      showOnly('empty');
+      empty.textContent = 'Looking up…';
+      try {
+        const candidates = await lookupByGuid(guid);
+        if (token !== searchToken) return;
+        if (!candidates.length) { showOnly('empty'); empty.textContent = 'No registrant matched that code.'; return; }
+        renderProfile(candidates[0]);
+        scanInput.value = '';
+      } catch (err) {
+        if (token !== searchToken) return;
+        showOnly('empty');
+        empty.textContent = 'Lookup failed. Check your connection and try again.';
+      }
+    });
+
+    // ----------------------------------------------------------------
     // Search
     // ----------------------------------------------------------------
 
@@ -669,7 +741,7 @@
 
     refreshDeviceStatus();
     setInterval(refreshDeviceStatus, 15000);
-    searchInput.focus();
+    scanInput.focus();
   }());
   </script>
 </body>
