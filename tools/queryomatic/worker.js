@@ -366,20 +366,33 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 const PORTAL_FUNNEL_CACHE_SECONDS = 300;
 
 // Academic period -> the calendar window a person must have been CREATED in to
-// count toward that period. Keyed "term|year" to match the period selector in
-// assets/dashboard-common.js (Total / FA26 / SP27 / FA27).
+// count toward that period. One entry per period in the selector in
+// assets/dashboard-common.js; the two tables have to be kept in step, or a
+// period with no window here silently falls back to an all-time count.
 //
-// FA26 has no start bound on purpose: nothing is tracked before it, so its
-// window is "everything up to 8/15/2026" rather than losing whatever arrived
-// before an arbitrary cutoff. Later periods chain off the previous one's end
-// with no gap, so the windows tile the whole population -- verified against the
-// live query: 2,256 + 46 + 0 = 2,302, exactly the all-time inquiry count.
+// The windows are HALF-OPEN: [start, end). The Slate field carries a time as
+// well as a date, so "end: 1/15/2026" means "before 1/15/2026 00:00" and drops
+// anyone created during that day. Each window's end is therefore the NEXT
+// window's start, not the day before it. Getting this wrong loses people at the
+// seams -- the day-before spelling lost 6 of 2,301 inquiries.
+//
+// The earliest period has no start bound so it absorbs everything before the
+// tracked range instead of discarding it.
+//
+// Verified against the live query: the nine windows sum to 2,301, exactly the
+// all-time inquiry count, with no gap or overlap.
 //
 // Dates are M/D/YYYY with no leading zeros, the format the Slate field expects.
 const PERSON_CREATED_WINDOWS = Object.freeze({
-  "Fall|2026-2027": { start: "", end: "8/15/2026" },
-  "Spring|2026-2027": { start: "8/16/2026", end: "1/15/2027" },
-  "Fall|2027-2028": { start: "1/16/2027", end: "8/15/2027" },
+  "Fall|2025-2026": { start: "", end: "8/16/2025" },
+  "Spring|2025-2026": { start: "8/16/2025", end: "1/16/2026" },
+  "Summer|2025-2026": { start: "1/16/2026", end: "5/16/2026" },
+  "Fall|2026-2027": { start: "5/16/2026", end: "8/16/2026" },
+  "Spring|2026-2027": { start: "8/16/2026", end: "1/16/2027" },
+  "Summer|2026-2027": { start: "1/16/2027", end: "5/16/2027" },
+  "Fall|2027-2028": { start: "5/16/2027", end: "8/16/2027" },
+  "Spring|2027-2028": { start: "8/16/2027", end: "1/16/2028" },
+  "Summer|2027-2028": { start: "1/16/2028", end: "5/16/2028" },
 });
 
 // per_status value for each funnel stage.

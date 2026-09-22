@@ -3,11 +3,24 @@
 
   const PARENT_ORIGIN = 'https://enroll.gs.edu';
 
+  // Every term/year combination the data actually contains, oldest first. A
+  // period left out of this table is invisible to every portal, which is how
+  // all of 2025-2026 (561 people) and every Summer term used to be missing.
+  //
+  // Adding a period here is only half the job: the gateway needs a matching
+  // person-created window in PERSON_CREATED_WINDOWS (tools/queryomatic/worker.js)
+  // or inquiries and prospects fall back to all-time for that period.
   const periods = Object.freeze({
     total: Object.freeze({ label: 'Total (All Time)', term: null, year: null }),
+    FA25: Object.freeze({ label: 'FA25 — Fall 2025', term: 'Fall', year: '2025-2026' }),
+    SP26: Object.freeze({ label: 'SP26 — Spring 2026', term: 'Spring', year: '2025-2026' }),
+    SU26: Object.freeze({ label: 'SU26 — Summer 2026', term: 'Summer', year: '2025-2026' }),
     FA26: Object.freeze({ label: 'FA26 — Fall 2026', term: 'Fall', year: '2026-2027' }),
     SP27: Object.freeze({ label: 'SP27 — Spring 2027', term: 'Spring', year: '2026-2027' }),
-    FA27: Object.freeze({ label: 'FA27 — Fall 2027', term: 'Fall', year: '2027-2028' })
+    SU27: Object.freeze({ label: 'SU27 — Summer 2027', term: 'Summer', year: '2026-2027' }),
+    FA27: Object.freeze({ label: 'FA27 — Fall 2027', term: 'Fall', year: '2027-2028' }),
+    SP28: Object.freeze({ label: 'SP28 — Spring 2028', term: 'Spring', year: '2027-2028' }),
+    SU28: Object.freeze({ label: 'SU28 — Summer 2028', term: 'Summer', year: '2027-2028' })
   });
 
   function periodKey(term, year) {
