@@ -1,47 +1,55 @@
 # Check-In
 
-Tablet/mobile-first check-in portal: scan a registrant's badge/QR code (or
-search by name), then print their QR code to a Dymo label printer.
-GitHub-hosted, like `tools/idea-box/`; the backend is two routes on the
-existing `gs-labs-slate-gateway` Cloudflare Worker.
+Tablet/mobile-first check-in portal: scan a registrant's badge to reprint
+its QR code, or search by name to look one up, then print to a Dymo label
+printer. GitHub-hosted, like `tools/idea-box/`; the backend is two routes on
+the existing `gs-labs-slate-gateway` Cloudflare Worker.
 
 There is no logging or persistence here on purpose — this is
 scan/search-and-print only, no record of who checked in or when.
 
 ## How it's wired
 
-- The page calls `GET /api/slate/checkin-search` on `gs-labs-slate-gateway`
-  directly (no Slate wrapper/iframe involved) with `first`/`last`/`sisid`
-  params for name search, the same name-splitting strategy Record Lookup's
-  wrapper uses against maindb. See the route's entry in
-  `tools/queryomatic/README.md` and `handlePagesSlateProxyRoute` in
-  `tools/queryomatic/worker.js`.
-- **Scanning a badge looks the person up by `per_guid` instead.** A scanned
-  QR code decodes to `person:<32 hex chars, no dashes>` — confirmed by
-  actually decoding a real barcode image, not by guessing from the URL that
-  renders it. `index.html`'s `extractGuid()` pulls that GUID out of whatever
-  gets scanned or pasted into the same input (a raw scan, a pasted
-  `.../register/mobile?id=<guid>...` link, or a bare GUID with or without
-  dashes all work), reformats it to the standard dashed form, and calls
-  `checkin-search` with `per_guid=<dashed-guid>`. This is a maindb filter
-  Cade added directly in Slate's query builder for the maindb query behind
-  `SLATE_QUERY_URL` on 2026-09-22 — it has to be configured as an actual
-  filter/prompt on *that specific query*, not just present as an export
-  column, or it's silently ignored (returns the whole unfiltered
-  population instead of erroring). See the "What maindb's parameters
-  actually mean" note in `tools/queryomatic/README.md` if this ever seems to
-  stop working, e.g. after the query gets rebuilt.
-- The scan input is focused by default and refocused after every lookup,
+- **Scanning a badge needs no Slate query at all.** A scanned badge's code
+  is itself the check-in credential, so reprinting it is just: take
+  whatever was scanned or pasted into the scan input, and print it straight
+  back out as a QR code. See `renderProfile()`/`printLabel()` in
+  `index.html` — the scan-form handler just builds a synthetic record with
+  the raw scanned value as `qrUrl` and hands it to the same rendering/print
+  path name search already uses, no lookup step in between.
+  - A maindb-backed scan lookup (matching the scanned id back to a person
+    record) was tried and abandoned on 2026-09-22: it needed a
+    `per_mobile_pass` filter that only matches event-registrant rows (which
+    maindb only returns with `alt_form_type=Event`), and reliably
+    reconstructing the *exact* originally-scanned payload from whatever got
+    pasted turned out to be more fragile than just reprinting the scanned
+    value directly. See the comment above `CHECKIN_FIXED_PARAMS` in
+    `tools/queryomatic/worker.js` if this is ever revisited.
+  - A scanned QR decodes to a value like
+    `person:07f59624160e47eea4c10394429ea33f` (confirmed by actually
+    decoding a real barcode image) when the badge is a "person" type, or
+    just the bare hex GUID with no prefix for other types (e.g. an event
+    registrant) — confirmed these differ by testing both. Either way,
+    whatever gets scanned is treated as an opaque value to print back out,
+    not something this page tries to interpret.
+- The scan input is focused by default and refocused after every reprint,
   since a USB/Bluetooth badge scanner behaves like a keyboard — it just
   needs whatever field is focused to receive its keystrokes, then submits on
   the Enter it sends at the end.
-- **Currently searches the whole maindb population** — there's no event
-  scoping yet. `tools/queryomatic/worker.js` has a `CHECKIN_FIXED_PARAMS`
-  constant (currently `{}`) specifically for adding a parameter that should
-  always be sent on every check-in search once you have one (e.g. scoping to
-  one event), the same mechanism `/api/slate/inquiries` uses to pin
-  `status: "Inquiry"`.
-- **The QR field is `per_qr_url`, and it's a link to an image, not a code.**
+- **Name search is separate and does query Slate.** The page calls
+  `GET /api/slate/checkin-search` on `gs-labs-slate-gateway` directly (no
+  Slate wrapper/iframe involved) with `first`/`last`/`sisid` params, the
+  same name-splitting strategy Record Lookup's wrapper uses against
+  maindb. See the route's entry in `tools/queryomatic/README.md` and
+  `handlePagesSlateProxyRoute` in `tools/queryomatic/worker.js`.
+- **Name search currently searches the whole maindb population** — there's
+  no event scoping yet. `tools/queryomatic/worker.js` has a
+  `CHECKIN_FIXED_PARAMS` constant (currently `{}`) specifically for adding
+  a parameter that should always be sent on every check-in name search once
+  there's one (e.g. scoping to one event), the same mechanism
+  `/api/slate/inquiries` uses to pin `status: "Inquiry"`.
+- **Name search's QR field is `per_qr_url`, and it's a link to an image, not
+  a code.**
   Verified against the live query on 2026-09-22: maindb's QR column comes
   back as `per_qr_url`, holding a URL like
   `https://enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person`

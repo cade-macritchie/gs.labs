@@ -363,11 +363,18 @@ async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedPa
 
 
 // Fixed params always sent on every /api/slate/checkin-search call, on top of
-// whatever the caller sends. Empty for now — the check-in portal is still
-// being tested against the whole maindb population. Once there's a
-// parameter that should scope every check-in search (e.g. a specific event),
-// add it here, e.g. { alt_form_type: "Event" }, the same way the /inquiries
-// route pins { status: "Inquiry" }.
+// whatever the caller sends. Empty for now — name search is still being
+// tested against the whole maindb population. Once there's a parameter that
+// should scope every check-in search (e.g. a specific event), add it here,
+// e.g. { alt_form_type: "Event" }, the same way the /inquiries route pins
+// { status: "Inquiry" }.
+//
+// A maindb-backed scan lookup (filtering by a scanned badge's id) was tried
+// and abandoned 2026-09-22: it needed a per_mobile_pass filter that only
+// matches event-registrant rows (which maindb only returns with
+// alt_form_type=Event), and reconstructing the exact original QR payload
+// well enough to query it reliably added a lot of fragility for something
+// checkin-qr-image already solves more directly — see tools/checkin/README.md.
 const CHECKIN_FIXED_PARAMS = Object.freeze({});
 
 
@@ -2611,7 +2618,7 @@ export default {
       ) {
         return await handlePagesSlateProxyRoute(
           request, env, id, "checkin-search",
-          ["first", "last", "sisid", "per_guid"],
+          ["first", "last", "sisid"],
           CHECKIN_FIXED_PARAMS
         );
       }
