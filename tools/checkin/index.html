@@ -452,89 +452,191 @@
     // ----------------------------------------------------------------
     // Dymo Connect printing
     //
-    // Verified 2026-09-22 against the actual SDK source (dymosoftware's
-    // official dymo-connect-framework repo on GitHub, the same file
-    // vendor/dymo.connect.framework.js should be — see its README), not just
-    // the documented API surface:
+    // The label schema below is NOT the widely-documented <DieCutLabel>
+    // schema (every public DYMO sample and the DYMO Label XML docs use
+    // that one) — confirmed 2026-09-22 that THIS DYMO Connect installation
+    // rejects <DieCutLabel> outright at the print step ("Invalid label
+    // file: The 'DieCutLabel' element is not declared"), verified by
+    // calling DYMO Connect's local print service directly, bypassing the
+    // browser entirely. The schema it actually accepts is the newer
+    // <DesktopLabel><DYMOLabel Version="4">... one (this is also what
+    // label.isDCDLabel() is checking for — it looks for a literal
+    // "</DYMOLabel>" in the label's XML). LABEL_XML_QR below is adapted
+    // directly from a label Cade created and saved in the DYMO Connect app
+    // itself (local-files/BTC/test.dymo) and confirmed print-successful
+    // both as-is and after modifying its QR/text content, by posting
+    // straight to DYMO Connect's local web service
+    // (https://127.0.0.1:41951/DYMO/DLS/Printing/PrintLabel) — not just
+    // inferred from documentation.
     //
-    // - There is NO setObjectImage(). setObjectText(name, value) is the only
-    //   setter, and it dispatches by the target object's tag — for an
-    //   ImageObject it calls an internal _setImageObjectText.
-    // - _setImageObjectText branches on label.isDCDLabel() (true only when
-    //   the label's live XML contains a literal "</DYMOLabel>" — i.e. only
-    //   for labels already written in DYMO's newer <DYMOLabel> schema).
-    //   Since this label is authored in the older, universally-documented
-    //   <DieCutLabel> schema (same as every official DYMO sample .label
-    //   file), isDCDLabel() is false here, so it takes the legacy branch:
-    //   find the <Image> element and set its text content to whatever
-    //   setObjectText was called with. That's why the ImageObject below
-    //   carries an <Image> placeholder, not a <Data> element.
-    // - The QRCodeObject equivalent (_setQRCodeObjectText) has NO legacy
-    //   branch at all — for a non-DCD label it's a silent no-op, so a
-    //   QRCodeObject's value can't be set dynamically in this schema. That's
-    //   why there's only one code path below: whatever the QR value is (a
-    //   fetched image or a client-side-generated one), it's always placed
-    //   as a PNG into the ImageObject, never as text into a QRCodeObject.
-    // - getPrinters() rows use the printerType value "LabelWriterPrinter" —
-    //   confirmed present in the SDK; "LabelWriterHorizontalPrinter" (used
-    //   in an earlier version of this file) does not appear anywhere in it
-    //   and was a guess, now removed.
+    // - setObjectText(name, value) dispatches by the target object's tag.
+    //   For QRCodeObject it calls _setQRCodeObjectText, which — for this
+    //   schema (isDCDLabel() true) — needs BOTH <Data><DataString> AND
+    //   <TextDataHolder><Value> updated, or DYMO Connect can keep
+    //   displaying/encoding the original designed-in value. This was a
+    //   real bug in the upstream SDK (see
+    //   https://github.com/dymosoftware/DCD-SDK-Sample/issues/12) fixed by
+    //   the community; vendor/dymo.connect.framework.js has been patched
+    //   here to match that fix, since the copy fetched straight from
+    //   dymosoftware's repo only updates DataString.
+    // - DYMO Connect natively renders a QR code from text via
+    //   BarcodeFormat=QRCode + EQRCodeType=QRCodeText — no PNG needed for
+    //   this path at all, unlike the per_qr_url (name search) case below,
+    //   which has no underlying text value, only a link to an
+    //   already-rendered image.
+    // - getPrinters() rows use the printerType value "LabelWriterPrinter".
     //
-    // Still unverified: physical print alignment/scale on your actual label
-    // stock. Default label below is 30334 (2-1/4in x 1-1/4in) — do one real
-    // test print and adjust <PaperName>/<Bounds> to match. See
-    // tools/checkin/README.md.
+    // LABEL_XML_IMAGE (the per_qr_url/name-search path) is adapted to the
+    // same schema's conventions but has NOT been print-tested the way
+    // LABEL_XML_QR has — its ImageObject shape is inferred from
+    // _setImageObjectText's isDCDLabel() branch (a direct <Data> child,
+    // not nested like QRCodeObject's) rather than from a real DYMO
+    // Connect-authored example. Do a real test print of a name-search
+    // result before relying on it; if it fails, get another
+    // DYMO-authored .dymo file (this time with an Image object) the same
+    // way test.dymo was made, and adapt this constant to match, the same
+    // way LABEL_XML_QR was fixed. See tools/checkin/README.md.
+    //
+    // Both labels reuse the exact DYMORect Cade's test.dymo used (a 30251
+    // Address label, 3.21in x ~1in) — resize ObjectLayout/DYMORect to
+    // match a different label size, and note that this schema uses INCHES
+    // (DYMOPoint/Size), not twips like <DieCutLabel> did.
     const PLACEHOLDER_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
+    const LABEL_HEADER_XML =
+      '<?xml version="1.0" encoding="utf-8"?>' +
+      '<DesktopLabel Version="1">' +
+        '<DYMOLabel Version="4">' +
+          '<Description>DYMO Label</Description>' +
+          '<Orientation>Landscape</Orientation>' +
+          '<LabelName>Address30251</LabelName>' +
+          '<InitialLength>0</InitialLength>' +
+          '<BorderStyle>SolidLine</BorderStyle>' +
+          '<DYMORect><DYMOPoint><X>0.23</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.21</Width><Height>0.9966666</Height></Size></DYMORect>' +
+          '<BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor>' +
+          '<BorderThickness>1</BorderThickness>' +
+          '<Show_Border>False</Show_Border>' +
+          '<HasFixedLength>False</HasFixedLength>' +
+          '<FixedLengthValue>0</FixedLengthValue>' +
+          '<DynamicLayoutManager>' +
+            '<RotationBehavior>ClearObjects</RotationBehavior>' +
+            '<LabelObjects>';
+
+    const LABEL_FOOTER_XML =
+            '</LabelObjects>' +
+          '</DynamicLayoutManager>' +
+        '</DYMOLabel>' +
+        '<LabelApplication>Blank</LabelApplication>' +
+        '<DataTable><Columns></Columns><Rows></Rows></DataTable>' +
+      '</DesktopLabel>';
+
+    // The Brushes block test.dymo's TextObject used — transparent
+    // background/fill (lets the label's own background show through), kept
+    // identical since it's part of what's proven to print.
+    const OBJECT_BRUSHES_XML =
+      '<Brushes>' +
+        '<BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush>' +
+        '<BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush>' +
+        '<StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush>' +
+        '<FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush>' +
+      '</Brushes>';
+
+    // test.dymo's QRCodeObject used a DIFFERENT Brushes block — an opaque
+    // WHITE background and opaque black fill, not transparent. Confirmed by
+    // direct comparison (rendering via DYMO Connect's own RenderLabel
+    // endpoint) that reusing OBJECT_BRUSHES_XML here renders an empty box —
+    // no QR pattern at all — even though the print call itself still
+    // reports success. Used for QRCodeObject and, as a safe default,
+    // ImageObject.
+    const QR_OBJECT_BRUSHES_XML =
+      '<Brushes>' +
+        '<BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush>' +
+        '<BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush>' +
+        '<StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush>' +
+        '<FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush>' +
+      '</Brushes>';
+
     const NAME_OBJECT_XML =
-      '<ObjectInfo>' +
-        '<TextObject>' +
-          '<Name>NAME</Name>' +
-          '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
-          '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
-          '<Rotation>Rotation0</Rotation>' +
-          '<IsMirrored>False</IsMirrored>' +
-          '<IsVariable>True</IsVariable>' +
+      '<TextObject>' +
+        '<Name>NAME</Name>' +
+        OBJECT_BRUSHES_XML +
+        '<Rotation>Rotation0</Rotation>' +
+        '<OutlineThickness>1</OutlineThickness>' +
+        '<IsOutlined>False</IsOutlined>' +
+        '<BorderStyle>SolidLine</BorderStyle>' +
+        '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>' +
+        '<HorizontalAlignment>Center</HorizontalAlignment>' +
+        '<VerticalAlignment>Middle</VerticalAlignment>' +
+        '<FitMode>AlwaysFit</FitMode>' +
+        '<IsVertical>False</IsVertical>' +
+        '<FormattedText>' +
+          '<FitMode>AlwaysFit</FitMode>' +
           '<HorizontalAlignment>Center</HorizontalAlignment>' +
           '<VerticalAlignment>Middle</VerticalAlignment>' +
-          '<TextFitMode>ShrinkToFit</TextFitMode>' +
-          '<UseFullFontHeight>True</UseFullFontHeight>' +
-          '<Verticalized>False</Verticalized>' +
-          '<StyledText>' +
-            '<Element>' +
-              '<String>PLACEHOLDER</String>' +
-              '<Attributes><Font Family="Arial" Size="10" Bold="True" Italic="False" Underline="False" Strikeout="False" /><ForeColor Alpha="255" Red="0" Green="0" Blue="0" /></Attributes>' +
-            '</Element>' +
-          '</StyledText>' +
-        '</TextObject>' +
-        '<Bounds X="850" Y="90" Width="700" Height="720" />' +
-      '</ObjectInfo>';
+          '<IsVertical>False</IsVertical>' +
+          '<LineTextSpan>' +
+            '<TextSpan>' +
+              '<Text>PLACEHOLDER</Text>' +
+              '<FontInfo>' +
+                '<FontName>Segoe UI</FontName>' +
+                '<FontSize>14</FontSize>' +
+                '<IsBold>False</IsBold>' +
+                '<IsItalic>False</IsItalic>' +
+                '<IsUnderline>False</IsUnderline>' +
+                '<FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush>' +
+              '</FontInfo>' +
+            '</TextSpan>' +
+          '</LineTextSpan>' +
+        '</FormattedText>' +
+        '<ObjectLayout><DYMOPoint><X>1.9</X><Y>0.18416655</Y></DYMOPoint><Size><Width>1.3</Width><Height>0.6</Height></Size></ObjectLayout>' +
+      '</TextObject>';
 
-    const LABEL_XML_IMAGE =
-      '<?xml version="1.0" encoding="utf-8"?>' +
-      '<DieCutLabel Version="8.0" Units="twips">' +
-        '<PaperOrientation>Landscape</PaperOrientation>' +
-        '<Id>Small</Id>' +
-        '<PaperName>30334 2-1/4 in x 1-1/4 in</PaperName>' +
-        '<DrawCommands><RoundRectangle X="0" Y="0" Width="1620" Height="900" Rx="270" Ry="270" /></DrawCommands>' +
-        '<ObjectInfo>' +
-          '<ImageObject>' +
-            '<Name>QR</Name>' +
-            '<ForeColor Alpha="255" Red="0" Green="0" Blue="0" />' +
-            '<BackColor Alpha="0" Red="255" Green="255" Blue="255" />' +
-            '<Rotation>Rotation0</Rotation>' +
-            '<IsMirrored>False</IsMirrored>' +
-            '<IsVariable>True</IsVariable>' +
-            '<Image>' + PLACEHOLDER_PNG_BASE64 + '</Image>' +
-            '<ScaleMode>Uniform</ScaleMode>' +
-            '<BorderWidth>0</BorderWidth>' +
-            '<HorizontalAlignment>Center</HorizontalAlignment>' +
-            '<VerticalAlignment>Middle</VerticalAlignment>' +
-          '</ImageObject>' +
-          '<Bounds X="90" Y="90" Width="720" Height="720" />' +
-        '</ObjectInfo>' +
+    // Verified: this exact QRCodeObject shape (Data/DataString +
+    // TextDataHolder/Value + BarcodeFormat=QRCode + EQRCodeType=QRCodeText)
+    // is what DYMO Connect itself wrote to test.dymo and printed
+    // successfully.
+    const LABEL_XML_QR =
+      LABEL_HEADER_XML +
         NAME_OBJECT_XML +
-      '</DieCutLabel>';
+        '<QRCodeObject>' +
+          '<Name>QR</Name>' +
+          QR_OBJECT_BRUSHES_XML +
+          '<Rotation>Rotation0</Rotation>' +
+          '<OutlineThickness>1</OutlineThickness>' +
+          '<IsOutlined>False</IsOutlined>' +
+          '<BorderStyle>SolidLine</BorderStyle>' +
+          '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>' +
+          '<BarcodeFormat>QRCode</BarcodeFormat>' +
+          '<Data><DataString>PLACEHOLDER</DataString></Data>' +
+          '<HorizontalAlignment>Center</HorizontalAlignment>' +
+          '<VerticalAlignment>Middle</VerticalAlignment>' +
+          '<Size>AutoFit</Size>' +
+          '<EQRCodeType>QRCodeText</EQRCodeType>' +
+          '<TextDataHolder><Value>PLACEHOLDER</Value></TextDataHolder>' +
+          '<ObjectLayout><DYMOPoint><X>0.23</X><Y>0.18416655</Y></DYMOPoint><Size><Width>1.5</Width><Height>0.6</Height></Size></ObjectLayout>' +
+        '</QRCodeObject>' +
+      LABEL_FOOTER_XML;
+
+    // Unverified — see the comment block above. ImageObject's shape here is
+    // inferred (Data as a direct child, matching _setImageObjectText's
+    // isDCDLabel() branch), not confirmed against a real DYMO-authored file.
+    const LABEL_XML_IMAGE =
+      LABEL_HEADER_XML +
+        NAME_OBJECT_XML +
+        '<ImageObject>' +
+          '<Name>QR</Name>' +
+          QR_OBJECT_BRUSHES_XML +
+          '<Rotation>Rotation0</Rotation>' +
+          '<OutlineThickness>1</OutlineThickness>' +
+          '<IsOutlined>False</IsOutlined>' +
+          '<BorderStyle>SolidLine</BorderStyle>' +
+          '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>' +
+          '<Data>' + PLACEHOLDER_PNG_BASE64 + '</Data>' +
+          '<HorizontalAlignment>Center</HorizontalAlignment>' +
+          '<VerticalAlignment>Middle</VerticalAlignment>' +
+          '<ObjectLayout><DYMOPoint><X>0.23</X><Y>0.18416655</Y></DYMOPoint><Size><Width>1.5</Width><Height>0.6</Height></Size></ObjectLayout>' +
+        '</ImageObject>' +
+      LABEL_FOOTER_XML;
 
     function dymoAvailable() {
       try {
@@ -571,17 +673,6 @@
       });
     }
 
-    // Renders a QRCode.js-encoded value straight to a base64 PNG, for the
-    // (currently never seen live) case where per_qr_url isn't URL-shaped.
-    function qrTextToBase64Png(value) {
-      return new Promise(function (resolve, reject) {
-        window.QRCode.toDataURL(value, { width: 300, margin: 1 }, function (err, dataUrl) {
-          if (err) reject(err);
-          else resolve(dataUrl.replace(/^data:image\/\w+;base64,/, ''));
-        });
-      });
-    }
-
     async function printLabel(person) {
       const statusEl = profile.querySelector('#print-status');
       const fallbackBtn = profile.querySelector('#print-fallback-btn');
@@ -602,21 +693,25 @@
           return;
         }
 
-        let base64;
+        let label;
         if (isProbablyUrl(person.qrUrl)) {
+          // per_qr_url (name search) has no underlying text value, only a
+          // link to Slate's already-rendered image — has to go through the
+          // (unverified — see comment above LABEL_XML_IMAGE) ImageObject
+          // path, not the proven QRCodeObject one.
           statusEl.textContent = 'Fetching QR image…';
           const response = await fetch(qrImageProxyUrl(person.qrUrl), { cache: 'no-store' });
           if (!response.ok) throw new Error('QR image request returned ' + response.status);
           const dataUrl = await blobToDataUrl(await response.blob());
-          base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          label = window.dymo.label.framework.openLabelXml(LABEL_XML_IMAGE);
+          label.setObjectText('QR', base64);
         } else {
-          base64 = await qrTextToBase64Png(person.qrUrl);
+          // A scanned/pasted code IS the value to encode — DYMO Connect
+          // renders the QR natively from this text, no image involved.
+          label = window.dymo.label.framework.openLabelXml(LABEL_XML_QR);
+          label.setObjectText('QR', person.qrUrl);
         }
-
-        // setObjectText, not setObjectImage (which doesn't exist in the SDK)
-        // — see the comment block above LABEL_XML_IMAGE for why this works.
-        const label = window.dymo.label.framework.openLabelXml(LABEL_XML_IMAGE);
-        label.setObjectText('QR', base64);
         label.setObjectText('NAME', person.name);
         label.print(labelPrinter.name);
         statusEl.textContent = 'Sent to ' + labelPrinter.name + '.';

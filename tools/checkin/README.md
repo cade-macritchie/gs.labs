@@ -70,43 +70,83 @@ scan/search-and-print only, no record of who checked in or when.
   host/path/query shape with a GUID-validated `id`, so this can't be used as
   an open image-fetching proxy for arbitrary URLs.
 
-## Dymo printing — needs a real test print before an event
+## Dymo printing
 
 Printing goes through DYMO's own browser SDK (`dymo.label.framework.*`),
 which talks to the DYMO Connect desktop app running locally on the check-in
 device. `vendor/dymo.connect.framework.js` is committed here (fetched
 2026-09-22 straight from `dymosoftware/dymo-connect-framework`, DYMO's own
-GitHub org) — nothing to download separately.
+GitHub org, with one local patch — see below) — nothing to download
+separately.
 
-Its actual source (not just the documented API) was checked to get the
-implementation right:
+**The label schema actually matters, and it's not the one in DYMO's public
+docs/samples.** Confirmed 2026-09-22 by calling DYMO Connect's local print
+service directly (`https://127.0.0.1:41951/DYMO/DLS/Printing/PrintLabel`),
+bypassing the browser entirely, that this DYMO Connect installation rejects
+the widely-documented `<DieCutLabel>` schema outright at the print step —
+`Invalid label file: The 'DieCutLabel' element is not declared.` — even
+though every official DYMO sample file (and the original version of this
+page) used exactly that schema. The schema it actually accepts is the newer
+`<DesktopLabel><DYMOLabel Version="4">...` one; `isDCDLabel()` in the SDK is
+checking for exactly this (a literal `"</DYMOLabel>"` in the label's XML).
 
-- **There is no `setObjectImage()`.** `setObjectText(name, value)` is the
-  only setter; called on an `ImageObject` it dispatches internally to a
-  handler that only has a working code path when the label XML is authored
-  in the older `<DieCutLabel>` schema (used here, same as every official
-  DYMO sample label) — it then finds that object's `<Image>` element and
-  overwrites its content. That's what `printLabel()` in `index.html` does.
-- **A `QRCodeObject`'s value can't be set dynamically in this schema at
-  all** — the SDK's internal handler for it has no code path for
-  `<DieCutLabel>`-schema labels, only for DYMO's newer `<DYMOLabel>` schema.
-  So there's one printing code path, not two: a non-URL QR value (never seen
-  live, but handled) is rendered to a PNG via QRCode.js first, then printed
-  through the same `ImageObject` path as the normal `per_qr_url` case.
-- **`getPrinters()` printer-type value is `"LabelWriterPrinter"`** —
-  confirmed present in the SDK source; nothing else is checked for.
+`LABEL_XML_QR` in `index.html` (used for the scan/reprint flow) is adapted
+directly from a label Cade created and saved in the DYMO Connect app itself
+(`local-files/BTC/test.dymo`) and is fully verified end to end: printed
+successfully via a direct call to DYMO Connect's local service, rendered via
+its `RenderLabel` endpoint to confirm the QR code actually appears (an
+earlier attempt at reconstructing the schema produced a label that printed
+"successfully" per the API but rendered a blank box — no QR at all, because
+the `QRCodeObject`'s `BackgroundBrush` needs to be opaque white, not
+transparent like every other object's; a `QRCodeObject` also needs its
+`FillBrush` opaque, unlike a plain text object), and had that rendered image
+decoded to confirm it actually encodes the value that was set, not stale
+placeholder content. `setObjectText` for a `QRCodeObject` needs a local
+patch to `vendor/dymo.connect.framework.js`: the version fetched straight
+from DYMO's repo only updates `<Data><DataString>`, but DYMO Connect can
+keep displaying/encoding the *original* designed-in value unless
+`<TextDataHolder><Value>` is *also* updated — a real bug fixed by the
+community (see
+[DCD-SDK-Sample#12](https://github.com/dymosoftware/DCD-SDK-Sample/issues/12)),
+patched into the vendored copy here.
 
-**What's still unverified is physical alignment.** `LABEL_XML_IMAGE` in
-`index.html` targets a 30334 (2-1/4in x 1-1/4in) label with the QR image on
-the left and the person's name on the right — do one real test print, and if
-it's misaligned or on the wrong stock, adjust `<PaperName>` and each
-`<Bounds>` to match. The easiest way to get a known-good template is to
-design a label once in the DYMO Connect desktop app, save it, and copy its
-XML into this constant instead of hand-tuning bounds.
+`LABEL_XML_IMAGE` (used for the name-search/`per_qr_url` flow, where there's
+no underlying text value to encode — only a link to an image Slate already
+rendered) is adapted to the same schema's conventions but has **not** been
+verified the same thorough way — its `ImageObject` shape is inferred from
+`_setImageObjectText`'s `isDCDLabel()` branch (a direct `<Data>` child, not
+nested like `QRCodeObject`'s), not confirmed against a real DYMO-authored
+example. Do a real test print of a name-search result before relying on it;
+if it fails or renders blank, get another DYMO Connect-authored `.dymo` file
+(this time with an Image object — same way `test.dymo` was made) and adapt
+`LABEL_XML_IMAGE` to match, the same way `LABEL_XML_QR` was fixed.
+
+Both labels reuse the exact `DYMORect` `test.dymo` used — a 30251 Address
+label, ~3.21in x 1in. To use different label stock, resize
+`DYMORect`/`ObjectLayout` in `index.html`; note this schema uses **inches**
+(`DYMOPoint`/`Size`), not twips like the old `<DieCutLabel>` schema did.
 
 The header shows a live "DYMO ready — <printer name>" / "DYMO Connect not
 detected" status so staff can tell at a glance whether printing will work,
 without having to try a search first.
+
+### If this ever breaks again
+
+Don't guess at the XML blind — DYMO Connect's local web service can be
+called directly to iterate fast, without needing the browser or a physical
+test print for every attempt:
+
+```
+GET  https://127.0.0.1:41951/DYMO/DLS/Printing/GetPrinters
+POST https://127.0.0.1:41951/DYMO/DLS/Printing/PrintLabel
+     body (form-urlencoded): printerName=<name>&printParamsXml=&labelXml=<xml>&labelSetXml=
+POST https://127.0.0.1:41951/DYMO/DLS/Printing/RenderLabel
+     body (form-urlencoded): labelXml=<xml>&renderParamsXml=&printerName=<name>
+     → returns a JSON-quoted base64 PNG of what would actually print
+```
+`RenderLabel` is what caught the invisible-QR bug above — it shows you what
+DYMO Connect thinks the label looks like without spending a physical label
+on every guess.
 
 ## Local testing without a printer
 
