@@ -383,7 +383,7 @@ const CHECKIN_FIXED_PARAMS = Object.freeze({});
 //
 // maindb's per_qr_url column (verified live 2026-09-22) is not an opaque
 // code to encode ourselves — it's a link to a PNG Slate already renders at
-// enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person. That
+// enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode[&type=<type>]. That
 // response carries no Access-Control-Allow-Origin header, so a browser on
 // GitHub Pages can display it in a plain <img> (tag loads aren't
 // CORS-gated) but cannot read its pixel bytes via fetch()/canvas — which
@@ -394,10 +394,16 @@ const CHECKIN_FIXED_PARAMS = Object.freeze({});
 // The `url` parameter is checked against an exact pattern (Slate's own
 // host/path/query shape, GUID-validated) rather than fetched blind, so this
 // can't be turned into an open image-fetching proxy for arbitrary URLs.
+//
+// `&type=...` is OPTIONAL: confirmed 2026-09-22 that an event registrant's
+// link 404s WITH "&type=person" and only renders correctly without it (or
+// presumably with whatever type actually matches that record), so the
+// pattern can't require a fixed type value — that's this route's job to
+// pass through unchanged, not to validate.
 // ============================================================
 
 const CHECKIN_QR_IMAGE_PATTERN =
-  /^https:\/\/enroll\.gs\.edu\/register\/mobile\?id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}&cmd=barcode&type=person$/i;
+  /^https:\/\/enroll\.gs\.edu\/register\/mobile\?id=[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}&cmd=barcode(&type=[a-z]+)?$/i;
 
 async function handleCheckinQrImage(request, env, id) {
   if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
