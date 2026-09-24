@@ -36,7 +36,7 @@ function normalizeCode(rawSegment) {
   return String(value || '').trim().toUpperCase().slice(0, 60);
 }
 
-const CODE_COLUMNS = 'code, amount, created_at, updated_at';
+const CODE_COLUMNS = 'code, amount, initial_amount, notes, created_at, updated_at';
 
 export default {
   async fetch(request, env) {
@@ -63,12 +63,13 @@ export default {
       }
 
       // (1) POST /api/waiver-codes — admin only, add a waiver code
-      // body: { code, amount }
+      // body: { code, amount, notes? }
       if (parts.length === 2 && request.method === 'POST') {
         if (!isAdmin(request, env)) return json({ error: 'unauthorized' }, 401, cors);
         const body = await request.json().catch(() => ({}));
         const code = normalizeCode(body.code);
         const amount = Number(body.amount);
+        const notes = body.notes == null ? null : String(body.notes).slice(0, 500);
         if (!code) return json({ error: 'code is required' }, 400, cors);
         if (!Number.isInteger(amount) || amount < 0) {
           return json({ error: 'amount must be a non-negative integer' }, 400, cors);
@@ -80,18 +81,18 @@ export default {
         if (existing) return json({ error: 'code already exists' }, 409, cors);
 
         const result = await env.DB.prepare(
-          `INSERT INTO waiver_codes (code, amount, created_at, updated_at)
-           VALUES (?, ?, datetime('now'), datetime('now'))
+          `INSERT INTO waiver_codes (code, amount, initial_amount, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
            RETURNING ${CODE_COLUMNS}`
-        ).bind(code, amount).first();
+        ).bind(code, amount, amount, notes).first();
         return json({ waiverCode: result }, 201, cors);
       }
 
       // POST /api/waiver-codes/sync — admin only, bulk-add from a nightly
-      // Slate export. Body: { codes: [{ code, amount }, ...] }. Inserts
-      // codes it hasn't seen before; an already-known code is left alone
-      // so a code someone used earlier today doesn't get its amount reset
-      // back to the export's original value on the next sync.
+      // Slate export. Body: { codes: [{ code, amount, notes? }, ...] }.
+      // Inserts codes it hasn't seen before; an already-known code is left
+      // alone so a code someone used earlier today doesn't get its amount
+      // reset back to the export's original value on the next sync.
       if (parts.length === 3 && parts[2] === 'sync' && request.method === 'POST') {
         if (!isAdmin(request, env)) return json({ error: 'unauthorized' }, 401, cors);
         const body = await request.json().catch(() => ({}));
@@ -106,6 +107,7 @@ export default {
         for (const row of rows) {
           const rowCode = normalizeCode(row && row.code);
           const rowAmount = Number(row && row.amount);
+          const rowNotes = row && row.notes == null ? null : String(row.notes).slice(0, 500);
           if (!rowCode || !Number.isInteger(rowAmount) || rowAmount < 0) {
             invalid.push((row && row.code) || '(blank)');
             continue;
@@ -114,15 +116,30 @@ export default {
           seen.add(rowCode);
 
           const result = await env.DB.prepare(
-            `INSERT INTO waiver_codes (code, amount, created_at, updated_at)
-             VALUES (?, ?, datetime('now'), datetime('now'))
+            `INSERT INTO waiver_codes (code, amount, initial_amount, notes, created_at, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
              ON CONFLICT(code) DO NOTHING
              RETURNING code`
-          ).bind(rowCode, rowAmount).first();
+          ).bind(rowCode, rowAmount, rowAmount, rowNotes).first();
           if (result) created.push(rowCode); else skipped.push(rowCode);
         }
 
         return json({ created, skipped, invalid }, 200, cors);
+      }
+
+      // GET /api/waiver-codes/summary — admin only. Total registrants across
+      // all codes, using each code's original initial_amount (not its
+      // current/decremented amount) so partial redemption doesn't shrink the
+      // count, and excluding any code whose notes mention "admin" (e.g.
+      // comp/staff codes that shouldn't count as real registrants).
+      if (parts.length === 3 && parts[2] === 'summary' && request.method === 'GET') {
+        if (!isAdmin(request, env)) return json({ error: 'unauthorized' }, 401, cors);
+        const result = await env.DB.prepare(
+          `SELECT COALESCE(SUM(initial_amount), 0) AS totalRegistrants, COUNT(*) AS codeCount
+           FROM waiver_codes
+           WHERE notes IS NULL OR LOWER(notes) NOT LIKE '%admin%'`
+        ).first();
+        return json({ totalRegistrants: result.totalRegistrants, codeCount: result.codeCount }, 200, cors);
       }
 
       const code = parts.length >= 3 ? normalizeCode(parts[2]) : '';

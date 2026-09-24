@@ -179,6 +179,14 @@
       <div id="event-funnel" class="funnel" aria-label="Event enrollment funnel"></div>
       <div id="event-funnel-empty" class="empty-state" hidden>No funnel records are available for this event.</div>
 
+      <section id="btc-registration-details" class="btc-registration-details" hidden>
+        <div class="section-divider"><div class="section-eyebrow">Registration Details</div><div class="section-heading">Bible Teaching Conference</div></div>
+        <div class="stat-bar">
+          <div class="stat-cell"><div id="btc-total-registrants" class="stat-val">—</div><div class="stat-lbl">Total Registrants</div></div>
+        </div>
+        <p id="btc-registration-note" class="adjustment-note"></p>
+      </section>
+
       <section id="event-stage-drilldown" class="stage-drilldown" aria-labelledby="event-stage-title" hidden>
         <div class="stage-drilldown-head">
           <div>
@@ -226,6 +234,50 @@
     let useAdjustedApplicants = false;
     let adjustmentPercentage = 0;
     const eventBridge = window.DashboardBridge.create('event-tracker', render);
+
+    // Registrant totals for the Bible Teaching Conference come from the
+    // waiver-codes D1 worker (registrants = waiver codes issued), not from
+    // the Slate funnel payload above. Admin key embedded client-side is an
+    // accepted tradeoff already used elsewhere for this worker — see
+    // local-files/Other/waiver-code-api.md and local-files/BTC/*.js.
+    var BTC_API_BASE_URL = 'https://slate-waiver-codes.gs-labs.workers.dev';
+    var BTC_ADMIN_KEY = 'REPLACE_WITH_ADMIN_KEY'; // same value used in local-files/BTC/group-registration.js
+    var BTC_EVENT_TITLE_PATTERN = /bible teaching conference/i;
+    var btcSummaryRequestId = 0;
+
+    function isBtcEvent(event) {
+      return BTC_EVENT_TITLE_PATTERN.test(event.title || '');
+    }
+
+    function loadBtcRegistrationDetails(event) {
+      const section = document.getElementById('btc-registration-details');
+      if (!isBtcEvent(event)) { section.hidden = true; return; }
+      section.hidden = false;
+      const valueEl = document.getElementById('btc-total-registrants');
+      const noteEl = document.getElementById('btc-registration-note');
+      valueEl.textContent = '—';
+      noteEl.textContent = 'Loading registrant totals…';
+      const requestId = ++btcSummaryRequestId;
+
+      fetch(BTC_API_BASE_URL + '/api/waiver-codes/summary', {
+        headers: { 'X-Admin-Key': BTC_ADMIN_KEY }
+      })
+        .then(function (res) {
+          if (!res.ok) throw new Error('request failed: ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          if (requestId !== btcSummaryRequestId) return; // a newer event was opened meanwhile
+          valueEl.textContent = Number(data.totalRegistrants || 0).toLocaleString();
+          noteEl.textContent = 'Sum of registration ticket limits across ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin.';
+        })
+        .catch(function (err) {
+          if (requestId !== btcSummaryRequestId) return;
+          valueEl.textContent = '—';
+          noteEl.textContent = 'Could not load registrant totals.';
+          console.error('[event-tracker] BTC registrant summary failed:', err);
+        });
+    }
 
     function numeric(value) {
       const cleaned = String(value == null ? '' : value).trim().replace(/[$,]/g, '');
@@ -380,6 +432,7 @@
       ui.setText('event-funnel-applicants', (event.applicants + event.students).toLocaleString());
       ui.setText('event-funnel-students', event.students.toLocaleString());
       renderEventFunnel(event);
+      loadBtcRegistrationDetails(event);
       closeEventStage();
     }
 

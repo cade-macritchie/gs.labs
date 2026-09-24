@@ -17,6 +17,9 @@ wrangler d1 create slate-waiver-codes
 # paste the returned database_id into wrangler.toml under [[d1_databases]]
 
 wrangler d1 execute slate-waiver-codes --remote --file ./schema.sql
+# on an already-deployed database, also run any new files under ./migrations
+# in order, e.g.:
+wrangler d1 execute slate-waiver-codes --remote --file ./migrations/0001_add_notes_and_initial_amount.sql
 
 wrangler secret put ADMIN_KEY
 wrangler deploy
@@ -42,8 +45,9 @@ call examples covering all four operations.
 Codes are stored uppercased and trimmed, so lookups are case-insensitive.
 
 - `POST /api/waiver-codes` — **admin only** (`X-Admin-Key` header). Body:
-  `{ code, amount }`. Creates a new waiver code with that many uses. 409 if
-  the code already exists.
+  `{ code, amount, notes? }`. Creates a new waiver code with that many uses;
+  `initial_amount` is set to `amount` at creation and never changes
+  afterward. 409 if the code already exists.
 - `GET /api/waiver-codes/:code` — check that a code matches an existing
   record. Returns `{ valid: true, waiverCode }` or 404
   `{ valid: false, error }`.
@@ -57,6 +61,10 @@ Codes are stored uppercased and trimmed, so lookups are case-insensitive.
   the balance was already 0, or 404 if the code doesn't exist.
 - `GET /api/waiver-codes` — **admin only** (`X-Admin-Key` header). Lists
   every code, newest first.
+- `GET /api/waiver-codes/summary` — **admin only** (`X-Admin-Key` header).
+  Returns `{ totalRegistrants, codeCount }`, where `totalRegistrants` is the
+  sum of every code's `initial_amount` (its original limit, unaffected by
+  later decrements) excluding any code whose `notes` mentions "admin".
 
 ## Notes
 
