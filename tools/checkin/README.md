@@ -36,6 +36,17 @@ scan/search-and-print only, no record of who checked in or when.
   since a USB/Bluetooth badge scanner behaves like a keyboard — it just
   needs whatever field is focused to receive its keystrokes, then submits on
   the Enter it sends at the end.
+- **"Scan with camera"** is an alternative entry point for devices with no
+  USB/Bluetooth scanner attached (e.g. a phone or a tablet's own camera). The
+  button only appears when `navigator.mediaDevices.getUserMedia` exists, and
+  opens a full-screen video overlay. Decoding prefers the native
+  `BarcodeDetector` API where available; browsers without it (Safari/iOS as
+  of this writing) fall back to `jsQR` (loaded from jsDelivr, same pattern as
+  the existing `qrcode.js` CDN script). Either path feeds its decoded string
+  into the exact same `renderProfile()`/`printLabel()` flow the USB scanner
+  and paste-into-the-input path already use — see "Scan / paste to reprint"
+  above — so there's no separate handling of what a camera-scanned code
+  means.
 - **Name search is separate and does query Slate.** The page calls
   `GET /api/slate/checkin-search` on `gs-labs-slate-gateway` directly (no
   Slate wrapper/iframe involved) with `first`/`last`/`sisid` params, the

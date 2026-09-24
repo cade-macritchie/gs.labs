@@ -10,6 +10,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <!-- jsQR decodes camera frames when the browser has no native BarcodeDetector
+       (Safari/iOS as of this writing) — see startCameraScan() in the script
+       below, which tries BarcodeDetector first and falls back to this. -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <!-- DYMO Connect Framework SDK, self-hosted — see tools/checkin/README.md.
        Not on any public CDN; download it from DYMO's own SDK and drop it in
        vendor/. Loading it with a plain <script> (no `defer`) means it's
@@ -132,6 +136,15 @@
 
     .profile-actions { margin-top: 20px; display: flex; justify-content: center; }
 
+    .camera-modal {
+      position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px; padding: 20px; background: rgba(12,15,20,.92);
+    }
+    .camera-modal video { width: min(480px, 100%); border-radius: var(--radius); background: #000; }
+    .camera-modal .camera-status { color: #fff; font-size: .9rem; text-align: center; min-height: 1.2em; }
+    .camera-modal button.secondary { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+    .camera-modal button.secondary:hover { border-color: #fff; color: #fff; }
+
     /* Print-only fallback layout, used when DYMO Connect isn't available:
        hidden on screen, shown (and everything else hidden) via @media print
        once #print-fallback is populated and window.print() is triggered. */
@@ -176,6 +189,7 @@
         <input id="scan-input" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Scan a badge to reprint it">
       </label>
       <button class="primary" type="submit">Reprint</button>
+      <button class="secondary" id="camera-scan-btn" type="button" hidden>Scan with camera</button>
     </form>
 
     <p class="or-divider">or search by name</p>
@@ -194,6 +208,11 @@
   </main>
 
   <div id="print-fallback"></div>
+  <div id="camera-modal" class="camera-modal" hidden>
+    <video id="camera-video" playsinline muted autoplay></video>
+    <p id="camera-status" class="camera-status">Point the camera at a QR code.</p>
+    <button class="secondary" id="camera-cancel-btn" type="button">Cancel</button>
+  </div>
 
   <script>
   (function () {
@@ -222,6 +241,11 @@
     const banners = document.getElementById('banners');
     const deviceStatus = document.getElementById('device-status');
     const printFallback = document.getElementById('print-fallback');
+    const cameraScanBtn = document.getElementById('camera-scan-btn');
+    const cameraModal = document.getElementById('camera-modal');
+    const cameraVideo = document.getElementById('camera-video');
+    const cameraStatus = document.getElementById('camera-status');
+    const cameraCancelBtn = document.getElementById('camera-cancel-btn');
 
     let searchToken = 0;
     let currentPerson = null;
@@ -800,6 +824,86 @@
         empty.textContent = 'Search failed. Check your connection and try again.';
       }
     });
+
+    // ----------------------------------------------------------------
+    // Camera scan
+    //
+    // Same badge-value shape the USB scanner / paste path already handles
+    // (see the "Scan / paste to reprint" comment above) — whatever the
+    // camera decodes gets treated as the raw scanned payload and fed
+    // straight into the existing reprint flow, no new code path for what
+    // happens after decode. Prefers the native BarcodeDetector API (fast,
+    // no extra decode work per frame); falls back to jsQR (vendored via
+    // CDN, see the <script> tag in <head>) on browsers without it, e.g.
+    // Safari/iOS as of this writing.
+    // ----------------------------------------------------------------
+
+    let cameraStream = null;
+    let cameraRafId = null;
+    let cameraCanvas = null;
+    let cameraCanvasCtx = null;
+
+    function stopCameraScan() {
+      if (cameraRafId != null) { cancelAnimationFrame(cameraRafId); cameraRafId = null; }
+      if (cameraStream) { cameraStream.getTracks().forEach(function (t) { t.stop(); }); cameraStream = null; }
+      cameraVideo.srcObject = null;
+      cameraModal.hidden = true;
+    }
+
+    function handleDecodedValue(value) {
+      stopCameraScan();
+      setBanner('');
+      renderProfile({ name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: value });
+    }
+
+    async function scanFrameWithDetector(detector) {
+      if (!cameraStream) return;
+      try {
+        const codes = await detector.detect(cameraVideo);
+        if (codes && codes.length) { handleDecodedValue(codes[0].rawValue); return; }
+      } catch (e) { /* transient decode errors are expected mid-stream */ }
+      cameraRafId = requestAnimationFrame(function () { scanFrameWithDetector(detector); });
+    }
+
+    function scanFrameWithJsQR() {
+      if (!cameraStream) return;
+      if (cameraVideo.readyState === cameraVideo.HAVE_ENOUGH_DATA) {
+        cameraCanvas.width = cameraVideo.videoWidth;
+        cameraCanvas.height = cameraVideo.videoHeight;
+        cameraCanvasCtx.drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
+        const imageData = cameraCanvasCtx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
+        const code = window.jsQR && window.jsQR(imageData.data, imageData.width, imageData.height);
+        if (code && code.data) { handleDecodedValue(code.data); return; }
+      }
+      cameraRafId = requestAnimationFrame(scanFrameWithJsQR);
+    }
+
+    async function startCameraScan() {
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return;
+      cameraStatus.textContent = 'Point the camera at a QR code.';
+      cameraModal.hidden = false;
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        cameraVideo.srcObject = cameraStream;
+        await cameraVideo.play();
+        if (window.BarcodeDetector) {
+          const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+          scanFrameWithDetector(detector);
+        } else {
+          cameraCanvas = document.createElement('canvas');
+          cameraCanvasCtx = cameraCanvas.getContext('2d', { willReadFrequently: true });
+          scanFrameWithJsQR();
+        }
+      } catch (err) {
+        cameraStatus.textContent = 'Could not access the camera: ' + (err && err.message ? err.message : 'unknown error') + '.';
+      }
+    }
+
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      cameraScanBtn.hidden = false;
+      cameraScanBtn.addEventListener('click', startCameraScan);
+    }
+    cameraCancelBtn.addEventListener('click', stopCameraScan);
 
     refreshDeviceStatus();
     setInterval(refreshDeviceStatus, 15000);
