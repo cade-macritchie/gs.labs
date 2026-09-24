@@ -1,28 +1,27 @@
 # Check-In
 
-Tablet/mobile-first check-in portal: scan a registrant's badge to reprint
-its QR code, or search by name to look one up, then print to a Dymo label
-printer. GitHub-hosted, like `tools/idea-box/`; the backend is two routes on
-the existing `gs-labs-slate-gateway` Cloudflare Worker.
+Tablet/mobile-first check-in portal: tap "Scan with camera", point the
+device's camera at a registrant's badge, and its QR code is decoded,
+re-rendered, and sent to the Dymo label printer automatically — no lookup,
+no manual print step. GitHub-hosted, like `tools/idea-box/`.
 
-There is no logging or persistence here on purpose — this is
-scan/search-and-print only, no record of who checked in or when.
+There is no logging or persistence here on purpose — this is scan-and-print
+only, no record of who checked in or when.
 
 ## How it's wired
 
 - **Scanning a badge needs no Slate query at all.** A scanned badge's code
-  is itself the check-in credential, so reprinting it is just: take
-  whatever was scanned or pasted into the scan input, and print it straight
-  back out as a QR code. See `renderProfile()`/`printLabel()` in
-  `index.html` — the scan-form handler just builds a synthetic record with
-  the raw scanned value as `qrUrl` and hands it to the same rendering/print
-  path name search already uses, no lookup step in between.
+  is itself the check-in credential, so reprinting it is just: decode
+  whatever the camera sees, and print it straight back out as a QR code. See
+  `handleDecodedValue()`/`renderProfile()`/`printLabel()` in `index.html` —
+  the decoded string becomes a synthetic record's `qrUrl` and is handed
+  straight to `printLabel()`, no lookup step in between.
   - A maindb-backed scan lookup (matching the scanned id back to a person
     record) was tried and abandoned on 2026-09-22: it needed a
     `per_mobile_pass` filter that only matches event-registrant rows (which
     maindb only returns with `alt_form_type=Event`), and reliably
     reconstructing the *exact* originally-scanned payload from whatever got
-    pasted turned out to be more fragile than just reprinting the scanned
+    decoded turned out to be more fragile than just reprinting the scanned
     value directly. See the comment above `CHECKIN_FIXED_PARAMS` in
     `tools/queryomatic/worker.js` if this is ever revisited.
   - A scanned QR decodes to a value like
@@ -32,54 +31,22 @@ scan/search-and-print only, no record of who checked in or when.
     registrant) — confirmed these differ by testing both. Either way,
     whatever gets scanned is treated as an opaque value to print back out,
     not something this page tries to interpret.
-- The scan input is focused by default and refocused after every reprint,
-  since a USB/Bluetooth badge scanner behaves like a keyboard — it just
-  needs whatever field is focused to receive its keystrokes, then submits on
-  the Enter it sends at the end.
-- **"Scan with camera"** is an alternative entry point for devices with no
-  USB/Bluetooth scanner attached (e.g. a phone or a tablet's own camera). The
-  button only appears when `navigator.mediaDevices.getUserMedia` exists, and
-  opens a full-screen video overlay. Decoding prefers the native
-  `BarcodeDetector` API where available; browsers without it (Safari/iOS as
-  of this writing) fall back to `jsQR` (loaded from jsDelivr, same pattern as
-  the existing `qrcode.js` CDN script). Either path feeds its decoded string
-  into the exact same `renderProfile()`/`printLabel()` flow the USB scanner
-  and paste-into-the-input path already use — see "Scan / paste to reprint"
-  above — so there's no separate handling of what a camera-scanned code
-  means.
-- **Name search is separate and does query Slate.** The page calls
-  `GET /api/slate/checkin-search` on `gs-labs-slate-gateway` directly (no
-  Slate wrapper/iframe involved) with `first`/`last`/`sisid` params, the
-  same name-splitting strategy Record Lookup's wrapper uses against
-  maindb. See the route's entry in `tools/queryomatic/README.md` and
-  `handlePagesSlateProxyRoute` in `tools/queryomatic/worker.js`.
-- **Name search currently searches the whole maindb population** — there's
-  no event scoping yet. `tools/queryomatic/worker.js` has a
-  `CHECKIN_FIXED_PARAMS` constant (currently `{}`) specifically for adding
-  a parameter that should always be sent on every check-in name search once
-  there's one (e.g. scoping to one event), the same mechanism
-  `/api/slate/inquiries` uses to pin `status: "Inquiry"`.
-- **Name search's QR field is `per_qr_url`, and it's a link to an image, not
-  a code.**
-  Verified against the live query on 2026-09-22: maindb's QR column comes
-  back as `per_qr_url`, holding a URL like
-  `https://enroll.gs.edu/register/mobile?id=<guid>&cmd=barcode&type=person`
-  that Slate resolves to an already-rendered PNG. So this page doesn't encode
-  anything itself for that case — it displays and prints Slate's own image.
-  (`per_qr`/`qr` remain as fallback field names in `index.html`'s
-  `normalize()`, and if a value ever comes back that *isn't* URL-shaped, the
-  page falls back to encoding it client-side as a QR code instead — see
-  `isProbablyUrl()`.)
-- **That image URL needs a second Worker route to be printable.**
-  `enroll.gs.edu` sends no CORS headers on the image response, so a plain
-  `<img>` tag can display it (tag loads aren't CORS-gated) but page script
-  can't read its pixel bytes — which the Dymo print path needs, to hand the
-  image to the SDK. `GET /api/slate/checkin-qr-image?url=<per_qr_url value>`
-  re-fetches it server-side and re-serves the bytes with CORS headers for
-  `ALLOWED_ORIGIN`. The `url` param is checked against an exact pattern
-  (`CHECKIN_QR_IMAGE_PATTERN` in `worker.js`) matching Slate's own
-  host/path/query shape with a GUID-validated `id`, so this can't be used as
-  an open image-fetching proxy for arbitrary URLs.
+- **"Scan with camera"** opens a full-screen video overlay
+  (`navigator.mediaDevices.getUserMedia`) and decodes frames continuously.
+  Decoding prefers the native `BarcodeDetector` API where available;
+  browsers without it (Safari/iOS as of this writing) fall back to `jsQR`
+  (loaded from jsDelivr, same pattern as the existing `qrcode.js` CDN
+  script). On a successful decode, the overlay closes and `printLabel()`
+  fires immediately — see `handleDecodedValue()`.
+  There is no name-search fallback and no manual scan/paste input anymore
+  (removed 2026-09-24) — camera scanning is the only entry point.
+- **`isProbablyUrl()`/`qrImageProxyUrl()` are kept even though camera-scanned
+  codes are never URL-shaped in practice.** They were built for the old
+  name-search flow's `per_qr_url` field (a link to a Slate-rendered PNG,
+  re-served with CORS via `GET /api/slate/checkin-qr-image` on
+  `gs-labs-slate-gateway` — see `handleCheckinQrImage` in
+  `tools/queryomatic/worker.js`) and are left in place as a defensive
+  fallback in case a decoded value is ever URL-shaped.
 
 ## Dymo printing
 
