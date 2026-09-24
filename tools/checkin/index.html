@@ -610,8 +610,12 @@
     // encoded fresh via QRCode.js instead — see isProbablyUrl().
     //
     // Prefers the native BarcodeDetector API (fast, no extra decode work per
-    // frame); falls back to jsQR (vendored via CDN, see the <script> tag in
-    // <head>) on browsers without it, e.g. Safari/iOS as of this writing.
+    // frame) when it actually supports qr_code (checked via
+    // barcodeDetectorSupportsQr() below — see its comment for why a bare
+    // existence check isn't enough); falls back to jsQR (vendored via CDN,
+    // see the <script> tag in <head>) otherwise, e.g. Safari/iOS as of this
+    // writing, or a desktop Chrome build whose BarcodeDetector doesn't
+    // support qr_code.
     // ----------------------------------------------------------------
 
     let cameraStream = null;
@@ -645,15 +649,33 @@
 
     function scanFrameWithJsQR() {
       if (!cameraStream) return;
-      if (cameraVideo.readyState === cameraVideo.HAVE_ENOUGH_DATA) {
+      if (cameraVideo.readyState === cameraVideo.HAVE_ENOUGH_DATA && cameraVideo.videoWidth) {
         cameraCanvas.width = cameraVideo.videoWidth;
         cameraCanvas.height = cameraVideo.videoHeight;
         cameraCanvasCtx.drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
         const imageData = cameraCanvasCtx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
-        const code = window.jsQR && window.jsQR(imageData.data, imageData.width, imageData.height);
+        const code = window.jsQR && window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
         if (code && code.data) { handleDecodedValue(code.data); return; }
       }
       cameraRafId = requestAnimationFrame(scanFrameWithJsQR);
+    }
+
+    // BarcodeDetector's existence doesn't guarantee it can actually decode
+    // QR codes — some implementations expose the constructor but only
+    // support a subset of formats (or none) via getSupportedFormats(), and
+    // an unsupported detector silently detects nothing forever rather than
+    // throwing, which looked from the outside like "the camera opens but
+    // never scans anything". Checking supportedFormats up front and falling
+    // back to jsQR (a plain, proven-in-JS decoder) whenever qr_code isn't
+    // actually listed avoids that silent-failure mode.
+    async function barcodeDetectorSupportsQr() {
+      if (!window.BarcodeDetector) return false;
+      try {
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        return Array.isArray(formats) && formats.includes('qr_code');
+      } catch (e) {
+        return false;
+      }
     }
 
     async function startCameraScan() {
@@ -664,7 +686,7 @@
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         cameraVideo.srcObject = cameraStream;
         await cameraVideo.play();
-        if (window.BarcodeDetector) {
+        if (await barcodeDetectorSupportsQr()) {
           const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
           scanFrameWithDetector(detector);
         } else {
