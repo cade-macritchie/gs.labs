@@ -439,6 +439,95 @@ async function handleCheckinQrImage(request, env, id) {
 
 
 // ============================================================
+// CHECK-IN PRINT QUEUE
+//
+// Lets a scanning device with no Dymo attached (e.g. a Kindle Fire tablet,
+// which can't run DYMO Connect at all — see tools/checkin/README.md) hand a
+// decoded badge value off to whichever Windows machine is acting as the
+// print station, without the two devices needing to be on the same network.
+// Every scanner POSTs here; the print station's own tab (with "Enable as
+// print station" turned on in tools/checkin/index.html) polls here on an
+// interval and prints whatever it finds.
+//
+// Storage is a single JSON blob in the existing OPTIONS_CACHE KV namespace
+// (no new binding needed) rather than one key per job — this tool's actual
+// traffic is a handful of scans in quick succession at a check-in table, not
+// a high-concurrency queue, so the small race window on read-modify-write
+// (two POSTs landing at nearly the same instant could clobber each other)
+// is an acceptable tradeoff for staying on the infra that's already here. If
+// that ever becomes a real problem, a Durable Object would be the fix.
+// Capped at 50 pending jobs and a 1-hour TTL so an offline print station
+// can't make this grow unbounded.
+// ============================================================
+
+const CHECKIN_PRINT_QUEUE_KEY = "checkin:printqueue";
+const CHECKIN_PRINT_QUEUE_MAX = 50;
+const CHECKIN_PRINT_QUEUE_TTL_SECONDS = 3600;
+const CHECKIN_PRINT_QUEUE_VALUE_MAX_LENGTH = 500;
+
+async function pushCheckinPrintJob(env, value) {
+  const current = (await env.OPTIONS_CACHE.get(CHECKIN_PRINT_QUEUE_KEY, "json")) || [];
+  const job = { id: crypto.randomUUID(), value, ts: Date.now() };
+  const trimmed = [...current, job].slice(-CHECKIN_PRINT_QUEUE_MAX);
+  await env.OPTIONS_CACHE.put(CHECKIN_PRINT_QUEUE_KEY, JSON.stringify(trimmed), {
+    expirationTtl: CHECKIN_PRINT_QUEUE_TTL_SECONDS,
+  });
+  return job;
+}
+
+// The print station's poll IS the delivery mechanism — jobs are cleared as
+// soon as they're read, not left for every poller to pick up, since there's
+// meant to be exactly one active print station at a time.
+async function popCheckinPrintJobs(env) {
+  const current = (await env.OPTIONS_CACHE.get(CHECKIN_PRINT_QUEUE_KEY, "json")) || [];
+  if (current.length) await env.OPTIONS_CACHE.delete(CHECKIN_PRINT_QUEUE_KEY);
+  return current;
+}
+
+async function handleCheckinPrintQueuePost(request, env, id) {
+  if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "checkin-print-queue-post"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON body", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+
+  const value = typeof body?.value === "string" ? body.value.trim() : "";
+  if (!value) {
+    return json({ error: "value is required", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+  if (value.length > CHECKIN_PRINT_QUEUE_VALUE_MAX_LENGTH) {
+    return json({ error: "value is too long", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+
+  const job = await pushCheckinPrintJob(env, value);
+  logInfo(id, "Checkin print queue job queued", { jobId: job.id });
+  return json({ ok: true, job }, env, 200, env.ALLOWED_ORIGIN);
+}
+
+async function handleCheckinPrintQueueGet(request, env, id) {
+  if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "checkin-print-queue-get"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
+  }
+
+  const jobs = await popCheckinPrintJobs(env);
+  return json({ jobs }, env, 200, env.ALLOWED_ORIGIN);
+}
+
+
+// ============================================================
 // PORTAL FUNNELS
 //
 // Three portals -- Teaching Sites, Regional Campus, Pipeline Overview -- all
@@ -2638,6 +2727,21 @@ export default {
         return await handleCheckinQrImage(request, env, id);
       }
 
+      // See "CHECK-IN PRINT QUEUE" below for what these do.
+      if (
+        url.pathname === "/api/checkin/print-queue" &&
+        request.method === "POST"
+      ) {
+        return await handleCheckinPrintQueuePost(request, env, id);
+      }
+
+      if (
+        url.pathname === "/api/checkin/print-queue" &&
+        request.method === "GET"
+      ) {
+        return await handleCheckinPrintQueueGet(request, env, id);
+      }
+
       if (
         url.pathname === "/api/analytics/summary" &&
         request.method === "GET"
@@ -2921,7 +3025,9 @@ export default {
         },
         env,
         500,
-        url.pathname === "/api/slate/checkin-search" || url.pathname === "/api/slate/checkin-qr-image"
+        url.pathname === "/api/slate/checkin-search" ||
+        url.pathname === "/api/slate/checkin-qr-image" ||
+        url.pathname === "/api/checkin/print-queue"
           ? env.ALLOWED_ORIGIN
           : url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
       );

@@ -128,6 +128,9 @@
     .camera-modal button.secondary { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
     .camera-modal button.secondary:hover { border-color: #fff; color: #fff; }
 
+    .print-station { margin-top: 40px; padding-top: 20px; border-top: 1px dashed var(--border); text-align: center; }
+    .print-station-status { margin: 10px 0 0; color: var(--muted); font-size: .85rem; min-height: 1.2em; }
+
     /* Print-only fallback layout, used when DYMO Connect isn't available:
        hidden on screen, shown (and everything else hidden) via @media print
        once #print-fallback is populated and window.print() is triggered. */
@@ -170,6 +173,11 @@
 
     <section id="profile" hidden></section>
     <div id="empty" class="empty">Tap "Scan with camera" to begin.</div>
+
+    <div class="print-station">
+      <button class="secondary" id="print-station-btn" type="button">Enable as print station</button>
+      <p id="print-station-status" class="print-station-status"></p>
+    </div>
   </main>
 
   <div id="print-fallback"></div>
@@ -184,6 +192,7 @@
     'use strict';
 
     // Same Cloudflare Worker every other portal talks to (gs-labs-slate-gateway).
+    const WORKER_URL = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
     // per_qr_url (verified live 2026-09-22) is a link to a PNG Slate already
     // renders, not an opaque code — enroll.gs.edu sends no CORS headers, so
     // this route re-serves the bytes with CORS for the Dymo print path,
@@ -191,7 +200,12 @@
     // handleCheckinQrImage in tools/queryomatic/worker.js. This is kept even
     // though camera-scanned codes are never URL-shaped in practice, in case a
     // pasted/scanned value ever is.
-    const CHECKIN_QR_IMAGE_SERVICE = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/slate/checkin-qr-image';
+    const CHECKIN_QR_IMAGE_SERVICE = WORKER_URL + '/api/slate/checkin-qr-image';
+    // See "CHECK-IN PRINT QUEUE" in tools/queryomatic/worker.js — every
+    // scanning device POSTs a decoded value here; whichever device is
+    // running as the print station polls it and prints. See "Print station"
+    // below.
+    const PRINT_QUEUE_SERVICE = WORKER_URL + '/api/checkin/print-queue';
 
     const profile = document.getElementById('profile');
     const empty = document.getElementById('empty');
@@ -203,6 +217,8 @@
     const cameraVideo = document.getElementById('camera-video');
     const cameraStatus = document.getElementById('camera-status');
     const cameraCancelBtn = document.getElementById('camera-cancel-btn');
+    const printStationBtn = document.getElementById('print-station-btn');
+    const printStationStatusEl = document.getElementById('print-station-status');
 
     // per_qr_url is a link to an already-rendered PNG; treat anything else
     // (a bare code string) as text to encode ourselves instead.
@@ -630,12 +646,29 @@
       cameraModal.hidden = true;
     }
 
+    // POSTs a decoded value to the shared print queue — see "CHECK-IN PRINT
+    // QUEUE" in tools/queryomatic/worker.js. This is fire-and-forget from the
+    // scanning device's point of view: it's this device's job to show what
+    // was scanned, not to print it (it may have no printer at all, e.g. a
+    // Kindle Fire — see tools/checkin/README.md).
+    async function queueScannedValue(value) {
+      const response = await fetch(PRINT_QUEUE_SERVICE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+      if (!response.ok) throw new Error('Print queue request returned ' + response.status);
+    }
+
     function handleDecodedValue(value) {
       stopCameraScan();
       setBanner('');
       const person = { name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: value };
       renderProfile(person);
-      printLabel(person);
+      queueScannedValue(value).then(
+        function () { setBanner('Sent to the print station.', 'success'); },
+        function () { setBanner('Could not reach the print station — check your connection.', 'error'); }
+      );
     }
 
     async function scanFrameWithDetector(detector) {
@@ -704,6 +737,59 @@
       cameraScanBtn.addEventListener('click', startCameraScan);
     }
     cameraCancelBtn.addEventListener('click', stopCameraScan);
+
+    // ----------------------------------------------------------------
+    // Print station
+    //
+    // The device with the Dymo actually plugged in (the only one that can
+    // act on a scan) turns this on once; every OTHER device just scans and
+    // queues (see queueScannedValue() above) without needing its own
+    // printer or even to be on the same network — see "CHECK-IN PRINT
+    // QUEUE" in tools/queryomatic/worker.js. Polling reuses
+    // renderProfile()/printLabel() exactly as the local camera-scan path
+    // does, so a job from the queue looks and prints identically to a badge
+    // scanned on this device directly.
+    // ----------------------------------------------------------------
+
+    let printStationOn = false;
+    let printStationTimer = null;
+    let printStationBusy = false;
+    const PRINT_STATION_POLL_MS = 2500;
+
+    async function pollPrintQueue() {
+      if (printStationBusy) return;
+      printStationBusy = true;
+      try {
+        const response = await fetch(PRINT_QUEUE_SERVICE, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Print queue poll returned ' + response.status);
+        const data = await response.json();
+        const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+        for (let i = 0; i < jobs.length; i += 1) {
+          const person = { name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: jobs[i].value };
+          renderProfile(person);
+          await printLabel(person);
+        }
+        if (jobs.length) printStationStatusEl.textContent = 'Watching for scans… last printed ' + new Date().toLocaleTimeString() + '.';
+        else printStationStatusEl.textContent = 'Watching for scans…';
+      } catch (err) {
+        printStationStatusEl.textContent = 'Print station error: ' + (err && err.message ? err.message : 'unknown error') + '.';
+      } finally {
+        printStationBusy = false;
+      }
+    }
+
+    printStationBtn.addEventListener('click', function () {
+      printStationOn = !printStationOn;
+      printStationBtn.textContent = printStationOn ? 'Disable print station' : 'Enable as print station';
+      if (printStationOn) {
+        printStationStatusEl.textContent = 'Watching for scans…';
+        pollPrintQueue();
+        printStationTimer = setInterval(pollPrintQueue, PRINT_STATION_POLL_MS);
+      } else {
+        if (printStationTimer) { clearInterval(printStationTimer); printStationTimer = null; }
+        printStationStatusEl.textContent = '';
+      }
+    });
 
     refreshDeviceStatus();
     setInterval(refreshDeviceStatus, 15000);

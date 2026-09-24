@@ -1,12 +1,18 @@
 # Check-In
 
 Tablet/mobile-first check-in portal: tap "Scan with camera", point the
-device's camera at a registrant's badge, and its QR code is decoded,
-re-rendered, and sent to the Dymo label printer automatically — no lookup,
-no manual print step. GitHub-hosted, like `tools/idea-box/`.
+device's camera at a registrant's badge, and its QR code is decoded and
+handed off for reprinting — no lookup, no manual print step. GitHub-hosted,
+like `tools/idea-box/`.
+
+Any device that can load this page and run a camera can scan (including
+one that can't run DYMO Connect at all, like a Kindle Fire tablet — see
+"Print station" below); only the one Windows machine with the Dymo actually
+plugged in needs to be the print station.
 
 There is no logging or persistence here on purpose — this is scan-and-print
-only, no record of who checked in or when.
+only, no record of who checked in or when. (The print queue itself is
+short-lived infrastructure, not a check-in record — see "Print station".)
 
 ## How it's wired
 
@@ -14,8 +20,9 @@ only, no record of who checked in or when.
   is itself the check-in credential, so reprinting it is just: decode
   whatever the camera sees, and print it straight back out as a QR code. See
   `handleDecodedValue()`/`renderProfile()`/`printLabel()` in `index.html` —
-  the decoded string becomes a synthetic record's `qrUrl` and is handed
-  straight to `printLabel()`, no lookup step in between.
+  the decoded string becomes a synthetic record's `qrUrl`, which is queued
+  for the print station (see below) and, if this same device also has a
+  Dymo attached, offered as a manual "Print to Dymo" button too.
   - A maindb-backed scan lookup (matching the scanned id back to a person
     record) was tried and abandoned on 2026-09-22: it needed a
     `per_mobile_pass` filter that only matches event-registrant rows (which
@@ -36,8 +43,8 @@ only, no record of who checked in or when.
   Decoding prefers the native `BarcodeDetector` API where available;
   browsers without it (Safari/iOS as of this writing) fall back to `jsQR`
   (loaded from jsDelivr, same pattern as the existing `qrcode.js` CDN
-  script). On a successful decode, the overlay closes and `printLabel()`
-  fires immediately — see `handleDecodedValue()`.
+  script). On a successful decode, the overlay closes and the value is
+  queued for the print station — see `handleDecodedValue()`.
   There is no name-search fallback and no manual scan/paste input anymore
   (removed 2026-09-24) — camera scanning is the only entry point.
 - **`isProbablyUrl()`/`qrImageProxyUrl()` are kept even though camera-scanned
@@ -47,6 +54,42 @@ only, no record of who checked in or when.
   `gs-labs-slate-gateway` — see `handleCheckinQrImage` in
   `tools/queryomatic/worker.js`) and are left in place as a defensive
   fallback in case a decoded value is ever URL-shaped.
+
+## Print station
+
+Added 2026-09-24: check-in doesn't require every scanning device to have a
+Dymo attached (most won't — a Kindle Fire, for instance, can't run DYMO
+Connect at all, see above). Instead, exactly one device — the Windows
+machine with the label printer physically plugged in — opens this same page
+and clicks **"Enable as print station."**
+
+- **Every scan is POSTed to a shared queue**, not printed locally. See
+  `queueScannedValue()` in `index.html`, which calls
+  `POST /api/checkin/print-queue` on `gs-labs-slate-gateway`. That's true
+  even on the print station's own device if it also scans — there's exactly
+  one code path for "a badge got scanned," not two.
+- **The print station polls that same queue** (`GET /api/checkin/print-queue`,
+  every 2.5s — see `pollPrintQueue()`) and, for each job it gets back, calls
+  the exact same `renderProfile()`/`printLabel()` pair the old direct-print
+  flow used, so a relayed scan looks and prints identically to one scanned on
+  the print station itself.
+- **The queue lives in `OPTIONS_CACHE`** (the same Cloudflare KV namespace
+  already bound for the options cache and rate limiter — no new binding
+  needed) as a single JSON blob, not one key per job. See "CHECK-IN PRINT
+  QUEUE" in `tools/queryomatic/worker.js` for why that's an acceptable
+  tradeoff (this is a handful of scans at a check-in table, not a
+  high-concurrency queue) and its caveats (a small race window on
+  simultaneous scans; capped at 50 pending jobs with a 1-hour TTL so an
+  offline print station can't make it grow unbounded).
+- **A poll clears what it reads** — jobs are deleted from the queue as soon
+  as the print station's GET returns them, on the assumption that exactly
+  one print station is active at a time. Two devices both running as "print
+  station" simultaneously would race for the same jobs, not each print a
+  copy.
+- There's no access restriction on who can queue a print job beyond the
+  existing origin check (requests must come from this page's own GitHub
+  Pages origin) — anyone who can load the Check-In page and scan a badge can
+  queue a print, the same trust level the old single-device version had.
 
 ## Dymo printing
 
