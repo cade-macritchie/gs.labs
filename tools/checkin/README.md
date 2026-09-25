@@ -120,41 +120,54 @@ page) used exactly that schema. The schema it actually accepts is the newer
 `<DesktopLabel><DYMOLabel Version="4">...` one; `isDCDLabel()` in the SDK is
 checking for exactly this (a literal `"</DYMOLabel>"` in the label's XML).
 
-`LABEL_XML_QR` in `index.html` (used for the scan/reprint flow) is adapted
-directly from a label Cade created and saved in the DYMO Connect app itself
-(`local-files/BTC/test.dymo`) and is fully verified end to end: printed
-successfully via a direct call to DYMO Connect's local service, rendered via
-its `RenderLabel` endpoint to confirm the QR code actually appears (an
-earlier attempt at reconstructing the schema produced a label that printed
-"successfully" per the API but rendered a blank box — no QR at all, because
-the `QRCodeObject`'s `BackgroundBrush` needs to be opaque white, not
-transparent like every other object's; a `QRCodeObject` also needs its
-`FillBrush` opaque, unlike a plain text object), and had that rendered image
-decoded to confirm it actually encodes the value that was set, not stale
-placeholder content. `setObjectText` for a `QRCodeObject` needs a local
-patch to `vendor/dymo.connect.framework.js`: the version fetched straight
-from DYMO's repo only updates `<Data><DataString>`, but DYMO Connect can
-keep displaying/encoding the *original* designed-in value unless
-`<TextDataHolder><Value>` is *also* updated — a real bug fixed by the
-community (see
-[DCD-SDK-Sample#12](https://github.com/dymosoftware/DCD-SDK-Sample/issues/12)),
-patched into the vendored copy here.
+The object shapes (`QRCodeObject`, `TextObject`, brushes) come from a label
+Cade created and saved in the DYMO Connect app itself
+(`local-files/BTC/test.dymo`), checked with DYMO Connect's `RenderLabel`
+endpoint. Two traps it found: a `QRCodeObject` needs an opaque white
+`BackgroundBrush` and opaque `FillBrush`, or it renders as an empty box while
+the print call still reports success. And the SDK's `setObjectText` for a QR
+needs a local patch to `vendor/dymo.connect.framework.js` to update
+`<TextDataHolder><Value>` too (see
+[DCD-SDK-Sample#12](https://github.com/dymosoftware/DCD-SDK-Sample/issues/12)).
+The page no longer calls `setObjectText`. `buildLabelXml()` writes every value
+into the XML directly, so the settings preview is exactly what prints.
+Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
 
-`LABEL_XML_IMAGE` (used for the name-search/`per_qr_url` flow, where there's
-no underlying text value to encode — only a link to an image Slate already
-rendered) is adapted to the same schema's conventions but has **not** been
-verified the same thorough way — its `ImageObject` shape is inferred from
-`_setImageObjectText`'s `isDCDLabel()` branch (a direct `<Data>` child, not
-nested like `QRCodeObject`'s), not confirmed against a real DYMO-authored
-example. Do a real test print of a name-search result before relying on it;
-if it fails or renders blank, get another DYMO Connect-authored `.dymo` file
-(this time with an Image object — same way `test.dymo` was made) and adapt
-`LABEL_XML_IMAGE` to match, the same way `LABEL_XML_QR` was fixed.
+### The label (added 2026-09-25)
 
-Both labels reuse the exact `DYMORect` `test.dymo` used — a 30251 Address
-label, ~3.21in x 1in. To use different label stock, resize
-`DYMORect`/`ObjectLayout` in `index.html`; note this schema uses **inches**
-(`DYMOPoint`/`Size`), not twips like the old `<DieCutLabel>` schema did.
+- **Stock: DYMO 30256 shipping labels** (2-5/16" x 4"), printed landscape.
+  DYMO Connect calls this stock `LargeShipping` in `<LabelName>`. It rejects
+  the printer driver's name for it (`Shipping30256`: "The labelname ... is
+  not available"). The real name is in the `<DieCutSKU>` catalog embedded in
+  `DYMOConnect.exe`. The printable rect in `LABEL_STOCK` comes from the
+  LabelWriter 450 driver's `Shipping30256` entry (`Drivers/DLS/lw450c.gpd`
+  under DYMO Connect's install folder).
+- **Layout** (`buildLabelXml()`): Gateway logo, then the event title, then a
+  thin rule across the top. Below that, the QR code on the left and the
+  registrant's name on the right. A name longer than 14 characters wraps
+  onto two lines so it stays large. Anything switched off is left out and
+  the rest grows into the room. With no name, the QR is centered.
+- **The logo** is `assets/brand-new/gs-logo-horizontal-black.png`, drawn onto a
+  white canvas at 600px wide before embedding, because a transparent PNG
+  can print as a solid black box. The header rule is a 1x1 black PNG
+  stretched with `ScaleMode` `Fill`. Both `ImageObject` uses were checked with
+  `RenderLabel`.
+- **Settings** (event title, logo on/off, name on/off) live in the print
+  station's own browser (`localStorage`, key `checkin.labelSettings`), set
+  from the "Label settings" panel under the print-station toggle. They're
+  read fresh on every print, and the panel shows a live preview rendered by
+  DYMO Connect itself. Clearing that browser's site data resets them to the
+  defaults (logo and name on, no title).
+- **The name** comes from the Worker, not the scanner. When a scan is
+  queued, `lookupCheckinPassName()` in `tools/queryomatic/worker.js` opens
+  that pass's Slate mobile page
+  (`enroll.gs.edu/register/mobile?id=<guid>[&type=<type>]`) on the server and
+  stores the name with the job. It reads `<p class="pass_name">` and falls
+  back to the page `<title>`, which is the holder's name. As of 2026-09-25 the
+  test pass matched only the `<title>` (logged as
+  `nameLookup: "title-fallback"`). If the lookup fails, the label prints
+  without a name rather than the scan failing. The Worker logs only the
+  lookup's outcome, never the name.
 
 The header shows a live "DYMO ready — <printer name>" / "DYMO Connect not
 detected" status so staff can tell at a glance whether printing will work,

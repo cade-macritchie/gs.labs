@@ -478,8 +478,8 @@ export class CheckinPrintQueue {
     const jobs = ((await this.storage.get("jobs")) || []).filter((job) => job.ts >= cutoff);
 
     if (request.method === "POST") {
-      const { value } = await request.json();
-      const job = { id: crypto.randomUUID(), value, ts: Date.now() };
+      const { value, name } = await request.json();
+      const job = { id: crypto.randomUUID(), value, name: name || "", ts: Date.now() };
       await this.storage.put("jobs", [...jobs, job].slice(-CHECKIN_PRINT_QUEUE_MAX));
       return new Response(JSON.stringify(job), { headers: { "Content-Type": "application/json" } });
     }
@@ -496,13 +496,60 @@ function checkinPrintQueueStub(env) {
   return env.CHECKIN_PRINT_QUEUE.get(env.CHECKIN_PRINT_QUEUE.idFromName("default"));
 }
 
-async function pushCheckinPrintJob(env, value) {
+async function pushCheckinPrintJob(env, value, name) {
   const resp = await checkinPrintQueueStub(env).fetch("https://checkin-print-queue/push", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value }),
+    body: JSON.stringify({ value, name }),
   });
   return resp.json();
+}
+
+// A scanned badge decodes to "<type>:<32 hex>" (e.g. "person:07f5…") or a
+// bare GUID for other pass types. Slate's mobile pass page for that GUID
+// shows the holder's name in <p class="pass_name">, so the name is read
+// from there, server-side (enroll.gs.edu sends no CORS headers). The type
+// must be passed through as-is: an event registrant's page 404s with
+// &type=person, the same quirk CHECKIN_QR_IMAGE_PATTERN documents. Only a
+// validated GUID and a lowercase type word ever reach the URL, so this
+// can't be pointed at arbitrary pages. Best-effort: any failure returns "",
+// and the label prints without a name rather than the scan failing.
+const CHECKIN_PASS_CODE_PATTERN = /^(?:([a-z]+):)?([0-9a-f]{8})-?([0-9a-f]{4})-?([0-9a-f]{4})-?([0-9a-f]{4})-?([0-9a-f]{12})$/i;
+
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(Number.parseInt(n, 16)))
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+}
+
+// Returns { name, outcome }. `outcome` is safe to log (never the name) and
+// says why a lookup came back empty.
+async function lookupCheckinPassName(value) {
+  const match = CHECKIN_PASS_CODE_PATTERN.exec(value);
+  if (!match) return { name: "", outcome: "unrecognized-code" };
+  const [, type, ...guidParts] = match;
+  const url = new URL("https://enroll.gs.edu/register/mobile");
+  url.searchParams.set("id", guidParts.join("-").toLowerCase());
+  if (type) url.searchParams.set("type", type.toLowerCase());
+
+  try {
+    const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(4000) });
+    if (!resp.ok) return { name: "", outcome: `http-${resp.status}` };
+    let passName = "";
+    let title = "";
+    await new HTMLRewriter()
+      .on("p.pass_name", { text(chunk) { passName += chunk.text; } })
+      .on("title", { text(chunk) { title += chunk.text; } })
+      .transform(resp)
+      .arrayBuffer();
+    const name = decodeHtmlEntities(passName || title).replace(/\s+/g, " ").trim().slice(0, 120);
+    return { name, outcome: passName ? "pass-name" : title ? "title-fallback" : "no-match" };
+  } catch (err) {
+    return { name: "", outcome: `error-${err?.name || "unknown"}` };
+  }
 }
 
 async function popCheckinPrintJobs(env) {
@@ -534,8 +581,10 @@ async function handleCheckinPrintQueuePost(request, env, id) {
     return json({ error: "value is too long", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
   }
 
-  const job = await pushCheckinPrintJob(env, value);
-  logInfo(id, "Checkin print queue job queued", { jobId: job.id });
+  const { name, outcome } = await lookupCheckinPassName(value);
+  const job = await pushCheckinPrintJob(env, value, name);
+  // Deliberately logs how the name lookup went, never the name itself.
+  logInfo(id, "Checkin print queue job queued", { jobId: job.id, nameLookup: outcome });
   return json({ ok: true, job }, env, 200, env.ALLOWED_ORIGIN);
 }
 

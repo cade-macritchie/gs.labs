@@ -136,6 +136,18 @@
     .print-station { margin-top: 40px; padding-top: 20px; border-top: 1px dashed var(--border); text-align: center; }
     .print-station-status { margin: 10px 0 0; color: var(--muted); font-size: .85rem; min-height: 1.2em; }
 
+    .label-settings { margin-top: 20px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); text-align: left; }
+    .label-settings summary { cursor: pointer; color: var(--navy); font: 700 .78rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+    .label-settings[open] summary { margin-bottom: 14px; }
+    .setting-field { display: grid; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: .85rem; }
+    .setting-field input { height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--ink); font-size: 1rem; }
+    .setting-field input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(35,64,72,.14); }
+    .setting-check { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: .92rem; cursor: pointer; }
+    .setting-check input { width: 18px; height: 18px; accent-color: var(--teal); }
+    .label-preview { margin: 16px 0 12px; text-align: center; }
+    .label-preview img { width: 100%; max-width: 420px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+    .label-settings button.secondary { width: 100%; }
+
     /* Print-only fallback layout, used when DYMO Connect isn't available:
        hidden on screen, shown (and everything else hidden) via @media print
        once #print-fallback is populated and window.print() is triggered. */
@@ -182,6 +194,21 @@
     <div class="print-station" id="print-station">
       <button class="secondary" id="print-station-btn" type="button">Enable as print station</button>
       <p id="print-station-status" class="print-station-status"></p>
+
+      <details class="label-settings">
+        <summary>Label settings</summary>
+        <label class="setting-field">
+          <span>Event title</span>
+          <input id="setting-title" type="text" maxlength="80" placeholder="e.g. Fall Preview Day 2026">
+        </label>
+        <label class="setting-check"><input id="setting-logo" type="checkbox"> Gateway logo in the header</label>
+        <label class="setting-check"><input id="setting-name" type="checkbox"> Print the registrant's name</label>
+        <div class="label-preview">
+          <img id="label-preview-img" alt="Label preview" hidden>
+          <p id="label-preview-status" class="print-station-status"></p>
+        </div>
+        <button class="secondary" id="label-test-btn" type="button">Print a test label</button>
+      </details>
     </div>
   </main>
 
@@ -280,7 +307,7 @@
         '</div>' +
         '<div class="profile-actions"><button class="link" id="scan-again" type="button">&larr; Scan again</button></div>';
 
-      profile.querySelector('.profile-name').textContent = person.name;
+      profile.querySelector('.profile-name').textContent = person.name || 'Scanned pass';
       profile.querySelector('.profile-meta').textContent = [person.status, person.email, person.sisid].filter(Boolean).join(' · ') || 'No additional details on file';
 
       const qrArea = profile.querySelector('.qr-area');
@@ -333,191 +360,265 @@
     // ----------------------------------------------------------------
     // Dymo Connect printing
     //
-    // The label schema below is NOT the widely-documented <DieCutLabel>
-    // schema (every public DYMO sample and the DYMO Label XML docs use
-    // that one) — confirmed 2026-09-22 that THIS DYMO Connect installation
-    // rejects <DieCutLabel> outright at the print step ("Invalid label
-    // file: The 'DieCutLabel' element is not declared"), verified by
-    // calling DYMO Connect's local print service directly, bypassing the
-    // browser entirely. The schema it actually accepts is the newer
-    // <DesktopLabel><DYMOLabel Version="4">... one (this is also what
-    // label.isDCDLabel() is checking for — it looks for a literal
-    // "</DYMOLabel>" in the label's XML). LABEL_XML_QR below is adapted
-    // directly from a label Cade created and saved in the DYMO Connect app
-    // itself (local-files/BTC/test.dymo) and confirmed print-successful
-    // both as-is and after modifying its QR/text content, by posting
-    // straight to DYMO Connect's local web service
-    // (https://127.0.0.1:41951/DYMO/DLS/Printing/PrintLabel) — not just
-    // inferred from documentation.
+    // The label schema is NOT the widely-documented <DieCutLabel> one —
+    // this DYMO Connect installation rejects it outright ("The 'DieCutLabel'
+    // element is not declared"). It accepts the newer
+    // <DesktopLabel><DYMOLabel Version="4"> schema (what the SDK's
+    // isDCDLabel() checks for). The object shapes below come from a label
+    // saved in the DYMO Connect app itself (local-files/BTC/test.dymo) and
+    // were checked with DYMO Connect's RenderLabel endpoint — see
+    // tools/checkin/README.md, including how to iterate on a design without
+    // spending labels.
     //
-    // - setObjectText(name, value) dispatches by the target object's tag.
-    //   For QRCodeObject it calls _setQRCodeObjectText, which — for this
-    //   schema (isDCDLabel() true) — needs BOTH <Data><DataString> AND
-    //   <TextDataHolder><Value> updated, or DYMO Connect can keep
-    //   displaying/encoding the original designed-in value. This was a
-    //   real bug in the upstream SDK (see
-    //   https://github.com/dymosoftware/DCD-SDK-Sample/issues/12) fixed by
-    //   the community; vendor/dymo.connect.framework.js has been patched
-    //   here to match that fix, since the copy fetched straight from
-    //   dymosoftware's repo only updates DataString.
-    // - DYMO Connect natively renders a QR code from text via
-    //   BarcodeFormat=QRCode + EQRCodeType=QRCodeText — no PNG needed for
-    //   this path at all, unlike the per_qr_url (name search) case below,
-    //   which has no underlying text value, only a link to an
-    //   already-rendered image.
+    // - The label XML is built with every value already filled in, rather
+    //   than setObjectText() on a template, so what's previewed is exactly
+    //   what prints.
+    // - A QRCodeObject needs an opaque WHITE background and opaque black
+    //   fill (QR_OBJECT_BRUSHES_XML), or it renders as an empty box while
+    //   the print call still reports success.
+    // - Coordinates are absolute label inches (DYMOPoint/Size), not twips.
     // - getPrinters() rows use the printerType value "LabelWriterPrinter".
-    //
-    // LABEL_XML_IMAGE (the per_qr_url/name-search path) is adapted to the
-    // same schema's conventions but has NOT been print-tested the way
-    // LABEL_XML_QR has — its ImageObject shape is inferred from
-    // _setImageObjectText's isDCDLabel() branch (a direct <Data> child,
-    // not nested like QRCodeObject's) rather than from a real DYMO
-    // Connect-authored example. Do a real test print of a name-search
-    // result before relying on it; if it fails, get another
-    // DYMO-authored .dymo file (this time with an Image object) the same
-    // way test.dymo was made, and adapt this constant to match, the same
-    // way LABEL_XML_QR was fixed. See tools/checkin/README.md.
-    //
-    // Both labels reuse the exact DYMORect Cade's test.dymo used (a 30251
-    // Address label, 3.21in x ~1in) — resize ObjectLayout/DYMORect to
-    // match a different label size, and note that this schema uses INCHES
-    // (DYMOPoint/Size), not twips like <DieCutLabel> did.
-    const PLACEHOLDER_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    // ----------------------------------------------------------------
 
-    const LABEL_HEADER_XML =
-      '<?xml version="1.0" encoding="utf-8"?>' +
-      '<DesktopLabel Version="1">' +
-        '<DYMOLabel Version="4">' +
-          '<Description>DYMO Label</Description>' +
-          '<Orientation>Landscape</Orientation>' +
-          '<LabelName>Address30251</LabelName>' +
-          '<InitialLength>0</InitialLength>' +
-          '<BorderStyle>SolidLine</BorderStyle>' +
-          '<DYMORect><DYMOPoint><X>0.23</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.21</Width><Height>0.9966666</Height></Size></DYMORect>' +
-          '<BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor>' +
-          '<BorderThickness>1</BorderThickness>' +
-          '<Show_Border>False</Show_Border>' +
-          '<HasFixedLength>False</HasFixedLength>' +
-          '<FixedLengthValue>0</FixedLengthValue>' +
-          '<DynamicLayoutManager>' +
-            '<RotationBehavior>ClearObjects</RotationBehavior>' +
-            '<LabelObjects>';
+    // DYMO 30256 shipping label, 2-5/16" x 4", printed landscape. The
+    // printable rect comes from the LabelWriter 450 driver's own entry for
+    // Shipping30256 (PrintableOrigin 17,140 / PrintableArea 665,2224 at
+    // 300x600 dpi, in Drivers/DLS/lw450c.gpd under DYMO Connect's install).
+    const LABEL_STOCK = { name: 'LargeShipping', x: 0.2333, y: 0.0567, width: 3.7067, height: 2.2167 };
+    const LABEL_MARGIN = 0.07;
 
-    const LABEL_FOOTER_XML =
-            '</LabelObjects>' +
-          '</DynamicLayoutManager>' +
-        '</DYMOLabel>' +
-        '<LabelApplication>Blank</LabelApplication>' +
-        '<DataTable><Columns></Columns><Rows></Rows></DataTable>' +
-      '</DesktopLabel>';
+    function xmlEscape(value) {
+      return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+    }
 
-    // The Brushes block test.dymo's TextObject used — transparent
-    // background/fill (lets the label's own background show through), kept
-    // identical since it's part of what's proven to print.
+    function objectLayoutXml(x, y, width, height) {
+      return '<ObjectLayout><DYMOPoint><X>' + x.toFixed(4) + '</X><Y>' + y.toFixed(4) + '</Y></DYMOPoint>' +
+        '<Size><Width>' + width.toFixed(4) + '</Width><Height>' + height.toFixed(4) + '</Height></Size></ObjectLayout>';
+    }
+
+    const COLOR_BLACK_XML = '<SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush>';
+
     const OBJECT_BRUSHES_XML =
       '<Brushes>' +
         '<BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush>' +
-        '<BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush>' +
-        '<StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush>' +
+        '<BorderBrush>' + COLOR_BLACK_XML + '</BorderBrush>' +
+        '<StrokeBrush>' + COLOR_BLACK_XML + '</StrokeBrush>' +
         '<FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush>' +
       '</Brushes>';
 
-    // test.dymo's QRCodeObject used a DIFFERENT Brushes block — an opaque
-    // WHITE background and opaque black fill, not transparent. Confirmed by
-    // direct comparison (rendering via DYMO Connect's own RenderLabel
-    // endpoint) that reusing OBJECT_BRUSHES_XML here renders an empty box —
-    // no QR pattern at all — even though the print call itself still
-    // reports success. Used for QRCodeObject and, as a safe default,
-    // ImageObject.
     const QR_OBJECT_BRUSHES_XML =
       '<Brushes>' +
         '<BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush>' +
-        '<BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush>' +
-        '<StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush>' +
-        '<FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush>' +
+        '<BorderBrush>' + COLOR_BLACK_XML + '</BorderBrush>' +
+        '<StrokeBrush>' + COLOR_BLACK_XML + '</StrokeBrush>' +
+        '<FillBrush>' + COLOR_BLACK_XML + '</FillBrush>' +
       '</Brushes>';
 
-    const NAME_OBJECT_XML =
-      '<TextObject>' +
-        '<Name>NAME</Name>' +
-        OBJECT_BRUSHES_XML +
-        '<Rotation>Rotation0</Rotation>' +
-        '<OutlineThickness>1</OutlineThickness>' +
-        '<IsOutlined>False</IsOutlined>' +
-        '<BorderStyle>SolidLine</BorderStyle>' +
-        '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>' +
-        '<HorizontalAlignment>Center</HorizontalAlignment>' +
-        '<VerticalAlignment>Middle</VerticalAlignment>' +
-        '<FitMode>AlwaysFit</FitMode>' +
-        '<IsVertical>False</IsVertical>' +
-        '<FormattedText>' +
-          '<FitMode>AlwaysFit</FitMode>' +
-          '<HorizontalAlignment>Center</HorizontalAlignment>' +
-          '<VerticalAlignment>Middle</VerticalAlignment>' +
-          '<IsVertical>False</IsVertical>' +
-          '<LineTextSpan>' +
-            '<TextSpan>' +
-              '<Text>PLACEHOLDER</Text>' +
-              '<FontInfo>' +
-                '<FontName>Segoe UI</FontName>' +
-                '<FontSize>14</FontSize>' +
-                '<IsBold>False</IsBold>' +
-                '<IsItalic>False</IsItalic>' +
-                '<IsUnderline>False</IsUnderline>' +
-                '<FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush>' +
-              '</FontInfo>' +
-            '</TextSpan>' +
-          '</LineTextSpan>' +
-        '</FormattedText>' +
-        '<ObjectLayout><DYMOPoint><X>1.9</X><Y>0.18416655</Y></DYMOPoint><Size><Width>1.3</Width><Height>0.6</Height></Size></ObjectLayout>' +
-      '</TextObject>';
+    const OBJECT_COMMON_XML =
+      '<Rotation>Rotation0</Rotation>' +
+      '<OutlineThickness>1</OutlineThickness>' +
+      '<IsOutlined>False</IsOutlined>' +
+      '<BorderStyle>SolidLine</BorderStyle>' +
+      '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>';
 
-    // Verified: this exact QRCodeObject shape (Data/DataString +
-    // TextDataHolder/Value + BarcodeFormat=QRCode + EQRCodeType=QRCodeText)
-    // is what DYMO Connect itself wrote to test.dymo and printed
-    // successfully.
-    const LABEL_XML_QR =
-      LABEL_HEADER_XML +
-        NAME_OBJECT_XML +
-        '<QRCodeObject>' +
-          '<Name>QR</Name>' +
-          QR_OBJECT_BRUSHES_XML +
-          '<Rotation>Rotation0</Rotation>' +
-          '<OutlineThickness>1</OutlineThickness>' +
-          '<IsOutlined>False</IsOutlined>' +
-          '<BorderStyle>SolidLine</BorderStyle>' +
-          '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>' +
+    function textObjectXml(name, text, layoutXml, fontSize, bold, align) {
+      return '<TextObject>' +
+          '<Name>' + name + '</Name>' + OBJECT_BRUSHES_XML + OBJECT_COMMON_XML +
+          '<HorizontalAlignment>' + align + '</HorizontalAlignment>' +
+          '<VerticalAlignment>Middle</VerticalAlignment>' +
+          '<FitMode>AlwaysFit</FitMode>' +
+          '<IsVertical>False</IsVertical>' +
+          '<FormattedText>' +
+            '<FitMode>AlwaysFit</FitMode>' +
+            '<HorizontalAlignment>' + align + '</HorizontalAlignment>' +
+            '<VerticalAlignment>Middle</VerticalAlignment>' +
+            '<IsVertical>False</IsVertical>' +
+            [].concat(text).map(function (line) {
+              return '<LineTextSpan><TextSpan>' +
+                '<Text>' + xmlEscape(line) + '</Text>' +
+                '<FontInfo>' +
+                  '<FontName>Segoe UI</FontName>' +
+                  '<FontSize>' + fontSize + '</FontSize>' +
+                  '<IsBold>' + (bold ? 'True' : 'False') + '</IsBold>' +
+                  '<IsItalic>False</IsItalic>' +
+                  '<IsUnderline>False</IsUnderline>' +
+                  '<FontBrush>' + COLOR_BLACK_XML + '</FontBrush>' +
+                '</FontInfo>' +
+              '</TextSpan></LineTextSpan>';
+            }).join('') +
+          '</FormattedText>' +
+          layoutXml +
+        '</TextObject>';
+    }
+
+    function qrObjectXml(text, layoutXml) {
+      return '<QRCodeObject>' +
+          '<Name>QR</Name>' + QR_OBJECT_BRUSHES_XML + OBJECT_COMMON_XML +
           '<BarcodeFormat>QRCode</BarcodeFormat>' +
-          '<Data><DataString>PLACEHOLDER</DataString></Data>' +
+          '<Data><DataString>' + xmlEscape(text) + '</DataString></Data>' +
           '<HorizontalAlignment>Center</HorizontalAlignment>' +
           '<VerticalAlignment>Middle</VerticalAlignment>' +
           '<Size>AutoFit</Size>' +
           '<EQRCodeType>QRCodeText</EQRCodeType>' +
-          '<TextDataHolder><Value>PLACEHOLDER</Value></TextDataHolder>' +
-          '<ObjectLayout><DYMOPoint><X>0.23</X><Y>0.18416655</Y></DYMOPoint><Size><Width>1.5</Width><Height>0.6</Height></Size></ObjectLayout>' +
-        '</QRCodeObject>' +
-      LABEL_FOOTER_XML;
+          '<TextDataHolder><Value>' + xmlEscape(text) + '</Value></TextDataHolder>' +
+          layoutXml +
+        '</QRCodeObject>';
+    }
 
-    // Unverified — see the comment block above. ImageObject's shape here is
-    // inferred (Data as a direct child, matching _setImageObjectText's
-    // isDCDLabel() branch), not confirmed against a real DYMO-authored file.
-    const LABEL_XML_IMAGE =
-      LABEL_HEADER_XML +
-        NAME_OBJECT_XML +
-        '<ImageObject>' +
-          '<Name>QR</Name>' +
-          QR_OBJECT_BRUSHES_XML +
-          '<Rotation>Rotation0</Rotation>' +
-          '<OutlineThickness>1</OutlineThickness>' +
-          '<IsOutlined>False</IsOutlined>' +
-          '<BorderStyle>SolidLine</BorderStyle>' +
-          '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>' +
-          '<Data>' + PLACEHOLDER_PNG_BASE64 + '</Data>' +
-          '<HorizontalAlignment>Center</HorizontalAlignment>' +
+    function imageObjectXml(name, pngBase64, layoutXml, horizontalAlignment, scaleMode) {
+      return '<ImageObject>' +
+          '<Name>' + name + '</Name>' + QR_OBJECT_BRUSHES_XML + OBJECT_COMMON_XML +
+          '<Data>' + pngBase64 + '</Data>' +
+          '<ScaleMode>' + (scaleMode || 'Uniform') + '</ScaleMode>' +
+          '<HorizontalAlignment>' + horizontalAlignment + '</HorizontalAlignment>' +
           '<VerticalAlignment>Middle</VerticalAlignment>' +
-          '<ObjectLayout><DYMOPoint><X>0.23</X><Y>0.18416655</Y></DYMOPoint><Size><Width>1.5</Width><Height>0.6</Height></Size></ObjectLayout>' +
-        '</ImageObject>' +
-      LABEL_FOOTER_XML;
+          layoutXml +
+        '</ImageObject>';
+    }
+
+    // A 1x1 black PNG, stretched (ScaleMode Fill) into the header rule.
+    const BLACK_PIXEL_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==';
+
+    // AlwaysFit shrinks one long line until it's unreadable, so a long name
+    // is split at the space nearest its middle and printed on two lines.
+    function nameLines(name) {
+      if (name.length <= 14 || name.indexOf(' ') === -1) return [name];
+      let splitAt = -1;
+      for (let i = 0; i < name.length; i += 1) {
+        if (name[i] === ' ' && (splitAt === -1 || Math.abs(i - name.length / 2) < Math.abs(splitAt - name.length / 2))) splitAt = i;
+      }
+      return [name.slice(0, splitAt), name.slice(splitAt + 1)];
+    }
+
+    // Header (logo, then event title, then a rule) across the top; QR on the
+    // left below it with the name filling the space to its right, centered
+    // vertically in what's left. Anything switched off or blank is left out
+    // and the body grows into the room.
+    // opts: { logoBase64, title, name, qrText | qrImageBase64 }
+    function buildLabelXml(opts) {
+      const left = LABEL_STOCK.x + LABEL_MARGIN;
+      const right = LABEL_STOCK.x + LABEL_STOCK.width - LABEL_MARGIN;
+      const bottom = LABEL_STOCK.y + LABEL_STOCK.height - LABEL_MARGIN;
+      const objects = [];
+      let top = LABEL_STOCK.y + LABEL_MARGIN;
+
+      if (opts.logoBase64) {
+        objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(left, top, 2.0, 0.26), 'Left'));
+        top += 0.32;
+      }
+      if (opts.title) {
+        objects.push(textObjectXml('TITLE', opts.title, objectLayoutXml(left, top, right - left, 0.32), 16, true, 'Left'));
+        top += 0.36;
+      }
+      if (opts.logoBase64 || opts.title) {
+        objects.push(imageObjectXml('RULE', BLACK_PIXEL_PNG_BASE64, objectLayoutXml(left, top, right - left, 0.02), 'Left', 'Fill'));
+        top += 0.08;
+      }
+
+      const qrSize = Math.min(1.6, bottom - top);
+      const bodyTop = top + (bottom - top - qrSize) / 2;
+      const qrLayout = opts.name
+        ? objectLayoutXml(left, bodyTop, qrSize, qrSize)
+        : objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
+      objects.push(opts.qrImageBase64
+        ? imageObjectXml('QR', opts.qrImageBase64, qrLayout, 'Center')
+        : qrObjectXml(opts.qrText, qrLayout));
+
+      if (opts.name) {
+        const nameLeft = left + qrSize + 0.15;
+        objects.push(textObjectXml('NAME', nameLines(opts.name), objectLayoutXml(nameLeft, bodyTop, right - nameLeft, qrSize), 28, true, 'Left'));
+      }
+
+      return '<?xml version="1.0" encoding="utf-8"?>' +
+        '<DesktopLabel Version="1">' +
+          '<DYMOLabel Version="4">' +
+            '<Description>DYMO Label</Description>' +
+            '<Orientation>Landscape</Orientation>' +
+            '<LabelName>' + LABEL_STOCK.name + '</LabelName>' +
+            '<InitialLength>0</InitialLength>' +
+            '<BorderStyle>SolidLine</BorderStyle>' +
+            '<DYMORect><DYMOPoint><X>' + LABEL_STOCK.x + '</X><Y>' + LABEL_STOCK.y + '</Y></DYMOPoint>' +
+              '<Size><Width>' + LABEL_STOCK.width + '</Width><Height>' + LABEL_STOCK.height + '</Height></Size></DYMORect>' +
+            '<BorderColor>' + COLOR_BLACK_XML + '</BorderColor>' +
+            '<BorderThickness>1</BorderThickness>' +
+            '<Show_Border>False</Show_Border>' +
+            '<HasFixedLength>False</HasFixedLength>' +
+            '<FixedLengthValue>0</FixedLengthValue>' +
+            '<DynamicLayoutManager>' +
+              '<RotationBehavior>ClearObjects</RotationBehavior>' +
+              '<LabelObjects>' + objects.join('') + '</LabelObjects>' +
+            '</DynamicLayoutManager>' +
+          '</DYMOLabel>' +
+          '<LabelApplication>Blank</LabelApplication>' +
+          '<DataTable><Columns></Columns><Rows></Rows></DataTable>' +
+        '</DesktopLabel>';
+    }
+
+    // ----------------------------------------------------------------
+    // Label settings — kept in the print station's own browser, since only
+    // the machine that prints needs them. Read fresh on every print, so
+    // edits apply to the very next label.
+    // ----------------------------------------------------------------
+
+    const LABEL_SETTINGS_KEY = 'checkin.labelSettings';
+    const DEFAULT_LABEL_SETTINGS = { title: '', showLogo: true, showName: true };
+
+    function loadLabelSettings() {
+      try {
+        return Object.assign({}, DEFAULT_LABEL_SETTINGS, JSON.parse(localStorage.getItem(LABEL_SETTINGS_KEY) || '{}'));
+      } catch (e) {
+        return Object.assign({}, DEFAULT_LABEL_SETTINGS);
+      }
+    }
+
+    function saveLabelSettings(settings) {
+      try { localStorage.setItem(LABEL_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* private window etc. */ }
+    }
+
+    // The black horizontal logo, flattened onto white (a transparent PNG can
+    // print as a solid black box) at ~300dpi for its 2in slot on the label.
+    const LOGO_URL = '../../assets/brand-new/gs-logo-horizontal-black.png';
+    let logoBase64Promise = null;
+
+    function loadLogoBase64() {
+      if (!logoBase64Promise) {
+        logoBase64Promise = new Promise(function (resolve) {
+          const img = new Image();
+          img.onload = function () {
+            const width = 600;
+            const height = Math.round(width * img.naturalHeight / img.naturalWidth);
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/png').split(',')[1]);
+          };
+          img.onerror = function () { resolve(''); };
+          img.src = LOGO_URL;
+        });
+      }
+      return logoBase64Promise;
+    }
+
+    async function labelXmlFor(person) {
+      const settings = loadLabelSettings();
+      const opts = {
+        logoBase64: settings.showLogo ? await loadLogoBase64() : '',
+        title: settings.title.trim(),
+        name: settings.showName ? (person.name || '') : '',
+      };
+      if (isProbablyUrl(person.qrUrl)) {
+        const response = await fetch(qrImageProxyUrl(person.qrUrl), { cache: 'no-store' });
+        if (!response.ok) throw new Error('QR image request returned ' + response.status);
+        opts.qrImageBase64 = (await blobToDataUrl(await response.blob())).replace(/^data:image\/\w+;base64,/, '');
+      } else {
+        opts.qrText = person.qrUrl;
+      }
+      return buildLabelXml(opts);
+    }
 
     function dymoAvailable() {
       try {
@@ -544,7 +645,6 @@
       }
     }
 
-    // Reads a fetch Response's body as a "data:image/png;base64,...." URI.
     function blobToDataUrl(blob) {
       return new Promise(function (resolve, reject) {
         const reader = new FileReader();
@@ -573,28 +673,7 @@
           fallbackBtn.hidden = false;
           return;
         }
-
-        let label;
-        if (isProbablyUrl(person.qrUrl)) {
-          // per_qr_url (name search) has no underlying text value, only a
-          // link to Slate's already-rendered image — has to go through the
-          // (unverified — see comment above LABEL_XML_IMAGE) ImageObject
-          // path, not the proven QRCodeObject one.
-          statusEl.textContent = 'Fetching QR image…';
-          const response = await fetch(qrImageProxyUrl(person.qrUrl), { cache: 'no-store' });
-          if (!response.ok) throw new Error('QR image request returned ' + response.status);
-          const dataUrl = await blobToDataUrl(await response.blob());
-          const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-          label = window.dymo.label.framework.openLabelXml(LABEL_XML_IMAGE);
-          label.setObjectText('QR', base64);
-        } else {
-          // A scanned/pasted code IS the value to encode — DYMO Connect
-          // renders the QR natively from this text, no image involved.
-          label = window.dymo.label.framework.openLabelXml(LABEL_XML_QR);
-          label.setObjectText('QR', person.qrUrl);
-        }
-        label.setObjectText('NAME', person.name);
-        label.print(labelPrinter.name);
+        window.dymo.label.framework.openLabelXml(await labelXmlFor(person)).print(labelPrinter.name);
         statusEl.textContent = 'Sent to ' + labelPrinter.name + '.';
       } catch (err) {
         statusEl.textContent = 'Printing failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
@@ -680,6 +759,7 @@
         body: JSON.stringify({ value }),
       });
       if (!response.ok) throw new Error('Print queue request returned ' + response.status);
+      return (await response.json()).job;
     }
 
     // Queues before rendering, so a preview failure can never stop the print
@@ -689,7 +769,7 @@
       stopCameraScan();
       setBanner('Sending to the print station…');
       const queued = queueScannedValue(value);
-      const person = { name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: value };
+      const person = { name: '', email: '', status: '', sisid: '', qrUrl: value };
       try {
         renderProfile(person);
       } catch (err) {
@@ -697,7 +777,11 @@
       }
       window.scrollTo(0, 0);
       queued.then(
-        function () { setBanner('✓ Sent to the print station.', 'success'); },
+        function (job) {
+          // The Worker looked the name up from the pass while queueing.
+          if (job && job.name) profile.querySelector('.profile-name').textContent = job.name;
+          setBanner('✓ Sent to the print station' + (job && job.name ? ': ' + job.name : '') + '.', 'success');
+        },
         function (err) { setBanner('Could not reach the print station: ' + (err && err.message ? err.message : 'unknown error') + '.', 'error'); }
       );
     }
@@ -809,7 +893,7 @@
         const data = await response.json();
         const jobs = Array.isArray(data.jobs) ? data.jobs : [];
         for (let i = 0; i < jobs.length; i += 1) {
-          const person = { name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: jobs[i].value };
+          const person = { name: jobs[i].name || '', email: '', status: '', sisid: '', qrUrl: jobs[i].value };
           renderProfile(person);
           await printLabel(person);
         }
@@ -833,6 +917,66 @@
         printStationStatusEl.textContent = '';
       }
     });
+
+    // ----------------------------------------------------------------
+    // Label settings panel (desktop only — hidden with the rest of the
+    // print-station section on mobile). Every change saves immediately and
+    // re-renders the preview through DYMO Connect, so what's shown is what
+    // DYMO Connect itself will print.
+    // ----------------------------------------------------------------
+
+    const settingTitle = document.getElementById('setting-title');
+    const settingLogo = document.getElementById('setting-logo');
+    const settingName = document.getElementById('setting-name');
+    const labelPreviewImg = document.getElementById('label-preview-img');
+    const labelPreviewStatus = document.getElementById('label-preview-status');
+    const SAMPLE_PERSON = { name: 'Sample Registrant', qrUrl: 'person:00000000000000000000000000000000' };
+    let previewToken = 0;
+
+    async function refreshLabelPreview() {
+      const token = ++previewToken;
+      if (!dymoAvailable()) {
+        labelPreviewImg.hidden = true;
+        labelPreviewStatus.textContent = 'Start DYMO Connect on this computer to see a preview.';
+        return;
+      }
+      try {
+        const labelPrinter = findLabelPrinter(window.dymo.label.framework.getPrinters());
+        const png = await window.dymo.label.framework.renderLabelAsync(await labelXmlFor(SAMPLE_PERSON), '', labelPrinter ? labelPrinter.name : '');
+        if (token !== previewToken) return;
+        labelPreviewImg.src = 'data:image/png;base64,' + String(png).replace(/^"|"$/g, '');
+        labelPreviewImg.hidden = false;
+        labelPreviewStatus.textContent = '';
+      } catch (err) {
+        if (token !== previewToken) return;
+        labelPreviewImg.hidden = true;
+        labelPreviewStatus.textContent = 'Preview failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
+      }
+    }
+
+    let previewDebounce = null;
+    function onSettingsChange() {
+      saveLabelSettings({ title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked });
+      clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(refreshLabelPreview, 250);
+    }
+
+    if (!IS_MOBILE) {
+      const initialSettings = loadLabelSettings();
+      settingTitle.value = initialSettings.title;
+      settingLogo.checked = initialSettings.showLogo;
+      settingName.checked = initialSettings.showName;
+      [settingTitle, settingLogo, settingName].forEach(function (el) {
+        el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', onSettingsChange);
+      });
+      document.querySelector('.label-settings').addEventListener('toggle', function (event) {
+        if (event.target.open) refreshLabelPreview();
+      });
+      document.getElementById('label-test-btn').addEventListener('click', function () {
+        renderProfile(SAMPLE_PERSON);
+        printLabel(SAMPLE_PERSON);
+      });
+    }
 
     refreshDeviceStatus();
     setInterval(refreshDeviceStatus, 15000);
