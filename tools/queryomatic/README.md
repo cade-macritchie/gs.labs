@@ -48,7 +48,9 @@ Each route below whitelists only the query-string parameters its wrapper
 actually sends, checks `Origin`/`Referer` against the `PORTAL_ORIGIN` var
 (`https://enroll.gs.edu` — where the wrapper's `<script>` actually executes,
 *not* `ALLOWED_ORIGIN`, which is GitHub Pages), and applies a 60
-requests/IP/minute limit using the `OPTIONS_CACHE` KV namespace.
+requests/IP/minute limit using the `RATE_LIMITER` Rate Limiting binding. (It
+used to be a KV counter, but that cost one KV write per request, and the Check-In
+print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 
 | Route | Query | Used by | Allowed params |
 | --- | --- | --- | --- |

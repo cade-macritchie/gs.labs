@@ -240,21 +240,15 @@ function originAllowed(request, allowedOrigin) {
 }
 
 
-const RATE_LIMIT_MAX_REQUESTS = 60;
-const RATE_LIMIT_WINDOW_SECONDS = 60;
-
+// 60 requests per IP per route per minute, set on the RATE_LIMITER binding in
+// wrangler.toml. This used to be a KV counter, which cost one KV write per
+// request: an open tools/checkin/ print station polls every 2.5s, so it alone
+// wrote ~1,440 times an hour — past Workers Free's 1,000 writes/day within
+// the hour, at which point every KV write in this Worker starts failing.
 async function checkRateLimit(env, request, bucket) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  const window = Math.floor(Date.now() / (RATE_LIMIT_WINDOW_SECONDS * 1000));
-  const key = `ratelimit:${bucket}:${ip}:${window}`;
-
-  const current = Number.parseInt((await env.OPTIONS_CACHE.get(key)) || "0", 10);
-  if (current >= RATE_LIMIT_MAX_REQUESTS) return false;
-
-  await env.OPTIONS_CACHE.put(key, String(current + 1), {
-    expirationTtl: RATE_LIMIT_WINDOW_SECONDS * 2,
-  });
-  return true;
+  const { success } = await env.RATE_LIMITER.limit({ key: `${bucket}:${ip}` });
+  return success;
 }
 
 
