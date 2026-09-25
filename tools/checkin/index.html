@@ -9,7 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <!-- Pinned to 1.5.1: 1.5.4 (and later) no longer ships build/qrcode.min.js,
+       so that URL 404s and window.QRCode is silently undefined. -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
   <!-- jsQR decodes camera frames when the browser has no native BarcodeDetector
        (Safari/iOS as of this writing) — see startCameraScan() in the script
        below, which tries BarcodeDetector first and falls back to this. -->
@@ -294,6 +296,11 @@
         img.addEventListener('error', function () { setBanner('Could not load the QR code image for this person.', 'error'); }, { once: true });
         wrap.appendChild(img);
         qrArea.appendChild(wrap);
+      } else if (person.qrUrl && !window.QRCode) {
+        const missing = document.createElement('p');
+        missing.className = 'qr-missing';
+        missing.textContent = 'QR preview unavailable (the QR library failed to load).';
+        qrArea.appendChild(missing);
       } else if (person.qrUrl) {
         // Not URL-shaped — treat it as a raw value to encode client-side.
         const wrap = document.createElement('div');
@@ -675,19 +682,23 @@
       if (!response.ok) throw new Error('Print queue request returned ' + response.status);
     }
 
+    // Queues before rendering, so a preview failure can never stop the print
+    // job from being sent. Status goes in the top banner, where it's visible
+    // without scrolling past the QR preview on a phone.
     function handleDecodedValue(value) {
       stopCameraScan();
-      setBanner('');
+      setBanner('Sending to the print station…');
+      const queued = queueScannedValue(value);
       const person = { name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: value };
-      renderProfile(person);
-      const statusEl = profile.querySelector('#print-status');
-      statusEl.textContent = 'Sending to the print station…';
-      queueScannedValue(value).then(
-        function () { statusEl.textContent = '✓ Sent to the print station.'; },
-        function (err) {
-          statusEl.textContent = '';
-          setBanner('Could not reach the print station: ' + (err && err.message ? err.message : 'unknown error') + '.', 'error');
-        }
+      try {
+        renderProfile(person);
+      } catch (err) {
+        showOnly('empty');
+      }
+      window.scrollTo(0, 0);
+      queued.then(
+        function () { setBanner('✓ Sent to the print station.', 'success'); },
+        function (err) { setBanner('Could not reach the print station: ' + (err && err.message ? err.message : 'unknown error') + '.', 'error'); }
       );
     }
 
@@ -772,9 +783,22 @@
     // ----------------------------------------------------------------
 
     let printStationOn = false;
-    let printStationTimer = null;
     let printStationBusy = false;
     const PRINT_STATION_POLL_MS = 2500;
+
+    // The poll clock runs in a Web Worker because Edge/Chrome throttle
+    // main-thread timers in a background or minimized tab to once a minute
+    // (observed in Worker logs 2026-09-25: the station polled at exactly
+    // 60s intervals). Worker timers are exempt, so the station stays at
+    // 2.5s even when its tab isn't in front.
+    const pollClock = new Worker(URL.createObjectURL(new Blob([
+      'let t = null;' +
+      'onmessage = function (e) {' +
+      '  clearInterval(t); t = null;' +
+      '  if (e.data === "start") { postMessage("tick"); t = setInterval(function () { postMessage("tick"); }, ' + PRINT_STATION_POLL_MS + '); }' +
+      '};'
+    ], { type: 'text/javascript' })));
+    pollClock.onmessage = function () { pollPrintQueue(); };
 
     async function pollPrintQueue() {
       if (printStationBusy) return;
@@ -803,10 +827,9 @@
       printStationBtn.textContent = printStationOn ? 'Disable print station' : 'Enable as print station';
       if (printStationOn) {
         printStationStatusEl.textContent = 'Watching for scans…';
-        pollPrintQueue();
-        printStationTimer = setInterval(pollPrintQueue, PRINT_STATION_POLL_MS);
+        pollClock.postMessage('start');
       } else {
-        if (printStationTimer) { clearInterval(printStationTimer); printStationTimer = null; }
+        pollClock.postMessage('stop');
         printStationStatusEl.textContent = '';
       }
     });
