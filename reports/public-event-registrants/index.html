@@ -257,6 +257,15 @@
           <div class="stat-cell"><div id="detail-days" class="stat-val">0</div><div class="stat-lbl">Registration Days</div></div>
         </div>
       </div>
+
+      <section id="btc-registration-details" class="btc-registration-details" hidden>
+        <div class="section-divider"><div class="section-eyebrow">Registration Details</div><div class="section-heading">Bible Teaching Conference</div></div>
+        <div class="stat-bar public-event-summary">
+          <div class="stat-cell"><div id="btc-total-registrants" class="stat-val">—</div><div class="stat-lbl">Total Registrants</div></div>
+        </div>
+        <p id="btc-registration-note" class="adjustment-note"></p>
+      </section>
+
       <div class="panel registration-chart-panel">
         <h2 class="registration-chart-heading">Registration growth over time</h2>
         <p id="chart-copy" class="registration-chart-copy">Cumulative registrations based on each registrant's registration date.</p>
@@ -450,6 +459,51 @@
       chart.setAttribute('aria-label', 'Cumulative registrations for ' + record.title + ', reaching ' + last.point.cumulative.toLocaleString() + ' across ' + timeline.points.length.toLocaleString() + ' registration days.');
     }
 
+    // Total-registrants stat for the Bible Teaching Conference, sourced from
+    // the waiver-codes D1 worker (registrants = waiver codes issued), not
+    // from the Slate registration payload above. Admin key embedded
+    // client-side is an accepted tradeoff already used elsewhere for this
+    // worker — see local-files/Other/waiver-code-api.md and
+    // local-files/BTC/*.js. BTC-only for now.
+    var BTC_API_BASE_URL = 'https://slate-waiver-codes.gs-labs.workers.dev';
+    var BTC_ADMIN_KEY = '7c21211a31af94bdceed6471ac014ecd60dcc0498b951f2c';
+    var BTC_EVENT_TITLE_PATTERN = /bible teaching conference/i;
+    var btcSummaryRequestId = 0;
+
+    function isBtcEvent(record) {
+      return BTC_EVENT_TITLE_PATTERN.test(record.title || '');
+    }
+
+    function loadBtcRegistrationDetails(record) {
+      const section = document.getElementById('btc-registration-details');
+      if (!isBtcEvent(record)) { section.hidden = true; return; }
+      section.hidden = false;
+      const valueEl = document.getElementById('btc-total-registrants');
+      const noteEl = document.getElementById('btc-registration-note');
+      valueEl.textContent = '—';
+      noteEl.textContent = 'Loading registrant totals…';
+      const requestId = ++btcSummaryRequestId;
+
+      fetch(BTC_API_BASE_URL + '/api/waiver-codes/summary', {
+        headers: { 'X-Admin-Key': BTC_ADMIN_KEY }
+      })
+        .then(function (res) {
+          if (!res.ok) throw new Error('request failed: ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          if (requestId !== btcSummaryRequestId) return; // a newer event was opened meanwhile
+          valueEl.textContent = Number(data.totalRegistrants || 0).toLocaleString();
+          noteEl.textContent = 'Sum of registration ticket limits across ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin.';
+        })
+        .catch(function (err) {
+          if (requestId !== btcSummaryRequestId) return;
+          valueEl.textContent = '—';
+          noteEl.textContent = 'Could not load registrant totals.';
+          console.error('[public-event-registrants] BTC registrant summary failed:', err);
+        });
+    }
+
     function openEvent(record) {
       document.getElementById('event-overview').hidden = true;
       document.getElementById('event-detail').hidden = false;
@@ -458,6 +512,7 @@
       document.getElementById('detail-registrants').textContent = record.registrants.toLocaleString();
       document.title = record.title + ' — Registration Analytics';
       renderRegistrationChart(record);
+      loadBtcRegistrationDetails(record);
       window.scrollTo({ top:0, behavior:'smooth' });
       eventBridge.resize();
     }
