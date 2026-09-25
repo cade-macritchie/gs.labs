@@ -147,12 +147,16 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
   registrant's name on the right. A name longer than 14 characters wraps
   onto two lines so it stays large. Anything switched off is left out and
   the rest grows into the room. With no name, the QR is centered.
+- **Vertical layout** (setting): prints the same stock in `Portrait`, with the
+  printable rect's axes swapped. The header is centered, then a large QR with
+  the name centered under it. A title longer than 24 characters wraps onto two
+  lines, since the label is only about 2.2in wide this way.
 - **The logo** is `assets/brand-new/gs-logo-horizontal-black.png`, drawn onto a
   white canvas at 600px wide before embedding, because a transparent PNG
   can print as a solid black box. The header rule is a 1x1 black PNG
   stretched with `ScaleMode` `Fill`. Both `ImageObject` uses were checked with
   `RenderLabel`.
-- **Settings** (event title, logo on/off, name on/off) live in the print
+- **Settings** (event title, logo on/off, name on/off, vertical layout) live in the print
   station's own browser (`localStorage`, key `checkin.labelSettings`), set
   from the "Label settings" panel under the print-station toggle. They're
   read fresh on every print, and the panel shows a live preview rendered by

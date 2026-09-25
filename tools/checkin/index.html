@@ -145,7 +145,7 @@
     .setting-check { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: .92rem; cursor: pointer; }
     .setting-check input { width: 18px; height: 18px; accent-color: var(--teal); }
     .label-preview { margin: 16px 0 12px; text-align: center; }
-    .label-preview img { width: 100%; max-width: 420px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+    .label-preview img { max-width: min(100%, 420px); max-height: 320px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
     .label-settings button.secondary { width: 100%; }
 
     /* Print-only fallback layout, used when DYMO Connect isn't available:
@@ -203,6 +203,7 @@
         </label>
         <label class="setting-check"><input id="setting-logo" type="checkbox"> Gateway logo in the header</label>
         <label class="setting-check"><input id="setting-name" type="checkbox"> Print the registrant's name</label>
+        <label class="setting-check"><input id="setting-vertical" type="checkbox"> Vertical layout (name under the QR code)</label>
         <div class="label-preview">
           <img id="label-preview-img" alt="Label preview" hidden>
           <p id="label-preview-status" class="print-station-status"></p>
@@ -479,66 +480,88 @@
     // A 1x1 black PNG, stretched (ScaleMode Fill) into the header rule.
     const BLACK_PIXEL_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==';
 
-    // AlwaysFit shrinks one long line until it's unreadable, so a long name
-    // is split at the space nearest its middle and printed on two lines.
-    function nameLines(name) {
-      if (name.length <= 14 || name.indexOf(' ') === -1) return [name];
+    // AlwaysFit shrinks one long line until it's unreadable, so long text is
+    // split at the space nearest its middle and printed on two lines.
+    function splitInTwo(text, maxChars) {
+      if (text.length <= maxChars || text.indexOf(' ') === -1) return [text];
       let splitAt = -1;
-      for (let i = 0; i < name.length; i += 1) {
-        if (name[i] === ' ' && (splitAt === -1 || Math.abs(i - name.length / 2) < Math.abs(splitAt - name.length / 2))) splitAt = i;
+      for (let i = 0; i < text.length; i += 1) {
+        if (text[i] === ' ' && (splitAt === -1 || Math.abs(i - text.length / 2) < Math.abs(splitAt - text.length / 2))) splitAt = i;
       }
-      return [name.slice(0, splitAt), name.slice(splitAt + 1)];
+      return [text.slice(0, splitAt), text.slice(splitAt + 1)];
     }
 
-    // Header (logo, then event title, then a rule) across the top; QR on the
-    // left below it with the name filling the space to its right, centered
-    // vertically in what's left. Anything switched off or blank is left out
-    // and the body grows into the room.
-    // opts: { logoBase64, title, name, qrText | qrImageBase64 }
+    // Header (logo, then event title, then a rule) across the top, then the
+    // body centered in what's left. Horizontal: QR on the left, name to its
+    // right. Vertical (portrait, 2.2in wide): a large QR with the name
+    // centered under it. Anything switched off or blank is left out and the
+    // body grows into the room.
+    // opts: { vertical, logoBase64, title, name, qrText | qrImageBase64 }
     function buildLabelXml(opts) {
-      const left = LABEL_STOCK.x + LABEL_MARGIN;
-      const right = LABEL_STOCK.x + LABEL_STOCK.width - LABEL_MARGIN;
-      const bottom = LABEL_STOCK.y + LABEL_STOCK.height - LABEL_MARGIN;
+      // Portrait is the same printable rect with the axes swapped.
+      const stock = opts.vertical
+        ? { x: LABEL_STOCK.y, y: LABEL_STOCK.x, width: LABEL_STOCK.height, height: LABEL_STOCK.width }
+        : LABEL_STOCK;
+      const align = opts.vertical ? 'Center' : 'Left';
+      const left = stock.x + LABEL_MARGIN;
+      const right = stock.x + stock.width - LABEL_MARGIN;
+      const bottom = stock.y + stock.height - LABEL_MARGIN;
       const objects = [];
-      let top = LABEL_STOCK.y + LABEL_MARGIN;
+      let top = stock.y + LABEL_MARGIN;
 
       if (opts.logoBase64) {
-        objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(left, top, 2.0, 0.26), 'Left'));
+        const logoWidth = Math.min(2.0, right - left);
+        const logoLeft = opts.vertical ? (left + right - logoWidth) / 2 : left;
+        objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(logoLeft, top, logoWidth, 0.26), align));
         top += 0.32;
       }
       if (opts.title) {
-        objects.push(textObjectXml('TITLE', opts.title, objectLayoutXml(left, top, right - left, 0.32), 16, true, 'Left'));
-        top += 0.36;
+        const titleLines = opts.vertical ? splitInTwo(opts.title, 24) : [opts.title];
+        const titleHeight = titleLines.length > 1 ? 0.5 : 0.32;
+        objects.push(textObjectXml('TITLE', titleLines, objectLayoutXml(left, top, right - left, titleHeight), 16, true, align));
+        top += titleHeight + 0.04;
       }
       if (opts.logoBase64 || opts.title) {
         objects.push(imageObjectXml('RULE', BLACK_PIXEL_PNG_BASE64, objectLayoutXml(left, top, right - left, 0.02), 'Left', 'Fill'));
         top += 0.08;
       }
 
-      const qrSize = Math.min(1.6, bottom - top);
-      const bodyTop = top + (bottom - top - qrSize) / 2;
-      const qrLayout = opts.name
-        ? objectLayoutXml(left, bodyTop, qrSize, qrSize)
-        : objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
+      let qrLayout;
+      let nameLayout;
+      if (opts.vertical) {
+        const nameHeight = opts.name ? 0.8 : 0;
+        const gap = opts.name ? 0.12 : 0;
+        const qrSize = Math.min(right - left, bottom - top - nameHeight - gap);
+        const bodyTop = top + (bottom - top - qrSize - gap - nameHeight) / 2;
+        qrLayout = objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
+        nameLayout = objectLayoutXml(left, bodyTop + qrSize + gap, right - left, nameHeight);
+      } else {
+        const qrSize = Math.min(1.6, bottom - top);
+        const bodyTop = top + (bottom - top - qrSize) / 2;
+        qrLayout = opts.name
+          ? objectLayoutXml(left, bodyTop, qrSize, qrSize)
+          : objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
+        const nameLeft = left + qrSize + 0.15;
+        nameLayout = objectLayoutXml(nameLeft, bodyTop, right - nameLeft, qrSize);
+      }
+
       objects.push(opts.qrImageBase64
         ? imageObjectXml('QR', opts.qrImageBase64, qrLayout, 'Center')
         : qrObjectXml(opts.qrText, qrLayout));
-
       if (opts.name) {
-        const nameLeft = left + qrSize + 0.15;
-        objects.push(textObjectXml('NAME', nameLines(opts.name), objectLayoutXml(nameLeft, bodyTop, right - nameLeft, qrSize), 28, true, 'Left'));
+        objects.push(textObjectXml('NAME', splitInTwo(opts.name, 14), nameLayout, 28, true, align));
       }
 
       return '<?xml version="1.0" encoding="utf-8"?>' +
         '<DesktopLabel Version="1">' +
           '<DYMOLabel Version="4">' +
             '<Description>DYMO Label</Description>' +
-            '<Orientation>Landscape</Orientation>' +
+            '<Orientation>' + (opts.vertical ? 'Portrait' : 'Landscape') + '</Orientation>' +
             '<LabelName>' + LABEL_STOCK.name + '</LabelName>' +
             '<InitialLength>0</InitialLength>' +
             '<BorderStyle>SolidLine</BorderStyle>' +
-            '<DYMORect><DYMOPoint><X>' + LABEL_STOCK.x + '</X><Y>' + LABEL_STOCK.y + '</Y></DYMOPoint>' +
-              '<Size><Width>' + LABEL_STOCK.width + '</Width><Height>' + LABEL_STOCK.height + '</Height></Size></DYMORect>' +
+            '<DYMORect><DYMOPoint><X>' + stock.x + '</X><Y>' + stock.y + '</Y></DYMOPoint>' +
+              '<Size><Width>' + stock.width + '</Width><Height>' + stock.height + '</Height></Size></DYMORect>' +
             '<BorderColor>' + COLOR_BLACK_XML + '</BorderColor>' +
             '<BorderThickness>1</BorderThickness>' +
             '<Show_Border>False</Show_Border>' +
@@ -561,7 +584,7 @@
     // ----------------------------------------------------------------
 
     const LABEL_SETTINGS_KEY = 'checkin.labelSettings';
-    const DEFAULT_LABEL_SETTINGS = { title: '', showLogo: true, showName: true };
+    const DEFAULT_LABEL_SETTINGS = { title: '', showLogo: true, showName: true, vertical: false };
 
     function loadLabelSettings() {
       try {
@@ -606,6 +629,7 @@
     async function labelXmlFor(person) {
       const settings = loadLabelSettings();
       const opts = {
+        vertical: Boolean(settings.vertical),
         logoBase64: settings.showLogo ? await loadLogoBase64() : '',
         title: settings.title.trim(),
         name: settings.showName ? (person.name || '') : '',
@@ -928,6 +952,7 @@
     const settingTitle = document.getElementById('setting-title');
     const settingLogo = document.getElementById('setting-logo');
     const settingName = document.getElementById('setting-name');
+    const settingVertical = document.getElementById('setting-vertical');
     const labelPreviewImg = document.getElementById('label-preview-img');
     const labelPreviewStatus = document.getElementById('label-preview-status');
     const SAMPLE_PERSON = { name: 'Sample Registrant', qrUrl: 'person:00000000000000000000000000000000' };
@@ -956,7 +981,7 @@
 
     let previewDebounce = null;
     function onSettingsChange() {
-      saveLabelSettings({ title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked });
+      saveLabelSettings({ title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked, vertical: settingVertical.checked });
       clearTimeout(previewDebounce);
       previewDebounce = setTimeout(refreshLabelPreview, 250);
     }
@@ -966,7 +991,8 @@
       settingTitle.value = initialSettings.title;
       settingLogo.checked = initialSettings.showLogo;
       settingName.checked = initialSettings.showName;
-      [settingTitle, settingLogo, settingName].forEach(function (el) {
+      settingVertical.checked = initialSettings.vertical;
+      [settingTitle, settingLogo, settingName, settingVertical].forEach(function (el) {
         el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', onSettingsChange);
       });
       document.querySelector('.label-settings').addEventListener('toggle', function (event) {
