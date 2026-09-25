@@ -49,8 +49,30 @@
     }
   }
 
+  // Each recorded visit is one KV write on the Worker, and the Cloudflare
+  // account is on Workers Free (1,000 writes/day shared by the whole Worker).
+  // So a browser records a given page at most once per local calendar day;
+  // a reload records again, as a deliberate "count this one". Browsers don't
+  // expose hard vs. soft reload, so any reload counts.
+  function alreadyRecordedToday(path) {
+    const key = 'enrollment-analytics-recorded';
+    const now = new Date();
+    const today = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate();
+    const navigation = performance.getEntriesByType('navigation')[0];
+    const reloaded = navigation ? navigation.type === 'reload' : false;
+    try {
+      let recorded = JSON.parse(localStorage.getItem(key) || '{}');
+      if (!recorded || recorded.day !== today || !Array.isArray(recorded.paths)) recorded = { day: today, paths: [] };
+      if (!reloaded && recorded.paths.includes(path)) return true;
+      if (!recorded.paths.includes(path)) recorded.paths.push(path);
+      localStorage.setItem(key, JSON.stringify(recorded));
+    } catch (_) {}
+    return false;
+  }
+
   function recordAggregateVisit() {
     if (window.location.pathname.includes('/analytics/')) return;
+    if (alreadyRecordedToday(window.location.pathname)) return;
 
     const sessionId = sessionIdentifier();
     const visitorId = visitorIdentifier(sessionId);
