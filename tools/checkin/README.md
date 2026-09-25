@@ -2,8 +2,8 @@
 
 Tablet/mobile-first check-in portal: tap "Scan with camera", point the
 device's camera at a registrant's badge, and its QR code is decoded and
-handed off for reprinting — no lookup, no manual print step. GitHub-hosted,
-like `tools/idea-box/`.
+handed off for reprinting — no lookup, no manual print step. Hosted on
+GitHub Pages.
 
 Any device that can load this page and run a camera can scan (including
 one that can't run DYMO Connect at all, like a Kindle Fire tablet — see

@@ -13,11 +13,10 @@ paths" below).
 | `analytics/index.html` (Portal Analytics) | New brand, permanent (no toggle) |
 | `index.html` (homepage) — header, hero, tab bar | New brand, permanent |
 | `index.html` — Reports tab (Funnel Overview, Teaching Sites, Regional Campus Portal, Event Effectiveness, Public Event Registrants) | New brand |
-| `index.html` — Tools tab (BetterQuery, Record Lookup, Slate Idea Box) | New brand |
+| `index.html` — Tools tab (BetterQuery, Record Lookup) | New brand |
 | `index.html` — Training Materials tab (Slate Concepts) | New brand |
 | `tools/queryomatic/index.html` (BetterQuery) | New brand |
 | `tools/student-lookup/index.html` (Record Lookup) | New brand |
-| `tools/idea-box/index.html` (Slate Idea Box) | New brand |
 | `tools/checkin/index.html` (Check-In) | New brand, permanent (no toggle); built tablet/mobile-first |
 | `training/slate-concepts/` (Slate Concepts lesson) | Current brand, unchanged |
 | The 5 report dashboards (`reports/funnel-overview/`, `reports/teaching-site-overview/`, `reports/regional-campus/`, `reports/event-tracker/`, `reports/public-event-registrants/`) | Current brand, unchanged |
@@ -217,8 +216,10 @@ on the page.
 
 ### Recurring calls when converting a tool page
 
-The three Tools pages hit the same handful of questions the palette doesn't
-answer outright. How they were settled, so the next page matches:
+The Tools pages hit the same handful of questions the palette doesn't
+answer outright. How they were settled, so the next page matches. (Some
+examples cite the Slate Idea Box, which was removed on 2026-09-25; its page
+is in git history at `tools/idea-box/index.html`.)
 
 - **A state needs a light tint and the palette has none.** The 7 swatches are
   all mid-to-dark, so there is no light teal/amber to fill a chip or an
@@ -247,8 +248,8 @@ answer outright. How they were settled, so the next page matches:
 - **Pages embedded in Slate get no GS header.** BetterQuery and Record Lookup
   are served inside the Slate portal's own chrome at
   `enroll.gs.edu/portal/...`, so they deliberately have no wordmark/eyebrow
-  header of their own. Idea Box, which is served standalone from Pages, does
-  get the full header treatment.
+  header of their own. A tool served standalone from Pages (as Idea Box was)
+  does get the full header treatment.
 
 ### Rolling this out to a shared page (index.html and beyond)
 

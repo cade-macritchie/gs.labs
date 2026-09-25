@@ -340,8 +340,8 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 
 
 // Same shape as handleSlateProxyRoute, but for a route called directly from a
-// GitHub Pages tool page's own script (like tools/idea-box/ calls its own
-// Worker) rather than from a Slate wrapper's inline <script>. The only
+// GitHub Pages tool page's own script rather than from a Slate wrapper's
+// inline <script>. The only
 // difference that matters is which origin the request is allowed to come
 // from — ALLOWED_ORIGIN (GitHub Pages) here, not PORTAL_ORIGIN (Slate).
 async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedParams, fixedParams) {
@@ -1124,8 +1124,6 @@ const ANALYTICS_PATHS = new Set([
   "/gs.labs/tools/queryomatic/",
   "/gs.labs/queryomatic/admin/",
   "/gs.labs/tools/queryomatic/admin/",
-  "/gs.labs/idea-box/",
-  "/gs.labs/tools/idea-box/",
   "/gs.labs/checkin/",
   "/gs.labs/tools/checkin/",
 ]);
@@ -1152,8 +1150,6 @@ function analyticsLabel(path) {
     "/gs.labs/tools/queryomatic/": "BetterQuery",
     "/gs.labs/queryomatic/admin/": "BetterQuery Admin",
     "/gs.labs/tools/queryomatic/admin/": "BetterQuery Admin",
-    "/gs.labs/idea-box/": "Slate Idea Box",
-    "/gs.labs/tools/idea-box/": "Slate Idea Box",
     "/gs.labs/checkin/": "Check-In",
     "/gs.labs/tools/checkin/": "Check-In",
   };
