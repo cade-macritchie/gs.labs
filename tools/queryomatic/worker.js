@@ -507,8 +507,17 @@ async function pushCheckinPrintJob(env, value, name) {
 
 // A scanned badge decodes to "<type>:<32 hex>" (e.g. "person:07f5…") or a
 // bare GUID for other pass types. Slate's mobile pass page for that GUID
-// shows the holder's name in <p class="pass_name">, so the name is read
-// from there, server-side (enroll.gs.edu sends no CORS headers). The type
+// shows the holder's name, read here server-side (enroll.gs.edu sends no
+// CORS headers). Where it lives depends on the pass template, all verified
+// 2026-09-25: <p class="pass__name"> (BEM double underscore, first and last
+// name split by a <br>) on the custom event-registrant pass;
+// <p class="pass_name"> as its single-underscore variant; or a bare,
+// class-less <div> directly inside .pass_badge on the default "person"
+// pass. On the custom template .pass_badge wraps the whole designed pass,
+// hence the :not([class]) child match rather than any div. There is
+// deliberately NO fallback to <title> or .pass_title: on some templates
+// those hold the pass/event title, and a label with no name beats a label
+// with the wrong one. The type
 // must be passed through as-is: an event registrant's page 404s with
 // &type=person, the same quirk CHECKIN_QR_IMAGE_PATTERN documents. Only a
 // validated GUID and a lowercase type word ever reach the URL, so this
@@ -539,14 +548,24 @@ async function lookupCheckinPassName(value) {
     const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(4000) });
     if (!resp.ok) return { name: "", outcome: `http-${resp.status}` };
     let passName = "";
-    let title = "";
+    let badgeName = "";
+    const classes = new Set();
+    // The name can be split across a <br> (first / last), so each <br>
+    // inside it becomes a space.
+    const addName = { text(chunk) { passName += chunk.text; } };
+    const addSpace = { element() { passName += " "; } };
     await new HTMLRewriter()
-      .on("p.pass_name", { text(chunk) { passName += chunk.text; } })
-      .on("title", { text(chunk) { title += chunk.text; } })
+      .on("p.pass__name, p.pass_name", addName)
+      .on("p.pass__name br, p.pass_name br", addSpace)
+      .on(".pass_badge > div:not([class])", { text(chunk) { badgeName += chunk.text; } })
+      .on("[class]", { element(el) { classes.add(`${el.tagName}.${el.getAttribute("class")}`); } })
       .transform(resp)
       .arrayBuffer();
-    const name = decodeHtmlEntities(passName || title).replace(/\s+/g, " ").trim().slice(0, 120);
-    return { name, outcome: passName ? "pass-name" : title ? "title-fallback" : "no-match" };
+    const name = decodeHtmlEntities(passName || badgeName).replace(/\s+/g, " ").trim().slice(0, 120);
+    const source = passName ? "pass-name" : badgeName ? "pass-badge" : "no-match";
+    // Element classes only (no text), so a template change is diagnosable
+    // from the logs without ever logging a name.
+    return { name, outcome: `${source} [${[...classes].join(" ")}]` };
   } catch (err) {
     return { name: "", outcome: `error-${err?.name || "unknown"}` };
   }
