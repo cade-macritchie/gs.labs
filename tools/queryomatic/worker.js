@@ -71,6 +71,8 @@
  *   ALLOWED_ORIGIN instead of PORTAL_ORIGIN. See handlePagesSlateProxyRoute.)
  * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
  *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
+ * - POST/GET /api/checkin/print-queue         (tools/checkin/ print-station relay, backed
+ *   by the CheckinPrintQueue Durable Object — see "CHECK-IN PRINT QUEUE".)
  *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
@@ -449,39 +451,63 @@ async function handleCheckinQrImage(request, env, id) {
 // print station" turned on in tools/checkin/index.html) polls here on an
 // interval and prints whatever it finds.
 //
-// Storage is a single JSON blob in the existing OPTIONS_CACHE KV namespace
-// (no new binding needed) rather than one key per job — this tool's actual
-// traffic is a handful of scans in quick succession at a check-in table, not
-// a high-concurrency queue, so the small race window on read-modify-write
-// (two POSTs landing at nearly the same instant could clobber each other)
-// is an acceptable tradeoff for staying on the infra that's already here. If
-// that ever becomes a real problem, a Durable Object would be the fix.
-// Capped at 50 pending jobs and a 1-hour TTL so an offline print station
-// can't make this grow unbounded.
+// Storage is a single Durable Object instance (CheckinPrintQueue, below),
+// NOT KV. The first version used OPTIONS_CACHE KV and silently lost jobs in
+// real use (2026-09-25): KV is eventually consistent across Cloudflare edge
+// locations, so a phone on cellular and the print station on office wifi —
+// which hit different PoPs — could take up to a minute to see each other's
+// writes, and KV also caches the "empty" read at the edge. A test from one
+// machine passed because both requests hit the same PoP. A Durable Object is
+// one strongly-consistent instance every request is routed to, and its input
+// gates also make each push/pop atomic, so simultaneous scans can't clobber
+// each other either. Capped at 50 pending jobs, and jobs older than an hour
+// are dropped, so an offline print station can't make this grow unbounded.
 // ============================================================
 
-const CHECKIN_PRINT_QUEUE_KEY = "checkin:printqueue";
 const CHECKIN_PRINT_QUEUE_MAX = 50;
-const CHECKIN_PRINT_QUEUE_TTL_SECONDS = 3600;
+const CHECKIN_PRINT_QUEUE_TTL_MS = 60 * 60 * 1000;
 const CHECKIN_PRINT_QUEUE_VALUE_MAX_LENGTH = 500;
 
-async function pushCheckinPrintJob(env, value) {
-  const current = (await env.OPTIONS_CACHE.get(CHECKIN_PRINT_QUEUE_KEY, "json")) || [];
-  const job = { id: crypto.randomUUID(), value, ts: Date.now() };
-  const trimmed = [...current, job].slice(-CHECKIN_PRINT_QUEUE_MAX);
-  await env.OPTIONS_CACHE.put(CHECKIN_PRINT_QUEUE_KEY, JSON.stringify(trimmed), {
-    expirationTtl: CHECKIN_PRINT_QUEUE_TTL_SECONDS,
-  });
-  return job;
+export class CheckinPrintQueue {
+  constructor(state) {
+    this.storage = state.storage;
+  }
+
+  async fetch(request) {
+    const cutoff = Date.now() - CHECKIN_PRINT_QUEUE_TTL_MS;
+    const jobs = ((await this.storage.get("jobs")) || []).filter((job) => job.ts >= cutoff);
+
+    if (request.method === "POST") {
+      const { value } = await request.json();
+      const job = { id: crypto.randomUUID(), value, ts: Date.now() };
+      await this.storage.put("jobs", [...jobs, job].slice(-CHECKIN_PRINT_QUEUE_MAX));
+      return new Response(JSON.stringify(job), { headers: { "Content-Type": "application/json" } });
+    }
+
+    // The print station's poll IS the delivery mechanism — jobs are cleared
+    // as soon as they're read, since there's meant to be exactly one active
+    // print station at a time.
+    await this.storage.delete("jobs");
+    return new Response(JSON.stringify(jobs), { headers: { "Content-Type": "application/json" } });
+  }
 }
 
-// The print station's poll IS the delivery mechanism — jobs are cleared as
-// soon as they're read, not left for every poller to pick up, since there's
-// meant to be exactly one active print station at a time.
+function checkinPrintQueueStub(env) {
+  return env.CHECKIN_PRINT_QUEUE.get(env.CHECKIN_PRINT_QUEUE.idFromName("default"));
+}
+
+async function pushCheckinPrintJob(env, value) {
+  const resp = await checkinPrintQueueStub(env).fetch("https://checkin-print-queue/push", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  return resp.json();
+}
+
 async function popCheckinPrintJobs(env) {
-  const current = (await env.OPTIONS_CACHE.get(CHECKIN_PRINT_QUEUE_KEY, "json")) || [];
-  if (current.length) await env.OPTIONS_CACHE.delete(CHECKIN_PRINT_QUEUE_KEY);
-  return current;
+  const resp = await checkinPrintQueueStub(env).fetch("https://checkin-print-queue/pop");
+  return resp.json();
 }
 
 async function handleCheckinPrintQueuePost(request, env, id) {

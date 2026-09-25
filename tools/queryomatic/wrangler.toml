@@ -16,3 +16,13 @@ PORTAL_ORIGIN = "https://enroll.gs.edu"
 [[kv_namespaces]]
 binding = "OPTIONS_CACHE"
 id = "1fc9b0939692486d91f3147d3b215769"
+
+# tools/checkin/ print-station relay — see "CHECK-IN PRINT QUEUE" in
+# worker.js for why this is a Durable Object and not KV.
+[[durable_objects.bindings]]
+name = "CHECKIN_PRINT_QUEUE"
+class_name = "CheckinPrintQueue"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CheckinPrintQueue"]

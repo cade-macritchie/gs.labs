@@ -73,19 +73,28 @@ and clicks **"Enable as print station."**
   the exact same `renderProfile()`/`printLabel()` pair the old direct-print
   flow used, so a relayed scan looks and prints identically to one scanned on
   the print station itself.
-- **The queue lives in `OPTIONS_CACHE`** (the same Cloudflare KV namespace
-  already bound for the options cache and rate limiter — no new binding
-  needed) as a single JSON blob, not one key per job. See "CHECK-IN PRINT
-  QUEUE" in `tools/queryomatic/worker.js` for why that's an acceptable
-  tradeoff (this is a handful of scans at a check-in table, not a
-  high-concurrency queue) and its caveats (a small race window on
-  simultaneous scans; capped at 50 pending jobs with a 1-hour TTL so an
-  offline print station can't make it grow unbounded).
+- **The queue is a Durable Object** (`CheckinPrintQueue` in
+  `tools/queryomatic/worker.js`, bound as `CHECKIN_PRINT_QUEUE` in
+  `wrangler.toml`), capped at 50 pending jobs, with jobs over an hour old
+  dropped. **Not KV:** the first version stored the queue in `OPTIONS_CACHE`
+  KV and lost jobs in real use (2026-09-25). KV is eventually consistent across
+  Cloudflare's edge locations, and a phone on cellular and the print station
+  on office Wi-Fi hit different ones, so the station could go up to a minute
+  without seeing a scan. See "CHECK-IN PRINT QUEUE" in `worker.js`.
 - **A poll clears what it reads** — jobs are deleted from the queue as soon
   as the print station's GET returns them, on the assumption that exactly
   one print station is active at a time. Two devices both running as "print
   station" simultaneously would race for the same jobs, not each print a
   copy.
+- **Mobile devices are scanners only.** `IS_MOBILE` in `index.html`
+  (user-agent sniff covering Android, iOS, iPadOS, and Kindle's Silk
+  browser) hides the print-station toggle, the DYMO header status, and the
+  result card's Print buttons, since none of those can work without DYMO
+  Connect. The scanner's confirmation ("✓ Sent to the print station")
+  appears on the result card, right under the QR preview.
+- **Keep the print station's tab in the foreground.** Chrome and Edge
+  throttle timers in background or minimized tabs (down to about once a
+  minute after a few minutes), which would slow polling to match.
 - There's no access restriction on who can queue a print job beyond the
   existing origin check (requests must come from this page's own GitHub
   Pages origin) — anyone who can load the Check-In page and scan a badge can

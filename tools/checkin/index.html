@@ -47,8 +47,11 @@
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     [hidden] { display: none !important; }
-    html, body { height: 100%; }
-    body { margin: 0; min-height: 100vh; background: var(--canvas); overscroll-behavior-y: contain; }
+    /* Keeps the page pinned on phones: no sideways panning, no rubber-band
+       bounce, no double-tap zoom. */
+    html, body { height: 100%; overflow-x: hidden; overscroll-behavior: none; -webkit-text-size-adjust: 100%; }
+    body { margin: 0; min-height: 100vh; background: var(--canvas); touch-action: manipulation; }
+    img, canvas, video { max-width: 100%; }
     button, input { font: inherit; }
 
     header.top {
@@ -64,7 +67,7 @@
     header.top .page-title { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); font: 700 .74rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
     header.top .page-title::before, header.top .page-title::after { content: ''; width: 14px; height: 1px; background: var(--gold); }
     header.top .spacer { flex: 1; }
-    header.top .device-status { font-size: .68rem; color: rgba(255,255,255,.6); text-align: right; line-height: 1.3; }
+    header.top .device-status { min-width: 0; font-size: .68rem; color: rgba(255,255,255,.6); text-align: right; line-height: 1.3; }
 
     main { width: min(640px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 60px; }
 
@@ -174,7 +177,7 @@
     <section id="profile" hidden></section>
     <div id="empty" class="empty">Tap "Scan with camera" to begin.</div>
 
-    <div class="print-station">
+    <div class="print-station" id="print-station">
       <button class="secondary" id="print-station-btn" type="button">Enable as print station</button>
       <p id="print-station-status" class="print-station-status"></p>
     </div>
@@ -219,6 +222,16 @@
     const cameraCancelBtn = document.getElementById('camera-cancel-btn');
     const printStationBtn = document.getElementById('print-station-btn');
     const printStationStatusEl = document.getElementById('print-station-status');
+
+    // Phones and tablets (incl. Kindle Fire's Silk browser, and iPads that
+    // report as Macintosh) can't run DYMO Connect, so they're scanners only:
+    // no print-station toggle, no DYMO status, no local Print buttons.
+    const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(navigator.userAgent) ||
+      (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    if (IS_MOBILE) {
+      document.getElementById('print-station').hidden = true;
+      deviceStatus.hidden = true;
+    }
 
     // per_qr_url is a link to an already-rendered PNG; treat anything else
     // (a bare code string) as text to encode ourselves instead.
@@ -298,6 +311,8 @@
         qrArea.appendChild(missing);
         printBtn.disabled = true;
       }
+
+      if (IS_MOBILE) profile.querySelector('.print-row').hidden = true;
 
       profile.querySelector('#scan-again').addEventListener('click', function () {
         showOnly('empty');
@@ -665,9 +680,14 @@
       setBanner('');
       const person = { name: 'Scanned pass', email: '', status: '', sisid: '', qrUrl: value };
       renderProfile(person);
+      const statusEl = profile.querySelector('#print-status');
+      statusEl.textContent = 'Sending to the print station…';
       queueScannedValue(value).then(
-        function () { setBanner('Sent to the print station.', 'success'); },
-        function () { setBanner('Could not reach the print station — check your connection.', 'error'); }
+        function () { statusEl.textContent = '✓ Sent to the print station.'; },
+        function (err) {
+          statusEl.textContent = '';
+          setBanner('Could not reach the print station: ' + (err && err.message ? err.message : 'unknown error') + '.', 'error');
+        }
       );
     }
 
