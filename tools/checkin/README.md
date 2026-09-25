@@ -166,12 +166,17 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
   queued, `lookupCheckinPassName()` in `tools/queryomatic/worker.js` opens
   that pass's Slate mobile page
   (`enroll.gs.edu/register/mobile?id=<guid>[&type=<type>]`) on the server and
-  stores the name with the job. It reads `<p class="pass_name">` and falls
-  back to the page `<title>`, which is the holder's name. As of 2026-09-25 the
-  test pass matched only the `<title>` (logged as
-  `nameLookup: "title-fallback"`). If the lookup fails, the label prints
+  stores the name with the job. Where the name lives depends on the pass
+  template. The custom event pass uses `<p class="pass__name">` (double
+  underscore, first and last name split by a `<br>`). The default "person"
+  pass uses a bare `<div>` inside `.pass_badge`. `p.pass_name` is also
+  accepted. There is **no** fallback to `<title>` or `.pass_title`: on the
+  custom template both hold the event title, which is what the first
+  version printed as the "name". If nothing matches, the label prints
   without a name rather than the scan failing. The Worker logs only the
-  lookup's outcome, never the name.
+  lookup's outcome and the page's element classes (e.g.
+  `nameLookup: "pass-name [div.pass_container …]"`), never the name. So if a
+  new pass template ever prints no name, the logs show its structure.
 
 The header shows a live "DYMO ready — <printer name>" / "DYMO Connect not
 detected" status so staff can tell at a glance whether printing will work,
