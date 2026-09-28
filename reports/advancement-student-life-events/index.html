@@ -529,7 +529,26 @@
         });
     }
 
+    // The open event is remembered per browser tab so refreshing the Slate
+    // page (which reloads this iframe from its wrapper URL) returns to the
+    // same detail view. Storage can be unavailable in a third-party iframe,
+    // in which case a refresh simply lands on the event list.
+    const OPEN_EVENT_KEY = 'advancement-student-life-events:open-event';
+    let restoredOpenEvent = false;
+
+    function rememberOpenEvent(title) {
+      try {
+        if (title) window.sessionStorage.setItem(OPEN_EVENT_KEY, title);
+        else window.sessionStorage.removeItem(OPEN_EVENT_KEY);
+      } catch (_) { /* storage unavailable */ }
+    }
+
+    function rememberedOpenEvent() {
+      try { return window.sessionStorage.getItem(OPEN_EVENT_KEY) || ''; } catch (_) { return ''; }
+    }
+
     function openEvent(record) {
+      rememberOpenEvent(record.title);
       document.getElementById('event-overview').hidden = true;
       document.getElementById('event-detail').hidden = false;
       document.getElementById('detail-title').textContent = record.title;
@@ -543,6 +562,7 @@
     }
 
     function closeEvent() {
+      rememberOpenEvent('');
       document.getElementById('event-detail').hidden = true;
       document.getElementById('event-overview').hidden = false;
       document.title = 'Advancement and Student Life Events';
@@ -658,6 +678,14 @@
       document.getElementById('registrant-total').textContent = totalRegistrants.toLocaleString();
       renderCards();
       ui.showApp();
+
+      if (!restoredOpenEvent) {
+        restoredOpenEvent = true;
+        const openTitle = rememberedOpenEvent().toLocaleLowerCase();
+        const openRecord = openTitle && eventRecords.find(function (record) { return record.title.toLocaleLowerCase() === openTitle; });
+        if (openRecord) openEvent(openRecord);
+        else if (openTitle) rememberOpenEvent('');
+      }
     }
 
     sortButtons.forEach(function (button) {
@@ -679,7 +707,7 @@
 
     const eventBridge = window.DashboardBridge.create('public-event-registrants', render);
     document.getElementById('event-back').addEventListener('click', closeEvent);
-    document.getElementById('portal-home').addEventListener('click', function () { window.location.reload(); });
+    document.getElementById('portal-home').addEventListener('click', function () { rememberOpenEvent(''); window.location.reload(); });
   }());
   </script>
 </body>
