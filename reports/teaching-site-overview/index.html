@@ -309,22 +309,27 @@
     }
 
     // Students per semester, oldest first, from payload.studentTrend. `site`
-    // blank means the sum across every teaching site. Semesters after the last
-    // one with any teaching-site students are future terms nobody has entered
-    // yet; they are trimmed (from the shared total, so every site's chart has
-    // the same x-axis) rather than dragging the trendline down to zero.
+    // blank means the sum across every teaching site. Semesters that have not
+    // started yet are left out: their students are still arriving, so a
+    // near-zero count there would drag the trendline down.
+    function semesterStart(term, year) {
+      const first = Number(String(year).slice(0, 4));
+      if (term === 'Fall') return new Date(first, 7, 16);
+      if (term === 'Spring') return new Date(first + 1, 0, 16);
+      return new Date(first + 1, 4, 16);
+    }
+
     function trendSeries(site) {
       const periods = window.AcademicPeriods.values;
       const byKey = {};
+      const now = new Date();
       data.studentTrend.forEach(function (entry) {
         const key = window.AcademicPeriods.keyFrom(entry && entry.term, entry && entry.year);
-        if (key !== 'total') byKey[key] = entry;
+        if (key !== 'total' && semesterStart(entry.term, entry.year) <= now) byKey[key] = entry;
       });
       const keys = Object.keys(periods).filter(function (key) { return byKey[key]; });
-      let last = -1;
-      keys.forEach(function (key, index) { if (ui.number(byKey[key].total) > 0) last = index; });
       const wanted = site.toLowerCase();
-      return keys.slice(0, last + 1).map(function (key) {
+      return keys.map(function (key) {
         const entry = byKey[key];
         let count = ui.number(entry.total);
         if (site) {
@@ -435,7 +440,7 @@
 
       root.append(legend, svg, tooltip);
       const note = document.createElement('div'); note.className = 'trend-note';
-      note.textContent = (data.studentTrendError ? data.studentTrendError + ' ' : '') + 'Students counted by application term, the same way as the Students stat for each period.';
+      note.textContent = (data.studentTrendError ? data.studentTrendError + ' ' : '') + 'Students counted by application term, the same way as the Students stat for each period. Semesters that have not started yet are not shown.';
       root.appendChild(note);
     }
 
