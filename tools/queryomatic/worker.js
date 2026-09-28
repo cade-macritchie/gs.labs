@@ -72,8 +72,10 @@
  *   ALLOWED_ORIGIN instead of PORTAL_ORIGIN. See handlePagesSlateProxyRoute.)
  * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
  *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
- * - POST/GET /api/checkin/print-queue         (tools/checkin/ print-station relay, backed
- *   by the CheckinPrintQueue Durable Object — see "CHECK-IN PRINT QUEUE".)
+ * - POST /api/checkin/print-queue             (tools/checkin/ scanners queue a print job)
+ * - GET  /api/checkin/print-station           (tools/checkin/ print station WebSocket, or a
+ *   one-off connected check — both backed by the CheckinPrintQueue Durable Object,
+ *   one instance per station name. See "CHECK-IN PRINT QUEUE".)
  *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
@@ -440,59 +442,116 @@ async function handleCheckinQrImage(request, env, id) {
 //
 // Lets a scanning device with no Dymo attached (e.g. a Kindle Fire tablet,
 // which can't run DYMO Connect at all — see tools/checkin/README.md) hand a
-// decoded badge value off to whichever Windows machine is acting as the
-// print station, without the two devices needing to be on the same network.
-// Every scanner POSTs here; the print station's own tab (with "Enable as
-// print station" turned on in tools/checkin/index.html) polls here on an
-// interval and prints whatever it finds.
+// decoded badge value off to a Windows machine acting as a print station,
+// without the two devices needing to be on the same network.
 //
-// Storage is a single Durable Object instance (CheckinPrintQueue, below),
-// NOT KV. The first version used OPTIONS_CACHE KV and silently lost jobs in
-// real use (2026-09-25): KV is eventually consistent across Cloudflare edge
-// locations, so a phone on cellular and the print station on office wifi —
-// which hit different PoPs — could take up to a minute to see each other's
-// writes, and KV also caches the "empty" read at the edge. A test from one
-// machine passed because both requests hit the same PoP. A Durable Object is
-// one strongly-consistent instance every request is routed to, and its input
-// gates also make each push/pop atomic, so simultaneous scans can't clobber
-// each other either. Capped at 50 pending jobs, and jobs older than an hour
-// are dropped, so an offline print station can't make this grow unbounded.
+// Stations are named ("Main", "Table 2", ...), and each name gets its own
+// Durable Object instance (CheckinPrintQueue, below), so several stations can
+// run at once, each with its own Dymo. A scanner POSTs a job with the station
+// name it's sending to. The station's tab (with "Enable as print station"
+// turned on in tools/checkin/index.html) holds a WebSocket open to its
+// instance, and the instance pushes each job down it the moment it arrives.
+//
+// Push, not polling. The first version had the station poll every 2.5s,
+// which was ~1,440 Worker requests an hour per station for nothing, and
+// several stations behind one office IP would have tripped the per-IP rate
+// limit. The WebSocket uses the hibernation API, so an idle connection costs
+// nothing, and the station's keep-alive ping is answered by the runtime
+// (setWebSocketAutoResponse) without waking the object.
+//
+// Delivery is at-least-once. A job stays in storage until the station acks
+// it, and everything unacked is re-sent when a station (re)connects, so a
+// scan made while the station's laptop was asleep or offline prints when it
+// comes back. Only one station per name: a new connection closes the old one
+// (code 4000), so two tabs can't both print the same job.
+//
+// Storage is a Durable Object, NOT KV. The first version used OPTIONS_CACHE
+// KV and silently lost jobs in real use (2026-09-25): KV is eventually
+// consistent across Cloudflare edge locations, so a phone on cellular and the
+// print station on office wifi could take up to a minute to see each other's
+// writes. A Durable Object is one strongly-consistent instance every request
+// is routed to. Capped at 50 pending jobs, and jobs older than an hour are
+// dropped, so an offline station can't make this grow unbounded.
 // ============================================================
 
 const CHECKIN_PRINT_QUEUE_MAX = 50;
 const CHECKIN_PRINT_QUEUE_TTL_MS = 60 * 60 * 1000;
 const CHECKIN_PRINT_QUEUE_VALUE_MAX_LENGTH = 500;
+const CHECKIN_STATION_REPLACED_CODE = 4000;
+// Letters, digits, spaces and hyphens. Matched case-insensitively, so
+// "Table 2" and "table 2" are the same station.
+const CHECKIN_STATION_NAME_PATTERN = /^[a-z0-9][a-z0-9 -]{0,39}$/i;
 
 export class CheckinPrintQueue {
   constructor(state) {
+    this.state = state;
     this.storage = state.storage;
+    this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+  }
+
+  async pendingJobs() {
+    const cutoff = Date.now() - CHECKIN_PRINT_QUEUE_TTL_MS;
+    return ((await this.storage.get("jobs")) || []).filter((job) => job.ts >= cutoff);
+  }
+
+  openStations() {
+    return this.state.getWebSockets().filter((ws) => ws.readyState === WebSocket.OPEN);
   }
 
   async fetch(request) {
-    const cutoff = Date.now() - CHECKIN_PRINT_QUEUE_TTL_MS;
-    const jobs = ((await this.storage.get("jobs")) || []).filter((job) => job.ts >= cutoff);
+    const { pathname } = new URL(request.url);
 
-    if (request.method === "POST") {
-      const { value, name } = await request.json();
-      const job = { id: crypto.randomUUID(), value, name: name || "", ts: Date.now() };
-      await this.storage.put("jobs", [...jobs, job].slice(-CHECKIN_PRINT_QUEUE_MAX));
-      return new Response(JSON.stringify(job), { headers: { "Content-Type": "application/json" } });
+    if (pathname === "/connect") {
+      for (const ws of this.openStations()) {
+        ws.close(CHECKIN_STATION_REPLACED_CODE, "Another print station connected with this name");
+      }
+      const [client, server] = Object.values(new WebSocketPair());
+      this.state.acceptWebSocket(server);
+      const jobs = await this.pendingJobs();
+      if (jobs.length) server.send(JSON.stringify({ type: "jobs", jobs }));
+      return new Response(null, { status: 101, webSocket: client });
     }
 
-    // The print station's poll IS the delivery mechanism — jobs are cleared
-    // as soon as they're read, since there's meant to be exactly one active
-    // print station at a time.
-    await this.storage.delete("jobs");
-    return new Response(JSON.stringify(jobs), { headers: { "Content-Type": "application/json" } });
+    if (pathname === "/push") {
+      const { value, name } = await request.json();
+      const job = { id: crypto.randomUUID(), value, name: name || "", ts: Date.now() };
+      await this.storage.put("jobs", [...(await this.pendingJobs()), job].slice(-CHECKIN_PRINT_QUEUE_MAX));
+      const stations = this.openStations();
+      for (const ws of stations) ws.send(JSON.stringify({ type: "jobs", jobs: [job] }));
+      return Response.json({ job, stationConnected: stations.length > 0 });
+    }
+
+    return Response.json({ stationConnected: this.openStations().length > 0 });
+  }
+
+  async webSocketMessage(ws, message) {
+    let msg;
+    try { msg = JSON.parse(message); } catch { return; }
+    if (msg?.type !== "ack" || !Array.isArray(msg.ids)) return;
+    const acked = new Set(msg.ids);
+    const remaining = (await this.pendingJobs()).filter((job) => !acked.has(job.id));
+    if (remaining.length) await this.storage.put("jobs", remaining);
+    else await this.storage.delete("jobs");
+  }
+
+  webSocketClose(ws, code, reason) {
+    // Completes the closing handshake; needed on this compatibility_date.
+    try { ws.close(code, reason); } catch { /* already closed */ }
   }
 }
 
-function checkinPrintQueueStub(env) {
-  return env.CHECKIN_PRINT_QUEUE.get(env.CHECKIN_PRINT_QUEUE.idFromName("default"));
+// Returns the case-folded station key, or "" if the name isn't valid.
+function checkinStationKey(rawName) {
+  const name = String(rawName || "").trim().replace(/\s+/g, " ");
+  return CHECKIN_STATION_NAME_PATTERN.test(name) ? name.toLowerCase() : "";
 }
 
-async function pushCheckinPrintJob(env, value, name) {
-  const resp = await checkinPrintQueueStub(env).fetch("https://checkin-print-queue/push", {
+function checkinPrintQueueStub(env, stationKey) {
+  return env.CHECKIN_PRINT_QUEUE.get(env.CHECKIN_PRINT_QUEUE.idFromName(`station:${stationKey}`));
+}
+
+async function pushCheckinPrintJob(env, stationKey, value, name) {
+  const resp = await checkinPrintQueueStub(env, stationKey).fetch("https://checkin-print-queue/push", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ value, name }),
@@ -566,11 +625,6 @@ async function lookupCheckinPassName(value) {
   }
 }
 
-async function popCheckinPrintJobs(env) {
-  const resp = await checkinPrintQueueStub(env).fetch("https://checkin-print-queue/pop");
-  return resp.json();
-}
-
 async function handleCheckinPrintQueuePost(request, env, id) {
   if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
@@ -594,25 +648,44 @@ async function handleCheckinPrintQueuePost(request, env, id) {
   if (value.length > CHECKIN_PRINT_QUEUE_VALUE_MAX_LENGTH) {
     return json({ error: "value is too long", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
   }
+  const stationKey = checkinStationKey(body?.station);
+  if (!stationKey) {
+    return json({ error: "A valid station name is required", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
 
   const { name, outcome } = await lookupCheckinPassName(value);
-  const job = await pushCheckinPrintJob(env, value, name);
+  const { job, stationConnected } = await pushCheckinPrintJob(env, stationKey, value, name);
   // Deliberately logs how the name lookup went, never the name itself.
-  logInfo(id, "Checkin print queue job queued", { jobId: job.id, nameLookup: outcome });
-  return json({ ok: true, job }, env, 200, env.ALLOWED_ORIGIN);
+  logInfo(id, "Checkin print queue job queued", { jobId: job.id, station: stationKey, stationConnected, nameLookup: outcome });
+  return json({ ok: true, job, stationConnected }, env, 200, env.ALLOWED_ORIGIN);
 }
 
-async function handleCheckinPrintQueueGet(request, env, id) {
+// GET /api/checkin/print-station?station=<name>
+// With "Upgrade: websocket": the print station's push connection (see
+// "CHECK-IN PRINT QUEUE"). Without: a one-off { connected } check a scanner
+// makes when its station is picked. Neither is ever polled.
+async function handleCheckinPrintStation(request, env, id, url) {
   if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
   }
 
-  if (!(await checkRateLimit(env, request, "checkin-print-queue-get"))) {
+  if (!(await checkRateLimit(env, request, "checkin-print-station"))) {
     return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
   }
 
-  const jobs = await popCheckinPrintJobs(env);
-  return json({ jobs }, env, 200, env.ALLOWED_ORIGIN);
+  const stationKey = checkinStationKey(url.searchParams.get("station"));
+  if (!stationKey) {
+    return json({ error: "A valid station name is required", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+
+  const stub = checkinPrintQueueStub(env, stationKey);
+  if (request.headers.get("Upgrade") === "websocket") {
+    logInfo(id, "Checkin print station connecting", { station: stationKey });
+    return stub.fetch(new Request("https://checkin-print-queue/connect", request));
+  }
+
+  const { stationConnected } = await (await stub.fetch("https://checkin-print-queue/status")).json();
+  return json({ connected: stationConnected }, env, 200, env.ALLOWED_ORIGIN);
 }
 
 
@@ -2908,10 +2981,10 @@ export default {
       }
 
       if (
-        url.pathname === "/api/checkin/print-queue" &&
+        url.pathname === "/api/checkin/print-station" &&
         request.method === "GET"
       ) {
-        return await handleCheckinPrintQueueGet(request, env, id);
+        return await handleCheckinPrintStation(request, env, id, url);
       }
 
       if (
@@ -3199,7 +3272,7 @@ export default {
         500,
         url.pathname === "/api/slate/checkin-search" ||
         url.pathname === "/api/slate/checkin-qr-image" ||
-        url.pathname === "/api/checkin/print-queue"
+        url.pathname.startsWith("/api/checkin/")
           ? env.ALLOWED_ORIGIN
           : url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
       );

@@ -135,6 +135,9 @@
 
     .print-station { margin-top: 40px; padding-top: 20px; border-top: 1px dashed var(--border); text-align: center; }
     .print-station-status { margin: 10px 0 0; color: var(--muted); font-size: .85rem; min-height: 1.2em; }
+    .station-picker { margin-top: 16px; }
+    .station-picker .print-station-status { margin-top: -4px; }
+    .print-station .setting-field { max-width: 320px; margin: 0 auto 12px; text-align: left; }
 
     .label-settings { margin-top: 20px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); text-align: left; }
     .label-settings summary { cursor: pointer; color: var(--navy); font: 700 .78rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
@@ -188,10 +191,22 @@
 
     <button class="primary" id="camera-scan-btn" type="button">Scan with camera</button>
 
+    <div class="station-picker">
+      <label class="setting-field">
+        <span>Send scans to print station</span>
+        <input id="scan-station" type="text" maxlength="40" autocomplete="off" autocapitalize="words" placeholder="Main">
+      </label>
+      <p id="scan-station-status" class="print-station-status"></p>
+    </div>
+
     <section id="profile" hidden></section>
     <div id="empty" class="empty">Tap "Scan with camera" to begin.</div>
 
     <div class="print-station" id="print-station">
+      <label class="setting-field">
+        <span>This computer's station name</span>
+        <input id="station-name" type="text" maxlength="40" autocomplete="off" placeholder="Main">
+      </label>
       <button class="secondary" id="print-station-btn" type="button">Enable as print station</button>
       <p id="print-station-status" class="print-station-status"></p>
 
@@ -235,10 +250,28 @@
     // pasted/scanned value ever is.
     const CHECKIN_QR_IMAGE_SERVICE = WORKER_URL + '/api/slate/checkin-qr-image';
     // See "CHECK-IN PRINT QUEUE" in tools/queryomatic/worker.js — every
-    // scanning device POSTs a decoded value here; whichever device is
-    // running as the print station polls it and prints. See "Print station"
+    // scanning device POSTs a decoded value (and the station it's for) here;
+    // the print station with that name holds a WebSocket open to
+    // PRINT_STATION_SERVICE and has the job pushed to it. See "Print station"
     // below.
     const PRINT_QUEUE_SERVICE = WORKER_URL + '/api/checkin/print-queue';
+    const PRINT_STATION_SERVICE = WORKER_URL + '/api/checkin/print-station';
+    const DEFAULT_STATION = 'Main';
+    // Same rule as CHECKIN_STATION_NAME_PATTERN in worker.js.
+    const STATION_NAME_PATTERN = /^[a-z0-9][a-z0-9 -]{0,39}$/i;
+
+    function cleanStationName(value) {
+      const name = String(value || '').trim().replace(/\s+/g, ' ');
+      return STATION_NAME_PATTERN.test(name) ? name : '';
+    }
+
+    function readStored(key) {
+      try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+    }
+
+    function writeStored(key, value) {
+      try { localStorage.setItem(key, value); } catch (e) { /* private window etc. */ }
+    }
 
     const profile = document.getElementById('profile');
     const empty = document.getElementById('empty');
@@ -780,18 +813,70 @@
       const response = await fetch(PRINT_QUEUE_SERVICE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value }),
+        body: JSON.stringify({ value, station: scanStation() }),
       });
       if (!response.ok) throw new Error('Print queue request returned ' + response.status);
-      return (await response.json()).job;
+      return response.json();
     }
+
+    // ----------------------------------------------------------------
+    // Which print station this device's scans go to. Set from ?station= in
+    // the URL (so each table's tablet can bookmark its own), else whatever
+    // was last typed here, else "Main". The online check runs once when the
+    // station is picked, never on a timer.
+    // ----------------------------------------------------------------
+
+    const SCAN_STATION_KEY = 'checkin.scanStation';
+    const scanStationInput = document.getElementById('scan-station');
+    const scanStationStatusEl = document.getElementById('scan-station-status');
+
+    function scanStation() {
+      return cleanStationName(scanStationInput.value) || DEFAULT_STATION;
+    }
+
+    async function checkScanStation() {
+      const station = scanStation();
+      if (scanStationInput.value.trim() && !cleanStationName(scanStationInput.value)) {
+        scanStationStatusEl.textContent = 'Use letters, numbers, spaces and hyphens only. Sending to ' + station + ' for now.';
+        return;
+      }
+      scanStationStatusEl.textContent = 'Checking ' + station + '…';
+      try {
+        const url = new URL(PRINT_STATION_SERVICE);
+        url.searchParams.set('station', station);
+        const response = await fetch(url.toString(), { cache: 'no-store' });
+        if (!response.ok) throw new Error('returned ' + response.status);
+        const data = await response.json();
+        if (station !== scanStation()) return;
+        scanStationStatusEl.textContent = data.connected
+          ? '● ' + station + ' is online.'
+          : station + ' isn’t online right now. Scans will wait for it (up to an hour).';
+      } catch (err) {
+        if (station !== scanStation()) return;
+        scanStationStatusEl.textContent = 'Couldn’t check ' + station + ': ' + (err && err.message ? err.message : 'unknown error') + '.';
+      }
+    }
+
+    (function initScanStation() {
+      let fromUrl = '';
+      try { fromUrl = cleanStationName(new URLSearchParams(window.location.search).get('station')); } catch (e) { /* ignore */ }
+      if (fromUrl) writeStored(SCAN_STATION_KEY, fromUrl);
+      scanStationInput.value = fromUrl || cleanStationName(readStored(SCAN_STATION_KEY)) || DEFAULT_STATION;
+      scanStationInput.addEventListener('change', function () {
+        const name = cleanStationName(scanStationInput.value);
+        if (name) { scanStationInput.value = name; writeStored(SCAN_STATION_KEY, name); }
+        checkScanStation();
+      });
+      checkScanStation();
+    }());
 
     // Queues before rendering, so a preview failure can never stop the print
     // job from being sent. Status goes in the top banner, where it's visible
     // without scrolling past the QR preview on a phone.
     function handleDecodedValue(value) {
       stopCameraScan();
-      setBanner('Sending to the print station…');
+      const station = scanStation();
+      setBanner('Sending to ' + station + '…');
       const queued = queueScannedValue(value);
       const person = { name: '', email: '', status: '', sisid: '', qrUrl: value };
       try {
@@ -801,10 +886,13 @@
       }
       window.scrollTo(0, 0);
       queued.then(
-        function (job) {
+        function (data) {
+          const job = data && data.job;
           // The Worker looked the name up from the pass while queueing.
           if (job && job.name) profile.querySelector('.profile-name').textContent = job.name;
-          setBanner('✓ Sent to the print station' + (job && job.name ? ': ' + job.name : '') + '.', 'success');
+          const who = job && job.name ? ': ' + job.name : '';
+          if (data && data.stationConnected) setBanner('✓ Sent to ' + station + who + '.', 'success');
+          else setBanner(station + ' isn’t online, so this scan is waiting' + who + '. It prints when that station connects (up to an hour).', 'error');
         },
         function (err) { setBanner('Could not reach the print station: ' + (err && err.message ? err.message : 'unknown error') + '.', 'error'); }
       );
@@ -884,62 +972,163 @@
     // act on a scan) turns this on once; every OTHER device just scans and
     // queues (see queueScannedValue() above) without needing its own
     // printer or even to be on the same network — see "CHECK-IN PRINT
-    // QUEUE" in tools/queryomatic/worker.js. Polling reuses
-    // renderProfile()/printLabel() exactly as the local camera-scan path
-    // does, so a job from the queue looks and prints identically to a badge
-    // scanned on this device directly.
+    // QUEUE" in tools/queryomatic/worker.js. Several stations can run at
+    // once, each under its own name. Jobs are pushed to the station over a
+    // WebSocket (no polling) and printed with the same
+    // renderProfile()/printLabel() pair as a badge scanned here directly.
     // ----------------------------------------------------------------
 
-    let printStationOn = false;
-    let printStationBusy = false;
-    const PRINT_STATION_POLL_MS = 2500;
+    const STATION_NAME_KEY = 'checkin.stationName';
+    const STATION_REPLACED_CODE = 4000;   // CHECKIN_STATION_REPLACED_CODE in worker.js
+    const HEARTBEAT_MS = 30000;
+    // Nothing heard (not even a "pong") for this long means the connection
+    // is dead without having said so, e.g. after the laptop slept.
+    const SILENCE_LIMIT_MS = 75000;
+    const stationNameInput = document.getElementById('station-name');
 
-    // The poll clock runs in a Web Worker because Edge/Chrome throttle
-    // main-thread timers in a background or minimized tab to once a minute
-    // (observed in Worker logs 2026-09-25: the station polled at exactly
-    // 60s intervals). Worker timers are exempt, so the station stays at
-    // 2.5s even when its tab isn't in front.
-    const pollClock = new Worker(URL.createObjectURL(new Blob([
-      'let t = null;' +
+    let printStationOn = false;
+    let stationSocket = null;
+    let lastHeardAt = 0;
+    let reconnectDelayMs = 1000;
+    let printChain = Promise.resolve();
+    const handledJobIds = new Set();
+
+    // Timers run in a Web Worker because Edge/Chrome throttle main-thread
+    // timers in a background or minimized tab to once a minute (observed
+    // 2026-09-25). Only the keep-alive and reconnect backoff use them; jobs
+    // themselves arrive as WebSocket messages, which aren't throttled.
+    const stationClock = new Worker(URL.createObjectURL(new Blob([
+      'const timers = {};' +
       'onmessage = function (e) {' +
-      '  clearInterval(t); t = null;' +
-      '  if (e.data === "start") { postMessage("tick"); t = setInterval(function () { postMessage("tick"); }, ' + PRINT_STATION_POLL_MS + '); }' +
+      '  const d = e.data;' +
+      '  clearTimeout(timers[d.name]); clearInterval(timers[d.name]); delete timers[d.name];' +
+      '  if (d.ms) timers[d.name] = (d.repeat ? setInterval : setTimeout)(function () { postMessage(d.name); }, d.ms);' +
       '};'
     ], { type: 'text/javascript' })));
-    pollClock.onmessage = function () { pollPrintQueue(); };
+    stationClock.onmessage = function (event) {
+      if (event.data === 'heartbeat') heartbeat();
+      else if (event.data === 'reconnect') connectStation();
+    };
+    function setClock(name, ms, repeat) { stationClock.postMessage({ name: name, ms: ms || 0, repeat: Boolean(repeat) }); }
 
-    async function pollPrintQueue() {
-      if (printStationBusy) return;
-      printStationBusy = true;
-      try {
-        const response = await fetch(PRINT_QUEUE_SERVICE, { cache: 'no-store' });
-        if (!response.ok) throw new Error('Print queue poll returned ' + response.status);
-        const data = await response.json();
-        const jobs = Array.isArray(data.jobs) ? data.jobs : [];
-        for (let i = 0; i < jobs.length; i += 1) {
-          const person = { name: jobs[i].name || '', email: '', status: '', sisid: '', qrUrl: jobs[i].value };
+    function stationName() {
+      return cleanStationName(stationNameInput.value) || DEFAULT_STATION;
+    }
+
+    function setStationStatus(text) { printStationStatusEl.textContent = text; }
+
+    function connectStation() {
+      if (!printStationOn) return;
+      const url = new URL(PRINT_STATION_SERVICE.replace(/^http/, 'ws'));
+      url.searchParams.set('station', stationName());
+      const ws = new WebSocket(url.toString());
+      stationSocket = ws;
+      setStationStatus('Connecting as ' + stationName() + '…');
+
+      ws.onopen = function () {
+        if (ws !== stationSocket) return;
+        lastHeardAt = Date.now();
+        reconnectDelayMs = 1000;
+        setStationStatus('Printing scans sent to ' + stationName() + '.');
+        setClock('heartbeat', HEARTBEAT_MS, true);
+      };
+      ws.onmessage = function (event) {
+        if (ws !== stationSocket) return;
+        lastHeardAt = Date.now();
+        if (event.data === 'pong') return;
+        let msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        if (msg && msg.type === 'jobs' && Array.isArray(msg.jobs)) msg.jobs.forEach(enqueueJob);
+      };
+      ws.onclose = function (event) {
+        if (ws !== stationSocket) return;
+        stationSocket = null;
+        setClock('heartbeat', 0);
+        if (!printStationOn) return;
+        if (event.code === STATION_REPLACED_CODE) {
+          stopStation();
+          setStationStatus('Another computer is now printing as ' + stationName() + ', so this one stopped.');
+          return;
+        }
+        setStationStatus('Connection lost. Reconnecting as ' + stationName() + '…');
+        setClock('reconnect', reconnectDelayMs);
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30000);
+      };
+    }
+
+    function heartbeat() {
+      if (!stationSocket || stationSocket.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - lastHeardAt > SILENCE_LIMIT_MS) {
+        // Don't wait on a close handshake a dead connection will never
+        // answer; drop it (its handlers ignore a replaced socket) and redial.
+        const dead = stationSocket;
+        stationSocket = null;
+        dead.close();
+        connectStation();
+        return;
+      }
+      stationSocket.send('ping');
+    }
+
+    // Prints one at a time, in arrival order. A job re-sent after a
+    // reconnect (its ack never landed) is acked again but not reprinted.
+    function enqueueJob(job) {
+      if (!job || typeof job.id !== 'string') return;
+      if (handledJobIds.has(job.id)) { ackJob(job.id); return; }
+      handledJobIds.add(job.id);
+      printChain = printChain.then(async function () {
+        const person = { name: job.name || '', email: '', status: '', sisid: '', qrUrl: job.value };
+        try {
           renderProfile(person);
           await printLabel(person);
+        } finally {
+          ackJob(job.id);
+          setStationStatus('Printing scans sent to ' + stationName() + '. Last printed ' + new Date().toLocaleTimeString() + '.');
         }
-        if (jobs.length) printStationStatusEl.textContent = 'Watching for scans… last printed ' + new Date().toLocaleTimeString() + '.';
-        else printStationStatusEl.textContent = 'Watching for scans…';
-      } catch (err) {
-        printStationStatusEl.textContent = 'Print station error: ' + (err && err.message ? err.message : 'unknown error') + '.';
-      } finally {
-        printStationBusy = false;
+      });
+    }
+
+    function ackJob(id) {
+      if (stationSocket && stationSocket.readyState === WebSocket.OPEN) {
+        stationSocket.send(JSON.stringify({ type: 'ack', ids: [id] }));
       }
     }
 
-    printStationBtn.addEventListener('click', function () {
-      printStationOn = !printStationOn;
-      printStationBtn.textContent = printStationOn ? 'Disable print station' : 'Enable as print station';
-      if (printStationOn) {
-        printStationStatusEl.textContent = 'Watching for scans…';
-        pollClock.postMessage('start');
-      } else {
-        pollClock.postMessage('stop');
-        printStationStatusEl.textContent = '';
+    function startStation() {
+      const name = cleanStationName(stationNameInput.value);
+      if (stationNameInput.value.trim() && !name) {
+        setStationStatus('Station names can use letters, numbers, spaces and hyphens only.');
+        return;
       }
+      stationNameInput.value = name || DEFAULT_STATION;
+      writeStored(STATION_NAME_KEY, stationNameInput.value);
+      printStationOn = true;
+      reconnectDelayMs = 1000;
+      stationNameInput.disabled = true;
+      printStationBtn.textContent = 'Disable print station';
+      connectStation();
+    }
+
+    function stopStation() {
+      printStationOn = false;
+      setClock('heartbeat', 0);
+      setClock('reconnect', 0);
+      const ws = stationSocket;
+      stationSocket = null;
+      if (ws) ws.close();
+      stationNameInput.disabled = false;
+      printStationBtn.textContent = 'Enable as print station';
+      setStationStatus('');
+    }
+
+    stationNameInput.value = cleanStationName(readStored(STATION_NAME_KEY)) || DEFAULT_STATION;
+    printStationBtn.addEventListener('click', function () {
+      if (printStationOn) stopStation();
+      else startStation();
+    });
+    // Coming back online is the one moment worth skipping the backoff.
+    window.addEventListener('online', function () {
+      if (printStationOn && !stationSocket) { setClock('reconnect', 0); connectStation(); }
     });
 
     // ----------------------------------------------------------------
@@ -1004,8 +1193,12 @@
       });
     }
 
-    refreshDeviceStatus();
-    setInterval(refreshDeviceStatus, 15000);
+    // Asks the local DYMO Connect service (127.0.0.1), not the Worker, so this
+    // never touches Cloudflare. Pointless on a phone, which can't run it.
+    if (!IS_MOBILE) {
+      refreshDeviceStatus();
+      setInterval(refreshDeviceStatus, 15000);
+    }
   }());
   </script>
 </body>

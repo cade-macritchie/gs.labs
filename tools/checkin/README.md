@@ -7,12 +7,12 @@ GitHub Pages.
 
 Any device that can load this page and run a camera can scan (including
 one that can't run DYMO Connect at all, like a Kindle Fire tablet — see
-"Print station" below); only the one Windows machine with the Dymo actually
-plugged in needs to be the print station.
+"Print stations" below); only a Windows machine with a Dymo actually plugged in
+needs to be a print station.
 
 There is no logging or persistence here on purpose — this is scan-and-print
 only, no record of who checked in or when. (The print queue itself is
-short-lived infrastructure, not a check-in record — see "Print station".)
+short-lived infrastructure, not a check-in record — see "Print stations".)
 
 ## How it's wired
 
@@ -44,7 +44,7 @@ short-lived infrastructure, not a check-in record — see "Print station".)
   browsers without it (Safari/iOS as of this writing) fall back to `jsQR`
   (loaded from jsDelivr, same pattern as the existing `qrcode.js` CDN
   script). On a successful decode, the overlay closes and the value is
-  queued for the print station — see `handleDecodedValue()`.
+  queued for a print station — see `handleDecodedValue()`.
   There is no name-search fallback and no manual scan/paste input anymore
   (removed 2026-09-24) — camera scanning is the only entry point.
 - **`isProbablyUrl()`/`qrImageProxyUrl()` are kept even though camera-scanned
@@ -55,46 +55,57 @@ short-lived infrastructure, not a check-in record — see "Print station".)
   `tools/queryomatic/worker.js`) and are left in place as a defensive
   fallback in case a decoded value is ever URL-shaped.
 
-## Print station
+## Print stations
 
-Added 2026-09-24: check-in doesn't require every scanning device to have a
-Dymo attached (most won't — a Kindle Fire, for instance, can't run DYMO
-Connect at all, see above). Instead, exactly one device — the Windows
-machine with the label printer physically plugged in — opens this same page
-and clicks **"Enable as print station."**
+Added 2026-09-24, multiple stations and push delivery 2026-09-28. A scanning
+device doesn't need a Dymo attached (most won't — a Kindle Fire, for
+instance, can't run DYMO Connect at all, see above). Instead, each Windows
+machine with a label printer plugged in opens this same page, gives itself a
+station name ("Main", "Table 2", …), and clicks **"Enable as print
+station."** Run as many stations as you have Dymos.
 
-- **Every scan is POSTed to a shared queue**, not printed locally. See
+- **Scanners pick a station.** "Send scans to print station" under the scan
+  button, remembered per device. `?station=Table%202` in the URL sets it, so
+  each table's tablet can bookmark its own link. Picking one checks once
+  whether it's online (`GET /api/checkin/print-station?station=…`); nothing
+  re-checks on a timer. Names are letters, digits, spaces and hyphens, and
+  case doesn't matter.
+- **Every scan is POSTed to that station's queue**, not printed locally. See
   `queueScannedValue()` in `index.html`, which calls
-  `POST /api/checkin/print-queue` on `gs-labs-slate-gateway`. That's true
-  even on the print station's own device if it also scans — there's exactly
-  one code path for "a badge got scanned," not two.
-- **The print station polls that same queue** (`GET /api/checkin/print-queue`,
-  every 2.5s — see `pollPrintQueue()`) and, for each job it gets back, calls
-  the exact same `renderProfile()`/`printLabel()` pair the old direct-print
-  flow used, so a relayed scan looks and prints identically to one scanned on
-  the print station itself.
-- **The queue is a Durable Object** (`CheckinPrintQueue` in
-  `tools/queryomatic/worker.js`, bound as `CHECKIN_PRINT_QUEUE` in
-  `wrangler.toml`), capped at 50 pending jobs, with jobs over an hour old
-  dropped. **Not KV:** the first version stored the queue in `OPTIONS_CACHE`
-  KV and lost jobs in real use (2026-09-25). KV is eventually consistent across
-  Cloudflare's edge locations, and a phone on cellular and the print station
-  on office Wi-Fi hit different ones, so the station could go up to a minute
-  without seeing a scan. See "CHECK-IN PRINT QUEUE" in `worker.js`.
-- **A poll clears what it reads** — jobs are deleted from the queue as soon
-  as the print station's GET returns them, on the assumption that exactly
-  one print station is active at a time. Two devices both running as "print
-  station" simultaneously would race for the same jobs, not each print a
-  copy.
+  `POST /api/checkin/print-queue` with `{ value, station }`. That's true even
+  on a print station's own device if it also scans.
+- **Jobs are pushed, not polled.** The print station holds a WebSocket open to
+  `/api/checkin/print-station` and each job is sent down it the moment it's
+  queued, then printed with the same `renderProfile()`/`printLabel()` pair as
+  a local scan. The first version polled every 2.5s, which was ~1,440 Worker
+  requests an hour per station (and, before the rate limiter moved off KV,
+  1,440 KV writes). Several polling stations behind one office IP would also
+  have tripped the 60/min per-IP rate limit. The only recurring traffic now
+  is a `ping` every 30s, which Cloudflare answers without waking the Durable
+  Object; if nothing comes back for 75s the station redials.
+- **One Durable Object per station name** (`CheckinPrintQueue` in
+  `tools/queryomatic/worker.js`, `idFromName("station:<name>")`), capped at 50
+  pending jobs, with jobs over an hour old dropped. **Not KV:** the first
+  version stored the queue in `OPTIONS_CACHE` KV and lost jobs in real use
+  (2026-09-25), because KV is eventually consistent across edge locations.
+  See "CHECK-IN PRINT QUEUE" in `worker.js`.
+- **Nothing is lost while a station is offline.** A job stays queued until the
+  station acks it after printing, and everything unacked is re-sent when a
+  station connects. The scanner says so when it happens ("… isn't online, so
+  this scan is waiting"). A job re-sent after a dropped ack isn't reprinted
+  in the same tab.
+- **One computer per station name.** A second computer enabling the same name
+  takes over, and the first one stops with a message saying so (close code
+  4000), so two tabs can never print the same job.
 - **Mobile devices are scanners only.** `IS_MOBILE` in `index.html`
   (user-agent sniff covering Android, iOS, iPadOS, and Kindle's Silk
-  browser) hides the print-station toggle, the DYMO header status, and the
+  browser) hides the print-station controls, the DYMO header status, and the
   result card's Print buttons, since none of those can work without DYMO
-  Connect. The scanner's confirmation ("✓ Sent to the print station")
-  appears on the result card, right under the QR preview.
-- **Keep the print station's tab in the foreground.** Chrome and Edge
-  throttle timers in background or minimized tabs (down to about once a
-  minute after a few minutes), which would slow polling to match.
+  Connect.
+- **Background tabs are fine.** Jobs arrive as WebSocket messages, which
+  aren't throttled. The keep-alive and reconnect timers run in a Web Worker,
+  since Chrome and Edge slow main-thread timers in hidden tabs to once a
+  minute.
 - There's no access restriction on who can queue a print job beyond the
   existing origin check (requests must come from this page's own GitHub
   Pages origin) — anyone who can load the Check-In page and scan a badge can
