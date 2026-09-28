@@ -557,7 +557,9 @@
       document.title = record.title + ' — Registration Analytics';
       renderRegistrationChart(record);
       loadBtcRegistrationDetails(record);
-      window.scrollTo({ top:0, behavior:'smooth' });
+      // scrollIntoView also scrolls the Slate page, so the detail view isn't
+      // opened off-screen when the event was clicked far down the list.
+      document.body.scrollIntoView({ block:'start', behavior:'smooth' });
       eventBridge.resize();
     }
 

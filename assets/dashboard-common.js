@@ -59,7 +59,10 @@
       if (resizeFrame) return;
       resizeFrame = window.requestAnimationFrame(function () {
         resizeFrame = 0;
-        const height = Math.ceil(document.documentElement.scrollHeight);
+        // Measure the body, not the root: the root is never shorter than the
+        // iframe itself, so the frame could grow but never shrink back (e.g.
+        // a short detail view left thousands of blank pixels below it).
+        const height = Math.ceil(document.body.scrollHeight);
         post('enrollment-dashboard-resize', { height: height });
       });
     }
@@ -76,7 +79,7 @@
       resize();
     });
 
-    if ('ResizeObserver' in window) new ResizeObserver(resize).observe(document.documentElement);
+    if ('ResizeObserver' in window) new ResizeObserver(resize).observe(document.body);
 
     return Object.freeze({
       navigate: function (set, remove) {
