@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="origin">
-  <title>Public Event Registrants</title>
+  <title>Advancement and Student Life Events</title>
   <script defer src="../../assets/portal-analytics.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -211,7 +211,7 @@
 </head>
 <body class="public-event-dashboard">
   <header class="gs-header">
-    <button id="portal-home" class="wordmark portal-home" type="button" aria-label="Reset Public Event Registrants"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></button>
+    <button id="portal-home" class="wordmark portal-home" type="button" aria-label="Reset Advancement and Student Life Events"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></button>
     <div class="header-divider"></div>
     <a class="header-title header-home" href="../../" target="_top" aria-label="Return to Admissions">Home</a>
   </header>
@@ -221,8 +221,8 @@
   <main id="app" class="container" hidden>
     <section id="event-overview">
     <div class="page-intro">
-      <h1 class="intro-heading">Public Event Registrants</h1>
-      <p class="intro-subtitle">Review public events by date and compare their registration totals.</p>
+      <h1 class="intro-heading">Advancement and Student Life Events</h1>
+      <p class="intro-subtitle">Review advancement and student life events by date and compare their registration totals.</p>
     </div>
 
     <div class="stat-bar public-event-summary">
@@ -246,7 +246,7 @@
         <button class="event-sort-button" type="button" data-sort="registrants">Registrants <span class="sort-indicator" aria-hidden="true">&#8597;</span></button>
       </div>
       <div id="event-cards" class="event-cards"></div>
-      <div id="event-empty" class="empty-state event-empty" hidden>No public event registrations were provided.</div>
+      <div id="event-empty" class="empty-state event-empty" hidden>No event registrations were provided.</div>
     </section>
     </section>
 
@@ -527,7 +527,7 @@
     function closeEvent() {
       document.getElementById('event-detail').hidden = true;
       document.getElementById('event-overview').hidden = false;
-      document.title = 'Public Event Registrants';
+      document.title = 'Advancement and Student Life Events';
       eventBridge.resize();
     }
 
@@ -570,7 +570,7 @@
       cards.replaceChildren();
       const records = sortedRecords();
       empty.hidden = records.length > 0;
-      empty.textContent = eventRecords.length && !showPastEvents ? 'No upcoming events. Check "Show past events" to see earlier ones.' : 'No public event registrations were provided.';
+      empty.textContent = eventRecords.length && !showPastEvents ? 'No upcoming events. Check "Show past events" to see earlier ones.' : 'No event registrations were provided.';
 
       records.forEach(function (record) {
         const card = document.createElement('article');

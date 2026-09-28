@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="origin">
-  <title>Event Tracker</title>
+  <title>Enrollment Events</title>
   <script defer src="../../assets/portal-analytics.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -85,7 +85,7 @@
 </head>
 <body class="event-dashboard">
   <header class="gs-header">
-    <button id="portal-home" class="wordmark portal-home" type="button" aria-label="Reset Event Tracker"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></button>
+    <button id="portal-home" class="wordmark portal-home" type="button" aria-label="Reset Enrollment Events"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></button>
     <div class="header-divider"></div>
     <a class="header-title header-home" href="../../" target="_top" aria-label="Return to Admissions">Home</a>
   </header>
@@ -94,7 +94,7 @@
   <main id="app" class="container" hidden>
     <section id="event-overview-view">
     <div class="page-intro">
-      <h1 class="intro-heading">Event Tracker</h1>
+      <h1 class="intro-heading">Enrollment Events</h1>
       <p class="intro-subtitle">See what each recruiting event cost and what it returned—registrants, inquiries, applicants, and students generated per dollar spent.</p>
     </div>
 
@@ -161,7 +161,7 @@
     </section>
 
     <section id="event-detail-view" class="event-detail" hidden>
-      <button id="event-back" class="back-button" type="button"><span aria-hidden="true">←</span> Back to Event Tracker</button>
+      <button id="event-back" class="back-button" type="button"><span aria-hidden="true">←</span> Back to Enrollment Events</button>
 
       <div class="page-intro event-detail-intro">
         <div class="section-eyebrow">Event Funnel</div>
@@ -330,7 +330,7 @@
     }
 
     function renderView() {
-      document.title = 'Event Tracker';
+      document.title = 'Enrollment Events';
       document.getElementById('event-overview-view').hidden = false;
       document.getElementById('event-detail-view').hidden = true;
       document.body.classList.remove('event-detail-active');

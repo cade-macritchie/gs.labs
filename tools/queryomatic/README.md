@@ -58,7 +58,7 @@ print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 | `GET /api/slate/regional-campus-people` | maindb x(campuses x stages) + prompts | Regional Campus | `campus`, `term`, `year`, `status` |
 | `GET /api/slate/pipeline-people` | maindb x2 + prompts | Pipeline Overview | `status`, `term`, `year` |
 | `GET /api/slate/portal-options` | prompts | (all three above, via the route) | (none) |
-| `GET /api/slate/records` | maindb | Record Lookup, Event Tracker | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
+| `GET /api/slate/records` | maindb | Record Lookup, Enrollment Events | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `sisid`, `alt_form_type` |
 | `GET /api/slate/additional-applications` | maindb | Record Lookup | `sisid` |
 | `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
@@ -173,7 +173,7 @@ drilldown tables from the response.
   `app_decision_code` (values `DF`/`WT`/`AT`/`DN`/`WD`/`ADP`, blank for 608
   of 751 applicants) with no dictionary, and neither it nor `app_status` is a
   parameter. Its F-1 list needs a flag maindb no longer returns.
-- Event Tracker and Public Event Registrants need event titles and a working
+- Enrollment Events and Advancement and Student Life Events need event titles and a working
   event-type filter. maindb has neither.
 **Adding a new Slate query to a portal:** never hardcode a query `id`/`h` in a
 wrapper file. Add a route in `worker.js` that calls `handleSlateProxyRoute`

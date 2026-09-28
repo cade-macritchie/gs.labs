@@ -12,7 +12,7 @@ paths" below).
 |---|---|
 | `analytics/index.html` (Portal Analytics) | New brand, permanent (no toggle) |
 | `index.html` (homepage) — header, hero, tab bar | New brand, permanent |
-| `index.html` — Reports tab (Funnel Overview, Teaching Sites, Regional Campus Portal, Event Effectiveness, Public Event Registrants) | New brand |
+| `index.html` — Reports tab (Funnel Overview, Teaching Sites, Regional Campus Portal, Enrollment Events, Advancement and Student Life Events) | New brand |
 | `index.html` — Tools tab (BetterQuery, Record Lookup) | New brand |
 | `index.html` — Training Materials tab (Slate Concepts) | New brand |
 | `tools/queryomatic/index.html` (BetterQuery) | New brand |
@@ -23,7 +23,7 @@ paths" below).
 | `pipeline-overview/` (not linked from the homepage) | Current brand, unchanged |
 
 The homepage tabs were reorganized alongside the rebrand: what was "Other"
-(a single report-list item) is now **Tools**, and Public Event Registrants
+(a single report-list item) is now **Tools**, and Advancement and Student Life Events
 moved from that tab into Reports, picking up the new-brand card treatment as
 card 05 since it now sits in that grid. The old `.report-list`/`.report-item`
 styles were removed as dead code once nothing referenced them.
