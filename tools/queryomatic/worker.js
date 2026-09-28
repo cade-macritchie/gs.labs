@@ -57,6 +57,7 @@
  * SLATE PORTAL PROXY ROUTES (/api/slate/*), one per distinct Slate query id:
  *
  * - GET /api/slate/teaching-site-people       (teaching-site-overview wrapper)
+ * - GET /api/slate/teaching-site-trend        (teaching-site-overview wrapper)
  * - GET /api/slate/regional-campus-people     (regional-campus wrapper)
  * - GET /api/slate/pipeline-people            (pipeline-overview wrapper)
  * - GET /api/slate/teaching-site-counts       (no portal caller; kept for ad-hoc use)
@@ -908,6 +909,86 @@ async function handleTeachingSitePeople(request, env, id) {
 
     return { payload, complete: !failedStages.length };
   });
+}
+
+
+// ============================================================
+// TEACHING SITE STUDENT TREND
+//
+// Students per academic period, per teaching site, for the trend charts on
+// the Teaching Sites overview (sum of all sites) and each site's detail page.
+// One status=Student maindb call per period in PERSON_CREATED_WINDOWS -- the
+// same term/year parameters the people route uses, so each point matches the
+// Students stat for that period exactly. Rows without a teaching site are
+// dropped, as on the people route.
+//
+// The answer does not depend on which site or period the page is showing, so
+// it is one cache entry for everyone, held for an hour to keep KV writes to a
+// couple dozen a day (Workers Free caps them at 1,000).
+// ============================================================
+
+const TEACHING_SITE_TREND_CACHE_SECONDS = 3600;
+const TEACHING_SITE_TREND_FANOUT_LIMIT = 3;
+
+
+async function handleTeachingSiteTrend(request, env, id) {
+  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "teaching-site-trend"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+  }
+
+  const cacheKey = "teaching-site-trend:v1";
+  const cached = await env.OPTIONS_CACHE.get(cacheKey, "json").catch(() => null);
+  if (cached) {
+    logInfo(id, "Teaching site trend served from cache", { cacheKey });
+    return json(cached, env, 200, env.PORTAL_ORIGIN);
+  }
+
+  const periodKeys = Object.keys(PERSON_CREATED_WINDOWS);
+  const periods = await mapWithLimit(periodKeys, TEACHING_SITE_TREND_FANOUT_LIMIT, async (key) => {
+    const [term, year] = key.split("|");
+    try {
+      const rows = await fetchFunnelStage(env, id, "teaching-site-trend", "students", { term, year }, null);
+      const bySite = {};
+      let total = 0;
+      rows.forEach((row) => {
+        const site = plainText(row?.per_teachingsite);
+        if (!site) return;
+        bySite[site] = (bySite[site] || 0) + 1;
+        total += 1;
+      });
+      return { term, year, total, bySite };
+    } catch (error) {
+      logError(id, "Teaching site trend period failed", {
+        term,
+        year,
+        message: String(error && error.message ? error.message : error),
+      });
+      return { term, year, total: 0, bySite: {}, failed: true };
+    }
+  });
+
+  const failedPeriods = periods.filter((p) => p.failed).map((p) => `${p.term} ${p.year}`);
+  const payload = {
+    periods: periods.map(({ term, year, total, bySite }) => ({ term, year, total, bySite })),
+    failedPeriods,
+  };
+
+  logInfo(id, "Teaching site trend assembled", {
+    totals: periods.map((p) => p.total),
+    failed: failedPeriods.length,
+  });
+
+  if (!failedPeriods.length) {
+    await env.OPTIONS_CACHE
+      .put(cacheKey, JSON.stringify(payload), { expirationTtl: TEACHING_SITE_TREND_CACHE_SECONDS })
+      .catch(() => {});
+  }
+
+  return json(payload, env, 200, env.PORTAL_ORIGIN);
 }
 
 
@@ -2708,6 +2789,13 @@ export default {
         request.method === "GET"
       ) {
         return await handleTeachingSitePeople(request, env, id);
+      }
+
+      if (
+        url.pathname === "/api/slate/teaching-site-trend" &&
+        request.method === "GET"
+      ) {
+        return await handleTeachingSiteTrend(request, env, id);
       }
 
       if (

@@ -70,6 +70,21 @@
     .teaching-dashboard .clickable-site:hover { background: rgba(35,64,72,.07); }
     .teaching-dashboard .clickable-site:focus-visible { outline-color: rgba(35,64,72,.35); }
 
+    /* Students-per-semester line with a least-squares trendline. */
+    .teaching-dashboard .trend-chart { position: relative; padding: 20px 24px 16px; border: 1px solid var(--border); border-radius: var(--nb-radius); background: var(--white); box-shadow: var(--shadow); }
+    .teaching-dashboard .trend-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin-bottom: 10px; color: var(--muted); font: 600 .72rem var(--nb-font-subheading); letter-spacing: .04em; text-transform: uppercase; }
+    .teaching-dashboard .trend-key { display: inline-flex; align-items: center; gap: 7px; }
+    .teaching-dashboard .trend-swatch { width: 18px; height: 0; border-top: 2px solid var(--nb-teal); }
+    .teaching-dashboard .trend-swatch.is-trend { border-top: 2px dashed var(--nb-gold); }
+    .teaching-dashboard .trend-slope { margin-left: auto; color: var(--ink); text-transform: none; letter-spacing: 0; font: 600 .82rem var(--nb-font-body); }
+    .teaching-dashboard .trend-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .teaching-dashboard .trend-axis { fill: var(--muted); font: 500 11px var(--nb-font-body); }
+    .teaching-dashboard .trend-value { fill: var(--ink); font: 700 12px var(--nb-font-body); }
+    .teaching-dashboard .trend-grid { stroke: var(--border); stroke-width: 1; }
+    .teaching-dashboard .trend-hit { fill: transparent; cursor: default; }
+    .teaching-dashboard .trend-tooltip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); padding: 6px 10px; border-radius: var(--nb-radius); background: var(--nb-black); color: #fff; font: 600 .78rem var(--nb-font-body); white-space: nowrap; box-shadow: var(--shadow); }
+    .teaching-dashboard .trend-tooltip span { display: block; color: rgba(255,255,255,.72); font-weight: 500; font-size: .7rem; }
+    .teaching-dashboard .trend-note { margin-top: 8px; color: var(--muted); font-size: .75rem; }
     .teaching-site-detail .funnel-stage .stage-name { font-family: var(--nb-font-subheading); }
     .teaching-site-detail .funnel-stage .stage-count { font-family: var(--nb-font-heading); }
   </style>
@@ -114,6 +129,9 @@
 
     <div class="section-divider"><div class="section-eyebrow">Overview</div><div class="section-heading">Students by Teaching Site</div></div>
     <div id="site-bars" class="bar-chart"></div>
+
+    <div class="section-divider"><div class="section-eyebrow">Trend</div><div class="section-heading">Students Across Semesters — All Teaching Sites</div></div>
+    <div id="overview-trend" class="trend-chart"></div>
     </section>
 
     <section id="site-detail-view" class="teaching-site-detail" hidden>
@@ -164,6 +182,9 @@
           </table>
         </div>
       </section>
+
+      <div class="section-divider"><div class="section-eyebrow">Trend</div><div class="section-heading">Students Across Semesters</div></div>
+      <div id="site-trend" class="trend-chart"></div>
     </section>
   </main>
 
@@ -240,6 +261,8 @@
       data.funnelRecordErrors = data.funnelRecordErrors || {};
       data.studentsBySite = Array.isArray(data.studentsBySite) ? data.studentsBySite : [];
       data.teachingSites = Array.isArray(data.teachingSites) ? data.teachingSites : [];
+      data.studentTrend = Array.isArray(data.studentTrend) ? data.studentTrend : [];
+      data.studentTrendError = ui.text(data.studentTrendError, '');
       data.inquiriesAllTime = data.inquiriesAllTime !== false;
       const detailActive = Boolean(data.filters.site);
 
@@ -269,6 +292,7 @@
       markInquiryScope('overview-inquiries-note');
       renderInactive(inactive);
       renderBars(sortGrouped(data.studentsBySite.filter(function (item) { return item.count > 0; })));
+      renderTrend('overview-trend', trendSeries(''), 'No student records are available across semesters.');
     }
 
     function renderSiteDetail() {
@@ -280,7 +304,139 @@
       ui.setText('site-students', ui.number(data.funnel.students).toLocaleString());
       markInquiryScope('site-inquiries-note');
       renderSiteFunnel();
+      renderTrend('site-trend', trendSeries(data.filters.site), 'No students are recorded for this teaching site in any semester.');
       closeSiteStage();
+    }
+
+    // Students per semester, oldest first, from payload.studentTrend. `site`
+    // blank means the sum across every teaching site. Semesters after the last
+    // one with any teaching-site students are future terms nobody has entered
+    // yet; they are trimmed (from the shared total, so every site's chart has
+    // the same x-axis) rather than dragging the trendline down to zero.
+    function trendSeries(site) {
+      const periods = window.AcademicPeriods.values;
+      const byKey = {};
+      data.studentTrend.forEach(function (entry) {
+        const key = window.AcademicPeriods.keyFrom(entry && entry.term, entry && entry.year);
+        if (key !== 'total') byKey[key] = entry;
+      });
+      const keys = Object.keys(periods).filter(function (key) { return byKey[key]; });
+      let last = -1;
+      keys.forEach(function (key, index) { if (ui.number(byKey[key].total) > 0) last = index; });
+      const wanted = site.toLowerCase();
+      return keys.slice(0, last + 1).map(function (key) {
+        const entry = byKey[key];
+        let count = ui.number(entry.total);
+        if (site) {
+          const bySite = entry.bySite || {};
+          const match = Object.keys(bySite).find(function (name) { return name.toLowerCase() === wanted; });
+          count = match ? ui.number(bySite[match]) : 0;
+        }
+        return { key:key, label:periods[key].label.split(' — ').pop(), count:count };
+      });
+    }
+
+    // Least-squares fit over the semester index. Returns null below two points.
+    function linearFit(points) {
+      const n = points.length;
+      if (n < 2) return null;
+      const meanX = (n - 1) / 2;
+      const meanY = points.reduce(function (sum, point) { return sum + point.count; }, 0) / n;
+      let numerator = 0; let denominator = 0;
+      points.forEach(function (point, index) { numerator += (index - meanX) * (point.count - meanY); denominator += (index - meanX) * (index - meanX); });
+      const slope = numerator / denominator;
+      return { slope:slope, at:function (x) { return meanY + slope * (x - meanX); } };
+    }
+
+    function niceCeiling(value) {
+      // Four whole-number gridline steps of 1/2/5 x 10^n.
+      const raw = Math.max(1, value / 4);
+      const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+      const step = [1, 2, 5, 10].map(function (m) { return m * magnitude; }).find(function (s) { return s >= raw; });
+      return step * 4;
+    }
+
+    function renderTrend(rootId, points, emptyMessage) {
+      const root = document.getElementById(rootId); root.replaceChildren();
+      if (data.studentTrendError && !points.length) { root.appendChild(ui.emptyState(data.studentTrendError)); return; }
+      if (!points.some(function (point) { return point.count > 0; })) { root.appendChild(ui.emptyState(emptyMessage)); return; }
+
+      const fit = linearFit(points);
+      const svgNamespace = 'http://www.w3.org/2000/svg';
+      function el(name, attrs) {
+        const node = document.createElementNS(svgNamespace, name);
+        Object.keys(attrs || {}).forEach(function (key) { node.setAttribute(key, attrs[key]); });
+        return node;
+      }
+
+      const legend = document.createElement('div'); legend.className = 'trend-legend';
+      legend.innerHTML = '<span class="trend-key"><span class="trend-swatch"></span>Students</span>' + (fit ? '<span class="trend-key"><span class="trend-swatch is-trend"></span>Trendline</span>' : '');
+      if (fit) {
+        const slope = document.createElement('span'); slope.className = 'trend-slope';
+        const rounded = Math.round(fit.slope * 10) / 10;
+        slope.textContent = rounded === 0 ? 'Trend: flat' : 'Trend: ' + (rounded > 0 ? '+' : '−') + Math.abs(rounded).toLocaleString() + ' students per semester';
+        legend.appendChild(slope);
+      }
+
+      const width = 720; const height = 240;
+      const pad = { top:18, right:24, bottom:30, left:40 };
+      const plotW = width - pad.left - pad.right; const plotH = height - pad.top - pad.bottom;
+      const peak = Math.max.apply(null, points.map(function (point) { return point.count; }).concat(fit ? [fit.at(0), fit.at(points.length - 1)] : []));
+      const yMax = niceCeiling(peak);
+      const x = function (index) { return pad.left + (points.length === 1 ? plotW / 2 : index * plotW / (points.length - 1)); };
+      const y = function (value) { return pad.top + plotH - (value / yMax) * plotH; };
+
+      const svg = el('svg', { viewBox:'0 0 ' + width + ' ' + height, role:'img' });
+      svg.setAttribute('aria-label', 'Students per semester: ' + points.map(function (point) { return point.label + ' ' + point.count; }).join(', ') + '.');
+      const clipId = rootId + '-clip';
+      const defs = el('defs'); const clip = el('clipPath', { id:clipId });
+      clip.appendChild(el('rect', { x:pad.left, y:pad.top, width:plotW, height:plotH })); defs.appendChild(clip); svg.appendChild(defs);
+
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = yMax * tick / 4; const ty = y(value);
+        svg.appendChild(el('line', { class:'trend-grid', x1:pad.left, x2:width - pad.right, y1:ty, y2:ty }));
+        const label = el('text', { class:'trend-axis', x:pad.left - 8, y:ty + 4, 'text-anchor':'end' }); label.textContent = value.toLocaleString(); svg.appendChild(label);
+      }
+      const currentKey = window.AcademicPeriods.keyFrom(data.filters.term, data.filters.year);
+      points.forEach(function (point, index) {
+        const label = el('text', { class:'trend-axis', x:x(index), y:height - 8, 'text-anchor':'middle' });
+        label.textContent = point.key; if (point.key === currentKey) label.setAttribute('font-weight', '700');
+        svg.appendChild(label);
+      });
+
+      if (fit) {
+        svg.appendChild(el('line', { x1:x(0), y1:y(fit.at(0)), x2:x(points.length - 1), y2:y(fit.at(points.length - 1)), stroke:'#d3a422', 'stroke-width':2, 'stroke-dasharray':'6 5', 'stroke-linecap':'round', 'clip-path':'url(#' + clipId + ')' }));
+      }
+      svg.appendChild(el('polyline', { points:points.map(function (point, index) { return x(index) + ',' + y(point.count); }).join(' '), fill:'none', stroke:'#234048', 'stroke-width':2, 'stroke-linejoin':'round', 'stroke-linecap':'round' }));
+
+      const tooltip = document.createElement('div'); tooltip.className = 'trend-tooltip'; tooltip.hidden = true;
+      points.forEach(function (point, index) {
+        const selected = point.key === currentKey;
+        svg.appendChild(el('circle', { cx:x(index), cy:y(point.count), r:selected ? 6 : 4.5, fill:'#234048', stroke:'#fff', 'stroke-width':2 }));
+        const hit = el('circle', { class:'trend-hit', cx:x(index), cy:y(point.count), r:16, tabindex:0 });
+        hit.setAttribute('aria-label', point.label + ': ' + point.count.toLocaleString() + ' students');
+        function show() {
+          const box = root.getBoundingClientRect(); const mark = hit.getBoundingClientRect();
+          tooltip.innerHTML = '';
+          tooltip.append(point.count.toLocaleString() + ' student' + (point.count === 1 ? '' : 's'));
+          const sub = document.createElement('span'); sub.textContent = point.label + (fit ? ' · trend ' + Math.max(0, Math.round(fit.at(index))).toLocaleString() : ''); tooltip.appendChild(sub);
+          tooltip.style.left = (mark.left + mark.width / 2 - box.left) + 'px';
+          tooltip.style.top = (mark.top + mark.height / 2 - box.top) + 'px';
+          tooltip.hidden = false;
+        }
+        function hide() { tooltip.hidden = true; }
+        hit.addEventListener('mouseenter', show); hit.addEventListener('focus', show);
+        hit.addEventListener('mouseleave', hide); hit.addEventListener('blur', hide);
+        svg.appendChild(hit);
+      });
+      const lastIndex = points.length - 1;
+      const endLabel = el('text', { class:'trend-value', x:x(lastIndex), y:y(points[lastIndex].count) - 12, 'text-anchor':'middle' });
+      endLabel.textContent = points[lastIndex].count.toLocaleString(); svg.appendChild(endLabel);
+
+      root.append(legend, svg, tooltip);
+      const note = document.createElement('div'); note.className = 'trend-note';
+      note.textContent = (data.studentTrendError ? data.studentTrendError + ' ' : '') + 'Students counted by application term, the same way as the Students stat for each period.';
+      root.appendChild(note);
     }
 
     function renderInactive(inactive) {

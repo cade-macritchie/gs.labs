@@ -36,11 +36,15 @@
     per_status, per_teachingsite, per_name, per_email, per_phone,
     per_sisid, per_degree_current, per_url
 
+  The semester trend charts come from a second gateway route,
+  /api/slate/teaching-site-trend (handleTeachingSiteTrend), which counts
+  status=Student rows per teaching site for every term/year period.
+
   Note there is no app_degree column — the program column reads
   per_degree_current. Fuzzy fallbacks are kept for the rest so a Slate-side
   rename degrades a single column instead of blanking the table.
 -->
-<iframe id="teachingSiteOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/reports/teaching-site-overview/?v=teaching-sites-v3" title="Teaching Sites Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="teachingSiteOverviewFrame" src="https://cade-macritchie.github.io/gs.labs/reports/teaching-site-overview/?v=teaching-sites-v4" title="Teaching Sites Overview" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
@@ -50,6 +54,10 @@
   // tools/queryomatic/worker.js. Nothing credential-related is ever here.
   const workerBase = 'https://gs-labs-slate-gateway.gs-labs.workers.dev';
   const peopleService = workerBase + '/api/slate/teaching-site-people';
+  // Students per period, per site, for the trend charts. Independent of the
+  // selected period/site, so it is fetched alongside the people and a failure
+  // here only blanks the trend chart.
+  const trendService = workerBase + '/api/slate/teaching-site-trend';
   // Only used if the gateway is unreachable, so the "inactive sites" list still
   // renders something. The live list arrives with the people.
   const fallbackTeachingSites = [
@@ -95,6 +103,9 @@
     records: [],
     studentsBySite: [],
     teachingSites: [],
+    // [{ term, year, total, bySite: { site: count } }], oldest period first.
+    studentTrend: [],
+    studentTrendError: '',
     // Set by the gateway. True only when the period could not be applied to
     // the inquiry stage, in which case the report page renders a note.
     inquiriesAllTime: true
@@ -223,6 +234,29 @@
     return payload;
   }
 
+  async function fetchTrend() {
+    try {
+      const response = await fetch(trendService, { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+      if (!response.ok) throw new Error('Teaching site trend returned ' + response.status);
+      const body = await response.json();
+      const failed = Array.isArray(body && body.failedPeriods) ? body.failedPeriods : [];
+      return {
+        periods: Array.isArray(body && body.periods) ? body.periods : [],
+        error: failed.length ? 'Slate did not return ' + failed.join(', ') + ', so those semesters may read low.' : ''
+      };
+    } catch (error) {
+      console.error('Teaching site trend query failed.', error);
+      return { periods: [], error: 'Unable to load the semester trend from Slate. Please try again.' };
+    }
+  }
+
+  async function loadAll() {
+    const results = await Promise.all([loadFunnel(), fetchTrend()]);
+    results[0].studentTrend = results[1].periods;
+    results[0].studentTrendError = results[1].error;
+    return results[0];
+  }
+
   async function loadFunnel() {
     try {
       return build(await fetchPeople());
@@ -239,7 +273,7 @@
 
   // ---------- frame bridge
 
-  const payloadReady = loadFunnel();
+  const payloadReady = loadAll();
   async function sendData() {
     const resolvedPayload = await payloadReady;
     if (frame.contentWindow) frame.contentWindow.postMessage({ type:'enrollment-dashboard-data', dashboard, payload:resolvedPayload }, frameOrigin);

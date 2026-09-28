@@ -55,6 +55,7 @@ print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 | Route | Query | Used by | Allowed params |
 | --- | --- | --- | --- |
 | `GET /api/slate/teaching-site-people` | maindb x3 + prompts | Teaching Sites | `term`, `year`, `site` |
+| `GET /api/slate/teaching-site-trend` | maindb x9 (Student per period) | Teaching Sites (semester trend charts) | none; cached 1h |
 | `GET /api/slate/regional-campus-people` | maindb x(campuses x stages) + prompts | Regional Campus | `campus`, `term`, `year`, `status` |
 | `GET /api/slate/pipeline-people` | maindb x2 + prompts | Pipeline Overview | `status`, `term`, `year` |
 | `GET /api/slate/portal-options` | prompts | (all three above, via the route) | (none) |
