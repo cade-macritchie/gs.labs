@@ -31,9 +31,10 @@ only ever be used from a trusted machine (e.g. when loading a new batch of
 codes), never sent from the browser-side form.
 
 Edit `wrangler.toml` first:
-- `ALLOWED_ORIGIN` — the origin the Slate form is served from, e.g.
-  `https://enroll.gs.edu`. Only same-origin requests from this host get a
-  CORS-allowed response.
+- `ALLOWED_ORIGIN` — comma-separated origins that get a CORS-allowed
+  response: the Slate form's origin (`https://enroll.gs.edu`) and the GitHub
+  Pages origin (`https://cade-macritchie.github.io`) that the Public Event
+  Registrants report runs on.
 
 `wrangler deploy` prints your Worker URL, e.g.
 `https://slate-waiver-codes.yoursubdomain.workers.dev`. Point the Slate
@@ -48,6 +49,11 @@ Codes are stored uppercased and trimmed, so lookups are case-insensitive.
   `{ code, amount, notes? }`. Creates a new waiver code with that many uses;
   `initial_amount` is set to `amount` at creation and never changes
   afterward. 409 if the code already exists.
+- `GET /api/waiver-codes/summary` — public, aggregate only. Returns
+  `{ ticketsPurchased, ticketsRemaining, codeCount }`: the sums of
+  `initial_amount` and current `amount` across codes whose notes don't
+  mention "admin". Used by the Public Event Registrants report's Bible
+  Teaching Conference detail view.
 - `GET /api/waiver-codes/:code` — check that a code matches an existing
   record. Returns `{ valid: true, waiverCode }` or 404
   `{ valid: false, error }`.

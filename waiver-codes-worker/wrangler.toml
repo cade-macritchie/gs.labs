@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2026-01-01"
 
 [vars]
-ALLOWED_ORIGIN = "https://enroll.gs.edu"
+ALLOWED_ORIGIN = "https://enroll.gs.edu,https://cade-macritchie.github.io"
 
 # Create with: wrangler d1 create slate-waiver-codes
 # Then paste the returned database_id below and apply schema.sql:

@@ -7,7 +7,10 @@ function corsHeaders(env, request) {
     'Access-Control-Allow-Headers': 'Content-Type,X-Admin-Key',
     'Access-Control-Max-Age': '86400',
   };
-  if (origin && origin === env.ALLOWED_ORIGIN) {
+  // ALLOWED_ORIGIN is a comma-separated list: the Slate form's origin plus
+  // the GitHub Pages origin the Public Event Registrants report runs on.
+  const allowed = String(env.ALLOWED_ORIGIN || '').split(',').map((o) => o.trim()).filter(Boolean);
+  if (origin && allowed.includes(origin)) {
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Vary'] = 'Origin';
   }
@@ -127,19 +130,27 @@ export default {
         return json({ created, skipped, invalid }, 200, cors);
       }
 
-      // GET /api/waiver-codes/summary — admin only. Total registrants across
-      // all codes, using each code's original initial_amount (not its
-      // current/decremented amount) so partial redemption doesn't shrink the
-      // count, and excluding any code whose notes mention "admin" (e.g.
-      // comp/staff codes that shouldn't count as real registrants).
+      // GET /api/waiver-codes/summary — public, aggregate-only (no codes are
+      // exposed), so the GitHub-hosted report can call it without embedding
+      // ADMIN_KEY in a public page. ticketsPurchased sums each code's
+      // original initial_amount, so redemption doesn't shrink it;
+      // ticketsRemaining sums the current amount (uses not yet redeemed).
+      // Codes whose notes mention "admin" (comp/staff codes) are excluded.
+      // totalRegistrants is kept as an alias of ticketsPurchased.
       if (parts.length === 3 && parts[2] === 'summary' && request.method === 'GET') {
-        if (!isAdmin(request, env)) return json({ error: 'unauthorized' }, 401, cors);
         const result = await env.DB.prepare(
-          `SELECT COALESCE(SUM(initial_amount), 0) AS totalRegistrants, COUNT(*) AS codeCount
+          `SELECT COALESCE(SUM(initial_amount), 0) AS ticketsPurchased,
+                  COALESCE(SUM(amount), 0) AS ticketsRemaining,
+                  COUNT(*) AS codeCount
            FROM waiver_codes
            WHERE notes IS NULL OR LOWER(notes) NOT LIKE '%admin%'`
         ).first();
-        return json({ totalRegistrants: result.totalRegistrants, codeCount: result.codeCount }, 200, cors);
+        return json({
+          ticketsPurchased: result.ticketsPurchased,
+          ticketsRemaining: result.ticketsRemaining,
+          codeCount: result.codeCount,
+          totalRegistrants: result.ticketsPurchased,
+        }, 200, cors);
       }
 
       const code = parts.length >= 3 ? normalizeCode(parts[2]) : '';

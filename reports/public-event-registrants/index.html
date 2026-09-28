@@ -180,6 +180,9 @@
     .registration-detail-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 24px; }
     .registration-detail-head .public-event-summary { width: min(420px, 100%); margin-bottom: 0; }
     .registration-detail-date { color: var(--muted); font-size: .88rem; font-weight: 650; }
+    .btc-registration-details .stat-bar { margin-bottom: 10px; }
+    .btc-registration-details .stat-cell { text-align: center; }
+    .btc-registration-note { margin: 0 0 24px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
     .registration-chart-panel { padding: 24px; }
     .registration-chart-heading { margin: 0; color: var(--navy); font: 700 1.3rem/1.25 'Playfair Display', Georgia, serif; }
     .registration-chart-copy { margin: 6px 0 24px; color: var(--muted); font-size: .84rem; line-height: 1.5; }
@@ -266,10 +269,14 @@
 
       <section id="btc-registration-details" class="btc-registration-details" hidden>
         <div class="section-divider"><div class="section-eyebrow">Registration Details</div><div class="section-heading">Bible Teaching Conference</div></div>
-        <div class="stat-bar public-event-summary">
-          <div class="stat-cell"><div id="btc-total-registrants" class="stat-val">—</div><div class="stat-lbl">Total Registrants</div></div>
+        <div class="stat-bar">
+          <div class="stat-cell"><div id="btc-tickets-purchased" class="stat-val">—</div><div class="stat-lbl">Group Tickets Purchased</div></div>
+          <div class="stat-cell"><div id="btc-tickets-redeemed" class="stat-val">—</div><div class="stat-lbl">Group Tickets Redeemed</div></div>
+          <div class="stat-cell"><div id="btc-tickets-remaining" class="stat-val">—</div><div class="stat-lbl">Group Tickets Remaining</div></div>
+          <div class="stat-cell"><div id="btc-individual-registrants" class="stat-val">—</div><div class="stat-lbl">Individual Registrants</div></div>
+          <div class="stat-cell"><div id="btc-projected-attendance" class="stat-val">—</div><div class="stat-lbl">Projected Attendance</div></div>
         </div>
-        <p id="btc-registration-note" class="adjustment-note"></p>
+        <p id="btc-registration-note" class="btc-registration-note"></p>
       </section>
 
       <div class="panel registration-chart-panel">
@@ -466,48 +473,58 @@
       chart.setAttribute('aria-label', 'Cumulative registrations for ' + record.title + ', reaching ' + last.point.cumulative.toLocaleString() + ' across ' + timeline.points.length.toLocaleString() + ' registration days.');
     }
 
-    // Total-registrants stat for the Bible Teaching Conference, sourced from
-    // the waiver-codes D1 worker (registrants = waiver codes issued), not
-    // from the Slate registration payload above. Admin key embedded
-    // client-side is an accepted tradeoff already used elsewhere for this
-    // worker — see local-files/Other/waiver-code-api.md and
-    // local-files/BTC/*.js. BTC-only for now.
+    // Group-ticket stats for the Bible Teaching Conference, sourced from the
+    // waiver-codes D1 worker's public, aggregate-only summary route (no admin
+    // key belongs in this public page). Every Slate registrant either
+    // registered individually or redeemed one use of a group waiver code, so:
+    //   redeemed    = purchased - remaining
+    //   individuals = Slate registrants - redeemed
+    //   projected   = Slate registrants + remaining (assumes every unredeemed
+    //                 group ticket is eventually used)
+    // BTC-only for now.
     var BTC_API_BASE_URL = 'https://slate-waiver-codes.gs-labs.workers.dev';
-    var BTC_ADMIN_KEY = '7c21211a31af94bdceed6471ac014ecd60dcc0498b951f2c';
     var BTC_EVENT_TITLE_PATTERN = /bible teaching conference/i;
+    var BTC_STAT_IDS = ['btc-tickets-purchased', 'btc-tickets-redeemed', 'btc-tickets-remaining', 'btc-individual-registrants', 'btc-projected-attendance'];
     var btcSummaryRequestId = 0;
 
     function isBtcEvent(record) {
       return BTC_EVENT_TITLE_PATTERN.test(record.title || '');
     }
 
+    function setBtcStats(values) {
+      BTC_STAT_IDS.forEach(function (id, index) {
+        document.getElementById(id).textContent = values ? values[index].toLocaleString() : '—';
+      });
+    }
+
     function loadBtcRegistrationDetails(record) {
       const section = document.getElementById('btc-registration-details');
       if (!isBtcEvent(record)) { section.hidden = true; return; }
       section.hidden = false;
-      const valueEl = document.getElementById('btc-total-registrants');
       const noteEl = document.getElementById('btc-registration-note');
-      valueEl.textContent = '—';
-      noteEl.textContent = 'Loading registrant totals…';
+      setBtcStats(null);
+      noteEl.textContent = 'Loading group ticket totals…';
       const requestId = ++btcSummaryRequestId;
 
-      fetch(BTC_API_BASE_URL + '/api/waiver-codes/summary', {
-        headers: { 'X-Admin-Key': BTC_ADMIN_KEY }
-      })
+      fetch(BTC_API_BASE_URL + '/api/waiver-codes/summary')
         .then(function (res) {
           if (!res.ok) throw new Error('request failed: ' + res.status);
           return res.json();
         })
         .then(function (data) {
           if (requestId !== btcSummaryRequestId) return; // a newer event was opened meanwhile
-          valueEl.textContent = Number(data.totalRegistrants || 0).toLocaleString();
-          noteEl.textContent = 'Sum of registration ticket limits across ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin.';
+          const purchased = Math.max(0, Number(data.ticketsPurchased) || 0);
+          const remaining = Math.max(0, Number(data.ticketsRemaining) || 0);
+          const redeemed = Math.max(0, purchased - remaining);
+          const individuals = Math.max(0, record.registrants - redeemed);
+          setBtcStats([purchased, redeemed, remaining, individuals, record.registrants + remaining]);
+          noteEl.textContent = 'Group tickets come from ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin. Individual registrants are Slate registrants minus redeemed group tickets. Projected attendance is Slate registrants plus unredeemed group tickets, assuming every group ticket gets used.';
         })
         .catch(function (err) {
           if (requestId !== btcSummaryRequestId) return;
-          valueEl.textContent = '—';
-          noteEl.textContent = 'Could not load registrant totals.';
-          console.error('[public-event-registrants] BTC registrant summary failed:', err);
+          setBtcStats(null);
+          noteEl.textContent = 'Could not load group ticket totals.';
+          console.error('[public-event-registrants] BTC group ticket summary failed:', err);
         });
     }
 
