@@ -106,6 +106,9 @@
     .event-sort-button:hover, .event-sort-button:focus-visible { color: var(--navy); }
     .event-sort-button.active { color: var(--navy); }
     .sort-indicator { width: 1rem; color: var(--gold); font-size: .9rem; text-align: center; }
+    .event-list-controls { display: flex; justify-content: flex-end; margin-bottom: 6px; padding: 0 22px; }
+    .past-events-toggle { display: inline-flex; align-items: center; gap: 9px; color: var(--nb-black); font-size: .82rem; font-weight: 700; cursor: pointer; }
+    .past-events-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--nb-teal); }
     .event-cards { display: grid; gap: 12px; }
     .event-card {
       position: relative;
@@ -234,6 +237,9 @@
 
     <section class="panel event-card-panel" aria-labelledby="event-list-heading">
       <h2 id="event-list-heading" hidden>Events</h2>
+      <div class="event-list-controls">
+        <label class="past-events-toggle" for="show-past-events"><input id="show-past-events" type="checkbox"> Show past events</label>
+      </div>
       <div id="event-sort-row" class="event-sort-row" role="toolbar" aria-label="Sort events">
         <button class="event-sort-button" type="button" data-sort="title">Event title <span class="sort-indicator" aria-hidden="true">&#8597;</span></button>
         <button class="event-sort-button active" type="button" data-sort="date">Event date <span class="sort-indicator" aria-hidden="true">&#8593;</span></button>
@@ -289,6 +295,7 @@
     let totalRegistrants = 0;
     let sortColumn = 'date';
     let sortDirection = 'asc';
+    let showPastEvents = false;
 
     function clean(value) {
       return ui.text(value, '').trim();
@@ -524,8 +531,15 @@
       eventBridge.resize();
     }
 
+    function isPastEvent(record) {
+      if (!record.dateValue) return false;
+      const now = new Date();
+      return record.dateValue.getTime() < Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    }
+
     function sortedRecords() {
-      return eventRecords.slice().sort(function (left, right) {
+      const records = showPastEvents ? eventRecords.slice() : eventRecords.filter(function (record) { return !isPastEvent(record); });
+      return records.sort(function (left, right) {
         let result = 0;
         if (sortColumn === 'date') {
           if (!left.dateValue && right.dateValue) return 1;
@@ -556,6 +570,7 @@
       cards.replaceChildren();
       const records = sortedRecords();
       empty.hidden = records.length > 0;
+      empty.textContent = eventRecords.length && !showPastEvents ? 'No upcoming events. Check "Show past events" to see earlier ones.' : 'No public event registrations were provided.';
 
       records.forEach(function (record) {
         const card = document.createElement('article');
@@ -637,6 +652,11 @@
         }
         renderCards();
       });
+    });
+
+    document.getElementById('show-past-events').addEventListener('change', function (event) {
+      showPastEvents = event.target.checked;
+      renderCards();
     });
 
     const eventBridge = window.DashboardBridge.create('public-event-registrants', render);
