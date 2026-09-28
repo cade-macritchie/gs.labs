@@ -261,8 +261,12 @@
       data.funnelRecordErrors = data.funnelRecordErrors || {};
       data.studentsBySite = Array.isArray(data.studentsBySite) ? data.studentsBySite : [];
       data.teachingSites = Array.isArray(data.teachingSites) ? data.teachingSites : [];
-      data.studentTrend = Array.isArray(data.studentTrend) ? data.studentTrend : [];
-      data.studentTrendError = ui.text(data.studentTrendError, '');
+      // An older copy of the Slate wrapper sends no studentTrend at all; the
+      // page then fetches it from the gateway itself (see loadTrendDirect).
+      const trendSent = Array.isArray(data.studentTrend);
+      data.studentTrend = trendSent ? data.studentTrend : (directTrend ? directTrend.periods : []);
+      data.studentTrendError = trendSent ? ui.text(data.studentTrendError, '') : (directTrend ? directTrend.error : '');
+      if (!trendSent && !directTrend) loadTrendDirect();
       data.inquiriesAllTime = data.inquiriesAllTime !== false;
       const detailActive = Boolean(data.filters.site);
 
@@ -273,6 +277,32 @@
       if (detailActive) renderSiteDetail();
       else renderOverview();
       ui.showApp();
+    }
+
+    const TREND_SERVICE = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/slate/teaching-site-trend';
+    let directTrend = null;
+    let directTrendPending = false;
+    async function loadTrendDirect() {
+      if (directTrendPending) return;
+      directTrendPending = true;
+      try {
+        const response = await fetch(TREND_SERVICE, { cache:'no-store', headers:{ Accept:'application/json' } });
+        if (!response.ok) throw new Error('Teaching site trend returned ' + response.status);
+        const body = await response.json();
+        const failed = Array.isArray(body && body.failedPeriods) ? body.failedPeriods : [];
+        directTrend = {
+          periods: Array.isArray(body && body.periods) ? body.periods : [],
+          error: failed.length ? 'Slate did not return ' + failed.join(', ') + ', so those semesters may read low.' : ''
+        };
+      } catch (error) {
+        console.error('Teaching site trend query failed.', error);
+        directTrend = { periods: [], error: 'Unable to load the semester trend from Slate. Please try again.' };
+      }
+      data.studentTrend = directTrend.periods;
+      data.studentTrendError = directTrend.error;
+      if (data.filters.site) renderTrend('site-trend', trendSeries(data.filters.site), 'No students are recorded for this teaching site in any semester.');
+      else renderTrend('overview-trend', trendSeries(''), 'No student records are available across semesters.');
+      bridge.resize();
     }
 
     function renderOverview() {
@@ -363,6 +393,7 @@
 
     function renderTrend(rootId, points, emptyMessage) {
       const root = document.getElementById(rootId); root.replaceChildren();
+      if (directTrendPending && !directTrend) { root.appendChild(ui.emptyState('Loading semester trend…')); return; }
       if (data.studentTrendError && !points.length) { root.appendChild(ui.emptyState(data.studentTrendError)); return; }
       if (!points.some(function (point) { return point.count > 0; })) { root.appendChild(ui.emptyState(emptyMessage)); return; }
 

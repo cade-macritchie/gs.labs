@@ -1005,19 +1005,26 @@ const TEACHING_SITE_TREND_FANOUT_LIMIT = 3;
 
 
 async function handleTeachingSiteTrend(request, env, id) {
-  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
+  // Also open to ALLOWED_ORIGIN (GitHub Pages): the report page fetches this
+  // itself when the Slate wrapper did not send it, so the charts do not depend
+  // on the wrapper pasted into Slate being current. It is aggregate counts
+  // only -- no names or contact details.
+  const origin = originAllowed(request, env.PORTAL_ORIGIN) ? env.PORTAL_ORIGIN
+    : originAllowed(request, env.ALLOWED_ORIGIN) ? env.ALLOWED_ORIGIN
+    : "";
+  if (!origin) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
   }
 
   if (!(await checkRateLimit(env, request, "teaching-site-trend"))) {
-    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, origin);
   }
 
   const cacheKey = "teaching-site-trend:v1";
   const cached = await env.OPTIONS_CACHE.get(cacheKey, "json").catch(() => null);
   if (cached) {
     logInfo(id, "Teaching site trend served from cache", { cacheKey });
-    return json(cached, env, 200, env.PORTAL_ORIGIN);
+    return json(cached, env, 200, origin);
   }
 
   const periodKeys = Object.keys(PERSON_CREATED_WINDOWS);
@@ -1061,7 +1068,7 @@ async function handleTeachingSiteTrend(request, env, id) {
       .catch(() => {});
   }
 
-  return json(payload, env, 200, env.PORTAL_ORIGIN);
+  return json(payload, env, 200, origin);
 }
 
 
