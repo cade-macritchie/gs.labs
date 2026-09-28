@@ -12,9 +12,9 @@ This repository is the single source of truth for the Admissions hub and its ass
 - `reports/regional-campus/` — GitHub-hosted campus funnel, record drilldown, lookup, and individual record dashboard.
 - `training/slate-concepts/` — source for the conceptual Slate glossary and guided staff training lesson. The hub's Training Materials tab links to a bundled copy of this page published as a Claude Artifact (comments enabled) rather than the GitHub Pages copy, so staff can leave feedback comments directly on the lesson; Claude applies accepted feedback back to these source files, regenerates the bundle with `node training/slate-concepts/build-artifact.js`, and republishes it to the same artifact URL. The artifact also declares the `sample` runtime capability (for the "Practice with Claude" request-feedback module); a plain republish keeps that declaration, but pass `capabilities: {sample: {}}` explicitly again if it's ever republished from a fresh session state.
 - `slate-templates/wrappers/regional-campus-wrapper.liquid.html` — the Slate query wrapper for the Regional Campus portal.
-- `reports/public-event-registrants/` — GitHub-hosted public-event registrant count interface.
+- `reports/advancement-student-life-events/` — GitHub-hosted Advancement and Student Life Events registrant count interface.
 - `tools/checkin/` — GitHub-hosted, tablet/mobile-first check-in portal: search `all_people`/maindb by name and print the matched person's `per_qr` field to a Dymo label maker via DYMO Connect. Calls the `gs-labs-slate-gateway` Worker's `/api/slate/checkin-search` route directly (no Slate wrapper). No logging/persistence — search and print only. See `tools/checkin/README.md`.
-- `pipeline-overview/`, `reports/teaching-site-overview/`, `reports/event-tracker/`, and `reports/funnel-overview/` — GitHub-hosted dashboard interfaces.
+- `pipeline-overview/`, `reports/teaching-site-overview/`, `reports/enrollment-events/`, and `reports/funnel-overview/` — GitHub-hosted dashboard interfaces.
 - `assets/dashboard.css` and `assets/dashboard-common.js` — shared dashboard presentation, iframe bridge, and academic-period definitions.
 - `slate-templates/wrappers/*-wrapper.liquid.html` — thin Slate templates that serialize query results and host the corresponding dashboard iframe.
 - `merch-order-form/` — merchandise catalog admin, public order form, and branded catalog PDF generator. Unlike the other tools this is a Next.js **server** app (SQLite via Prisma, Puppeteer for the PDF), so GitHub Pages does not host it — see its own `README.md` and "Deployment model" below.
@@ -52,7 +52,7 @@ Publish and verify one wrapper at a time in this order:
 
 1. `slate-templates/wrappers/pipeline-overview-wrapper.liquid.html`
 2. `slate-templates/wrappers/teaching-site-overview-wrapper.liquid.html`
-3. `slate-templates/wrappers/event-tracker-wrapper.liquid.html`
+3. `slate-templates/wrappers/enrollment-events-wrapper.liquid.html`
 4. `slate-templates/wrappers/funnel-overview-wrapper.liquid.html`
 
 Before publishing the Pipeline and Teaching Sites wrappers, configure their primary Slate query exports as follows:

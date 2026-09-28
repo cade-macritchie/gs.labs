@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="origin">
+  <title>Enrollment Events</title>
+  <script defer src="../../assets/portal-analytics.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Playfair+Display:wght@600;700&amp;family=Montserrat:wght@400;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/dashboard.css">
+  <style>
+    /* GS 2026 brand refresh. Scoped to .event-dashboard, using namespaced
+       --nb-* vars rather than assets/dashboard.css's shared --navy/--teal/
+       --gold/--border/--radius (those stay untouched — see BRANDGUIDE.md). */
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+    .event-dashboard {
+      --nb-black:#0c0f14; --nb-darkgray:#2c343a; --nb-teal:#234048; --nb-rust:#c44329; --nb-gold:#d3a422; --nb-grayblue:#708aa2;
+      --nb-radius:4px;
+      --nb-font-heading:'Tiempos Fine',Georgia,serif; --nb-font-subheading:Montserrat,'Segoe UI',sans-serif; --nb-font-body:'Open Sans',system-ui,sans-serif;
+    }
+    .event-dashboard .gs-header { background: linear-gradient(120deg, var(--nb-black), var(--nb-darkgray)); }
+    .event-dashboard .wordmark { display: flex; align-items: center; }
+    .event-dashboard .wordmark-logo { height: 26px; width: auto; }
+    .event-dashboard .header-title { display: inline-flex; align-items: center; gap: 10px; color: var(--nb-gold); font-family: var(--nb-font-subheading); }
+    .event-dashboard .header-title::before, .event-dashboard .header-title::after { content: ''; width: 16px; height: 1px; background: var(--nb-gold); }
+
+    .event-dashboard .page-intro { background: linear-gradient(122deg, var(--nb-black), var(--nb-darkgray)); border-radius: var(--nb-radius); }
+    .event-dashboard .page-intro::before {
+      border: 0; box-shadow: none; border-radius: 0;
+      width: 260px; height: 260px; top: auto; right: -30px; bottom: -30px;
+      background: url('../assets/brand-new/gs-logomark-white.png') no-repeat center / contain;
+      opacity: .14;
+    }
+    .event-dashboard .page-intro::after { background: var(--nb-gold); }
+    .event-dashboard .intro-heading { font-family: var(--nb-font-heading); }
+    .event-dashboard .intro-subtitle { color: rgba(255,255,255,.82); }
+    .event-dashboard .event-detail-intro .section-eyebrow { color: var(--nb-gold); }
+
+    .event-dashboard .controls-row { border-radius: var(--nb-radius); }
+    .event-dashboard .ctrl-label { font-family: var(--nb-font-subheading); }
+    .event-dashboard .control-select, .event-dashboard .event-search-input, .event-dashboard .control-date { border-radius: var(--nb-radius); font-family: var(--nb-font-body); }
+    .event-dashboard .control-select:hover { border-color: var(--nb-rust); }
+    .event-dashboard .event-search-input:focus, .event-dashboard .control-date:focus { outline-color: rgba(35,64,72,.3); border-color: var(--nb-teal); }
+    .event-dashboard .adjustment-toggle { color: var(--nb-black); }
+    .event-dashboard .adjustment-toggle input { accent-color: var(--nb-teal); }
+    .event-dashboard .event-advanced-controls { border-radius: var(--nb-radius); }
+    .event-dashboard .percentage-input { border-radius: var(--nb-radius); }
+    .event-dashboard .percentage-input:focus-within { outline-color: rgba(35,64,72,.3); }
+    .event-dashboard .back-button { color: var(--nb-teal); font-family: var(--nb-font-subheading); }
+
+    .event-dashboard .stat-cell { border-radius: var(--nb-radius); }
+    .event-dashboard .stat-val { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .event-dashboard .stat-lbl { font-family: var(--nb-font-subheading); }
+    .event-dashboard .stat-cell:nth-child(1)::before { background: var(--nb-black); }
+    .event-dashboard .stat-cell:nth-child(2)::before { background: var(--nb-gold); }
+    .event-dashboard .stat-cell:nth-child(3)::before { background: var(--nb-grayblue); }
+    .event-dashboard .stat-cell:nth-child(4)::before { background: var(--nb-teal); }
+    .event-dashboard .stat-cell:nth-child(5)::before { background: var(--nb-gold); }
+    .event-dashboard .stat-sub-val { color: var(--nb-teal); font-family: var(--nb-font-heading); }
+    .event-dashboard .event-stage-info-button:hover, .event-dashboard .event-stage-info-button:focus-visible { color: var(--nb-black); }
+    .event-dashboard .event-stage-info-popover { border-radius: var(--nb-radius); }
+
+    .event-dashboard .section-divider::before { background: var(--nb-rust); }
+    .event-dashboard .section-eyebrow { color: var(--nb-teal); font-family: var(--nb-font-subheading); }
+    .event-dashboard .section-heading { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .event-dashboard .panel { border-radius: var(--nb-radius); }
+    .event-dashboard .data-table th { background: var(--nb-black); font-family: var(--nb-font-subheading); }
+    .event-dashboard .event-sort-button:hover, .event-dashboard .event-sort-button:focus-visible { color: var(--nb-gold); }
+    .event-dashboard .sort-indicator { color: var(--nb-gold); }
+    .event-dashboard .event-title { color: var(--nb-black); }
+    .event-dashboard .badge { background: rgba(12,15,20,.08); color: var(--nb-black); }
+    .event-dashboard .badge-good { background: rgba(35,64,72,.12); color: var(--nb-teal); border-color: rgba(35,64,72,.3); }
+    .event-dashboard .badge-bad { background: rgba(196,67,41,.12); color: var(--nb-rust); border-color: rgba(196,67,41,.3); }
+    .event-dashboard .page-button { border-radius: var(--nb-radius); }
+    .event-dashboard .page-button.active { background: var(--nb-black); border-color: var(--nb-black); }
+
+    .event-dashboard .funnel-stage .stage-name, .event-dashboard .event-detail .stage-name { font-family: var(--nb-font-subheading); }
+    .event-dashboard .funnel-stage .stage-count, .event-dashboard .event-detail .stage-count { font-family: var(--nb-font-heading); }
+    .event-dashboard .stage-rate { background: rgba(12,15,20,.22); }
+  </style>
+</head>
+<body class="event-dashboard">
+  <header class="gs-header">
+    <button id="portal-home" class="wordmark portal-home" type="button" aria-label="Reset Enrollment Events"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></button>
+    <div class="header-divider"></div>
+    <a class="header-title header-home" href="../../" target="_top" aria-label="Return to Admissions">Home</a>
+  </header>
+
+  <div id="loading" class="loading">Waiting for Event data from Slate…</div>
+  <main id="app" class="container" hidden>
+    <section id="event-overview-view">
+    <div class="page-intro">
+      <h1 class="intro-heading">Enrollment Events</h1>
+      <p class="intro-subtitle">See what each recruiting event cost and what it returned—registrants, inquiries, applicants, and students generated per dollar spent.</p>
+    </div>
+
+    <div class="controls-row event-filter-controls">
+      <div class="control-group event-search-group">
+        <label class="ctrl-label" for="event-search">Event name</label>
+        <input id="event-search" class="event-search-input" type="search" autocomplete="off" placeholder="Search events">
+      </div>
+      <label class="adjustment-toggle" for="use-adjusted-applicants"><input id="use-adjusted-applicants" type="checkbox"> Advanced</label>
+      <div id="event-advanced-controls" class="event-advanced-controls" hidden>
+        <div class="control-group">
+          <span class="ctrl-label">Event date range</span>
+          <div class="date-range-inputs">
+            <label for="event-date-start"><span>From</span><input id="event-date-start" class="control-date" type="date"></label>
+            <label for="event-date-end"><span>To</span><input id="event-date-end" class="control-date" type="date"></label>
+          </div>
+        </div>
+        <div id="adjustment-percentage-group" class="control-group">
+          <label class="ctrl-label" for="adjustment-percentage">Inquiry-to-applicant estimate</label>
+          <div class="percentage-input"><input id="adjustment-percentage" type="number" min="0" max="100" step="0.1" value="0" inputmode="decimal" aria-describedby="adjustment-note"><span>%</span></div>
+        </div>
+        <p id="adjustment-note" class="adjustment-note">* Adjusted applicants equal applicant- and student-stage records plus the selected percentage of inquiry-stage records.</p>
+      </div>
+    </div>
+
+    <div class="stat-bar event-stat-bar">
+      <div class="stat-cell"><div id="event-count" class="stat-val">0</div><div class="stat-lbl">Events Tracked</div></div>
+      <div class="stat-cell"><div id="total-spend" class="stat-val">$0</div><div class="stat-lbl">Total Spend</div></div>
+      <div class="stat-cell"><div id="total-inquiries" class="stat-val">0</div><div class="stat-lbl">Inquiries Generated</div></div>
+      <div class="stat-cell"><div id="total-applicants" class="stat-val">0</div><div id="applicant-stat-label" class="stat-lbl">Applicants Generated</div></div>
+      <div class="stat-cell"><div id="total-students" class="stat-val">0</div><div class="stat-lbl">Students Generated</div></div>
+      <div class="stat-sub">
+        <div id="blended-cost" class="stat-sub-val">—</div>
+        <div id="registrant-summary" class="stat-sub-lbl">blended cost per applicant</div>
+        <div class="event-stage-info">
+          <button id="event-stage-info-button" class="event-stage-info-button" type="button" aria-label="How stage metrics are counted" aria-expanded="false" aria-controls="event-stage-info-popover">i</button>
+          <div id="event-stage-info-popover" class="event-stage-info-popover" role="note" hidden>Stage totals are cumulative in the metric banner and drill-down: Inquiries include inquiry-, applicant-, and student-stage records; Applicants include applicant- and student-stage records.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider"><div class="section-eyebrow">Detailed View</div><div class="section-heading">Event Yield Drill-down</div></div>
+    <div class="panel">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th id="event-sort-title-header" data-sort-column="title" aria-sort="none"><button id="event-sort-title" class="event-sort-button" type="button">Event <span class="sort-indicator">↕</span></button></th>
+            <th id="event-sort-dates-header" data-sort-column="dates" aria-sort="none"><button id="event-sort-dates" class="event-sort-button" type="button">Dates <span class="sort-indicator">↕</span></button></th>
+            <th id="event-sort-registrants-header" class="align-right" data-sort-column="registrants" aria-sort="none"><button id="event-sort-registrants" class="event-sort-button event-sort-button-right" type="button">Registrants <span class="sort-indicator">↕</span></button></th>
+            <th id="event-sort-expenses-header" class="align-right" data-sort-column="expenses" aria-sort="none"><button id="event-sort-expenses" class="event-sort-button event-sort-button-right" type="button">Spend <span class="sort-indicator">↕</span></button></th>
+            <th id="event-sort-inquiries-header" class="align-right" data-sort-column="inquiries" aria-sort="none"><button id="event-sort-inquiries" class="event-sort-button event-sort-button-right" type="button">Inquiries <span class="sort-indicator">↕</span></button></th>
+            <th id="event-sort-applicants-header" class="align-right" data-sort-column="applicants" aria-sort="descending"><button id="event-sort-applicants" class="event-sort-button event-sort-button-right" type="button"><span id="applicants-column-label">Applicants</span> <span class="sort-indicator">↓</span></button></th>
+            <th id="event-sort-students-header" class="align-right" data-sort-column="students" aria-sort="none"><button id="event-sort-students" class="event-sort-button event-sort-button-right" type="button">Students <span class="sort-indicator">↕</span></button></th>
+            <th id="event-sort-cost-header" class="align-right" data-sort-column="cost" aria-sort="none"><button id="event-sort-cost" class="event-sort-button event-sort-button-right" type="button"><span id="cost-column-label">Cost / Applicant</span> <span class="sort-indicator">↕</span></button></th>
+          </tr>
+        </thead>
+        <tbody id="event-table"></tbody>
+      </table>
+      <div id="event-pagination" class="pagination">
+        <span id="event-page-summary"></span>
+        <div id="event-page-buttons" class="pagination-buttons"></div>
+      </div>
+    </div>
+    </section>
+
+    <section id="event-detail-view" class="event-detail" hidden>
+      <button id="event-back" class="back-button" type="button"><span aria-hidden="true">←</span> Back to Enrollment Events</button>
+
+      <div class="page-intro event-detail-intro">
+        <div class="section-eyebrow">Event Funnel</div>
+        <h1 id="event-detail-title" class="intro-heading">Event</h1>
+        <p id="event-detail-subtitle" class="intro-subtitle">Current enrollment progress for people associated with this event.</p>
+      </div>
+
+      <div class="stat-bar event-funnel-stat-bar">
+        <div class="stat-cell"><div id="event-funnel-inquiries" class="stat-val">0</div><div class="stat-lbl">Inquiries</div></div>
+        <div class="stat-cell"><div id="event-funnel-applicants" class="stat-val">0</div><div class="stat-lbl">Applicants</div></div>
+        <div class="stat-cell"><div id="event-funnel-students" class="stat-val">0</div><div class="stat-lbl">Students</div></div>
+      </div>
+
+      <div id="event-funnel" class="funnel" aria-label="Event enrollment funnel"></div>
+      <div id="event-funnel-empty" class="empty-state" hidden>No funnel records are available for this event.</div>
+
+      <section id="event-stage-drilldown" class="stage-drilldown" aria-labelledby="event-stage-title" hidden>
+        <div class="stage-drilldown-head">
+          <div>
+            <div class="section-eyebrow">Stage Drilldown</div>
+            <h2 id="event-stage-title" class="stage-drilldown-title">Records</h2>
+            <p id="event-stage-summary" class="stage-drilldown-summary"></p>
+          </div>
+          <button id="event-stage-close" class="stage-drilldown-close" type="button" aria-label="Close stage drilldown">&times;</button>
+        </div>
+        <div class="drilldown-table-tools">
+          <div class="drilldown-search-group">
+            <label class="stage-search-label" for="event-stage-search">Search these records</label>
+            <input id="event-stage-search" class="stage-search" type="search" autocomplete="off" placeholder="Name, email, student ID, status, or program">
+          </div>
+          <button id="event-stage-export" class="csv-export-button" type="button">Export CSV</button>
+        </div>
+        <div class="panel stage-record-panel">
+          <table class="data-table stage-record-table">
+            <thead><tr><th>Name</th><th>Contact</th><th>Student ID</th><th>Status</th><th>Program</th></tr></thead>
+            <tbody id="event-stage-records"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="../../assets/dashboard-common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const ui = window.DashboardUI;
+    const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const pageSize = 10;
+    const sortColumns = ['title', 'dates', 'registrants', 'expenses', 'inquiries', 'applicants', 'students', 'cost'];
+    let currentPage = 1;
+    let sortColumn = 'applicants';
+    let sortDirection = 'desc';
+    let eventRecords = [];
+    let blendedCost = 0;
+    let selectedStartDate = '';
+    let selectedEndDate = '';
+    let eventSearch = '';
+    let useAdjustedApplicants = false;
+    let adjustmentPercentage = 0;
+    const eventBridge = window.DashboardBridge.create('event-tracker', render);
+
+    function numeric(value) {
+      const cleaned = String(value == null ? '' : value).trim().replace(/[$,]/g, '');
+      if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return 0;
+      return ui.number(cleaned);
+    }
+
+    function eventDate(value) {
+      const raw = ui.text(value, '');
+      if (!raw) return { label: '', value: null, year: '' };
+      let parts = raw.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)/);
+      if (!parts) {
+        const usParts = raw.match(/^([01]?\d)[-\/]([0-3]?\d)[-\/](\d{4})/);
+        if (usParts) parts = [usParts[0], usParts[3], usParts[1], usParts[2]];
+      }
+      const date = parts ? new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]))) : new Date(raw);
+      if (Number.isNaN(date.getTime())) {
+        const year = raw.match(/\b(19|20)\d{2}\b/);
+        return { label: raw.replace(/[T\s]+\d{1,2}:\d{2}.*$/, ''), value: null, year: year ? year[0] : '' };
+      }
+      return { label: dateFormatter.format(date), value: date.getTime(), year: String(date.getUTCFullYear()) };
+    }
+
+    function prepare(payload) {
+      const people = Array.isArray(payload.people) ? payload.people : [];
+      return (Array.isArray(payload.events) ? payload.events : []).map(function (event) {
+        const eventTitle = ui.text(event.title, '');
+        const matches = people.filter(function (person) { return ui.text(person.title, '') === eventTitle; });
+        const startdate = eventDate(event.startdate);
+        const enddate = eventDate(event.enddate);
+        const inquiries = matches.filter(function (person) { return /^inquir(?:y|ies)\b/i.test(ui.text(person.status, '')); }).length;
+        const applicants = matches.filter(function (person) { return /^applicants?\b/i.test(ui.text(person.status, '')); }).length;
+        const students = matches.filter(function (person) { return /^students?\b/i.test(ui.text(person.status, '')); }).length;
+        const expenses = numeric(event.expenses);
+        return {
+          title: eventTitle, startdate: startdate.label, enddate: enddate.label,
+          startdateValue: startdate.value, enddateValue: enddate.value,
+          year: startdate.year || enddate.year,
+          registrants: numeric(event.registrants), expenses: expenses,
+          inquiries: inquiries, applicants: applicants, students: students,
+          people: matches
+        };
+      });
+    }
+
+    function render(payload) {
+      eventRecords = prepare(payload || {});
+      currentPage = 1;
+      renderView();
+      ui.showApp();
+    }
+
+    function dateBoundary(value, endOfDay) {
+      const parts = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!parts) return null;
+      return Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])) + (endOfDay ? 86399999 : 0);
+    }
+
+    function filteredEvents() {
+      let events = eventRecords.slice();
+      const searchTerms = eventSearch.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+      if (searchTerms.length) {
+        events = events.filter(function (event) {
+          const title = event.title.toLocaleLowerCase();
+          return searchTerms.every(function (term) { return title.includes(term); });
+        });
+      }
+      if (!useAdjustedApplicants) return events;
+      const start = dateBoundary(selectedStartDate, false);
+      const end = dateBoundary(selectedEndDate, true);
+      if (start == null && end == null) return events;
+      return events.filter(function (event) {
+        const eventStart = event.startdateValue == null ? event.enddateValue : event.startdateValue;
+        const eventEnd = event.enddateValue == null ? event.startdateValue : event.enddateValue;
+        if (eventStart == null || eventEnd == null) return false;
+        return (start == null || eventEnd >= start) && (end == null || eventStart <= end);
+      });
+    }
+
+    function dateRangeSummary() {
+      if (!useAdjustedApplicants || (!selectedStartDate && !selectedEndDate)) return 'all events';
+      const start = dateBoundary(selectedStartDate, false);
+      const end = dateBoundary(selectedEndDate, false);
+      if (start != null && end != null) return dateFormatter.format(new Date(start)) + '–' + dateFormatter.format(new Date(end));
+      if (start != null) return 'events on or after ' + dateFormatter.format(new Date(start));
+      return 'events on or before ' + dateFormatter.format(new Date(end));
+    }
+
+    function inquiryCount(event) {
+      return event.inquiries + event.applicants + event.students;
+    }
+
+    function applicantCount(event) {
+      return event.applicants + event.students + (useAdjustedApplicants ? event.inquiries * adjustmentPercentage / 100 : 0);
+    }
+
+    function applicantCost(event) {
+      const applicants = applicantCount(event);
+      return applicants ? event.expenses / applicants : null;
+    }
+
+    function formatCount(value) {
+      return value.toLocaleString('en-US', { maximumFractionDigits: Number.isInteger(value) ? 0 : 1 });
+    }
+
+    function renderView() {
+      document.title = 'Enrollment Events';
+      document.getElementById('event-overview-view').hidden = false;
+      document.getElementById('event-detail-view').hidden = true;
+      document.body.classList.remove('event-detail-active');
+      const events = filteredEvents();
+      const totals = events.reduce(function (sum, event) {
+        sum.spend += event.expenses; sum.registrants += event.registrants; sum.inquiries += inquiryCount(event); sum.applicants += applicantCount(event); sum.students += event.students; return sum;
+      }, { spend: 0, registrants: 0, inquiries: 0, applicants: 0, students: 0 });
+      blendedCost = totals.applicants ? totals.spend / totals.applicants : 0;
+
+      ui.setText('event-count', events.length.toLocaleString());
+      document.getElementById('total-spend').textContent = currency.format(totals.spend);
+      ui.setText('total-inquiries', totals.inquiries.toLocaleString());
+      ui.setText('total-applicants', formatCount(totals.applicants));
+      ui.setText('total-students', totals.students.toLocaleString());
+      document.getElementById('blended-cost').textContent = blendedCost ? currency.format(blendedCost) : '—';
+      document.getElementById('registrant-summary').textContent = 'blended cost per ' + (useAdjustedApplicants ? 'adjusted ' : '') + 'applicant across ' + dateRangeSummary() + ' (' + totals.registrants.toLocaleString() + ' total registrants)';
+      document.getElementById('applicant-stat-label').textContent = useAdjustedApplicants ? 'Adjusted Applicants*' : 'Applicants Generated';
+      document.getElementById('applicants-column-label').textContent = useAdjustedApplicants ? 'Adjusted Applicants*' : 'Applicants';
+      document.getElementById('cost-column-label').textContent = useAdjustedApplicants ? 'Cost / Adjusted Applicant*' : 'Cost / Applicant';
+      renderDrilldown(events);
+    }
+
+    function eventDateLabel(event) {
+      return event.startdate === event.enddate ? event.startdate : [event.startdate, event.enddate].filter(Boolean).join(' – ');
+    }
+
+    function openEvent(event) {
+      document.title = event.title + ' — Event Funnel';
+      document.getElementById('event-overview-view').hidden = true;
+      document.getElementById('event-detail-view').hidden = false;
+      document.body.classList.add('event-detail-active');
+      document.getElementById('event-detail-title').textContent = event.title;
+      const dateLabel = eventDateLabel(event);
+      document.getElementById('event-detail-subtitle').textContent = 'Current enrollment progress for people associated with this event' + (dateLabel ? ' — ' + dateLabel : '') + '.';
+      ui.setText('event-funnel-inquiries', inquiryCount(event).toLocaleString());
+      ui.setText('event-funnel-applicants', (event.applicants + event.students).toLocaleString());
+      ui.setText('event-funnel-students', event.students.toLocaleString());
+      renderEventFunnel(event);
+      closeEventStage();
+    }
+
+    function clean(value) { return ui.text(value, '').trim(); }
+
+    function eventPersonStage(person) {
+      const status = clean(person.status);
+      if (/^inquir(?:y|ies)\b/i.test(status)) return 'inquiries';
+      if (/^applicants?\b/i.test(status)) return 'applicants';
+      if (/^students?\b/i.test(status)) return 'students';
+      return '';
+    }
+
+    function peopleForEventStage(event, key) {
+      return (Array.isArray(event.people) ? event.people : []).filter(function (person) {
+        const stage = eventPersonStage(person);
+        if (key === 'inquiries') return Boolean(stage);
+        if (key === 'applicants') return stage === 'applicants' || stage === 'students';
+        return stage === 'students';
+      });
+    }
+
+    function renderEventFunnel(event) {
+      const stages = [
+        { key:'inquiries', label:'Inquiries', count:inquiryCount(event), color:'#234048' },
+        { key:'applicants', label:'Applicants', count:event.applicants + event.students, color:'#2c343a' },
+        { key:'students', label:'Students', count:event.students, color:'#d3a422' }
+      ];
+      const root = document.getElementById('event-funnel'); root.replaceChildren();
+      const empty = document.getElementById('event-funnel-empty');
+      const hasRecords = stages.some(function (stage) { return stage.count > 0; });
+      root.hidden = !hasRecords;
+      empty.hidden = hasRecords;
+      if (!hasRecords) return;
+
+      const maxWidth = 680;
+      const minWidth = 220;
+      const height = 80;
+      const step = (maxWidth - minWidth) / (stages.length - 1);
+      const svgNamespace = 'http://www.w3.org/2000/svg';
+
+      stages.forEach(function (stage, index) {
+        const topWidth = maxWidth - index * step;
+        const bottomWidth = index === stages.length - 1 ? minWidth : Math.max(minWidth, topWidth - step);
+        const inset = (topWidth - bottomWidth) / 2;
+        const element = document.createElement('button');
+        element.className = 'funnel-stage stage-trigger';
+        element.type = 'button';
+        element.style.width = topWidth + 'px';
+        element.setAttribute('aria-label', 'View ' + stage.count.toLocaleString() + ' ' + stage.label + ' records');
+        element.setAttribute('aria-controls', 'event-stage-drilldown');
+        element.setAttribute('aria-expanded', 'false');
+
+        const svg = document.createElementNS(svgNamespace, 'svg');
+        svg.setAttribute('viewBox', '0 0 ' + topWidth + ' ' + height);
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.setAttribute('aria-hidden', 'true');
+        const definitions = document.createElementNS(svgNamespace, 'defs');
+        const gradient = document.createElementNS(svgNamespace, 'linearGradient');
+        gradient.id = 'event-funnel-gradient-' + index;
+        gradient.setAttribute('x1', '0'); gradient.setAttribute('y1', '0'); gradient.setAttribute('x2', '0'); gradient.setAttribute('y2', '1');
+        const topStop = document.createElementNS(svgNamespace, 'stop'); topStop.setAttribute('offset', '0%'); topStop.setAttribute('stop-color', stage.color);
+        const bottomStop = document.createElementNS(svgNamespace, 'stop'); bottomStop.setAttribute('offset', '100%'); bottomStop.setAttribute('stop-color', stage.color); bottomStop.setAttribute('stop-opacity', '.82');
+        gradient.append(topStop, bottomStop); definitions.appendChild(gradient); svg.appendChild(definitions);
+        const polygon = document.createElementNS(svgNamespace, 'polygon');
+        polygon.setAttribute('points', '0,0 ' + topWidth + ',0 ' + (topWidth - inset) + ',' + height + ' ' + inset + ',' + height);
+        polygon.setAttribute('fill', 'url(#' + gradient.id + ')'); svg.appendChild(polygon);
+
+        const label = document.createElement('div'); label.className = 'funnel-label';
+        const name = document.createElement('div'); name.className = 'stage-name'; name.textContent = stage.label;
+        const count = document.createElement('div'); count.className = 'stage-count'; count.textContent = stage.count.toLocaleString();
+        label.append(name, count);
+        element.append(svg, label);
+        element.addEventListener('click', function () { openEventStage(event, stage, element); });
+        root.appendChild(element);
+      });
+    }
+
+    function filteredEventStageRecords(event, stage) {
+      const records = peopleForEventStage(event, stage.key);
+      const terms = document.getElementById('event-stage-search').value.toLowerCase().split(/\s+/).filter(Boolean);
+      if (!terms.length) return records;
+      return records.filter(function (record) {
+        const haystack = [record.name, record.email, record.phone, record.sisid, record.status, record.program].map(clean).join(' ').toLowerCase();
+        return terms.every(function (term) { return haystack.includes(term); });
+      });
+    }
+
+    function renderEventStageRecords(event, stage) {
+      const body = document.getElementById('event-stage-records');
+      const records = filteredEventStageRecords(event, stage);
+      const total = peopleForEventStage(event, stage.key).length;
+      body.replaceChildren();
+      let summary = records.length.toLocaleString() + ' of ' + total.toLocaleString() + ' record' + (total === 1 ? '' : 's') + ' shown for ' + event.title + '.';
+      if (stage.key !== 'students') summary += ' This stage is cumulative and includes records that reached later stages.';
+      document.getElementById('event-stage-summary').textContent = summary;
+      document.getElementById('event-stage-export').disabled = !records.length;
+      if (!records.length) {
+        const row = body.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 5;
+        cell.appendChild(ui.emptyState(total ? 'No records match this search.' : 'Record details are not available for this stage.'));
+        return;
+      }
+      records.slice().sort(function (a, b) { return clean(a.name).localeCompare(clean(b.name), undefined, { sensitivity:'base' }); }).forEach(function (record, index) {
+        const row = body.insertRow();
+        const recordUrl = clean(record.record_url);
+        if (recordUrl) {
+          row.className = 'clickable stage-record-row';
+          row.tabIndex = 0;
+          row.setAttribute('role', 'link');
+          row.setAttribute('aria-label', 'Open ' + (clean(record.name) || 'record ' + (index + 1)) + ' in Slate');
+          row.addEventListener('click', function () { eventBridge.openRecord(recordUrl); });
+          row.addEventListener('keydown', function (keyEvent) { if (keyEvent.key === 'Enter' || keyEvent.key === ' ') { keyEvent.preventDefault(); eventBridge.openRecord(recordUrl); } });
+        }
+        const name = row.insertCell(); name.className = 'stage-record-name'; name.textContent = clean(record.name) || 'Unnamed record';
+        const contact = row.insertCell(); contact.textContent = [clean(record.email), clean(record.phone)].filter(Boolean).join(' · ') || '—';
+        const sisid = row.insertCell(); sisid.textContent = clean(record.sisid) || '—';
+        const status = row.insertCell(); status.textContent = clean(record.status) || '—';
+        const program = row.insertCell(); program.textContent = clean(record.program) || '—';
+      });
+    }
+
+    let activeEvent = null;
+    let activeEventStage = null;
+    function openEventStage(event, stage, trigger) {
+      activeEvent = event;
+      activeEventStage = stage;
+      document.querySelectorAll('#event-funnel .stage-trigger').forEach(function (element) { element.setAttribute('aria-expanded', String(element === trigger)); });
+      document.getElementById('event-stage-title').textContent = stage.label + ' Records';
+      document.getElementById('event-stage-search').value = '';
+      document.getElementById('event-stage-drilldown').hidden = false;
+      renderEventStageRecords(event, stage);
+      eventBridge.resize();
+      document.getElementById('event-stage-drilldown').scrollIntoView({ behavior:'smooth', block:'start' });
+    }
+
+    function closeEventStage() {
+      activeEvent = null;
+      activeEventStage = null;
+      document.getElementById('event-stage-drilldown').hidden = true;
+      document.querySelectorAll('#event-funnel .stage-trigger').forEach(function (element) { element.setAttribute('aria-expanded', 'false'); });
+      eventBridge.resize();
+    }
+
+    function sortValue(event, column) {
+      if (column === 'dates') return event.startdateValue == null ? event.enddateValue : event.startdateValue;
+      if (column === 'inquiries') return inquiryCount(event);
+      if (column === 'applicants') return applicantCount(event);
+      if (column === 'cost') return applicantCost(event);
+      return event[column];
+    }
+
+    function sortedEvents(events) {
+      return events.slice().sort(function (a, b) {
+        const aValue = sortValue(a, sortColumn);
+        const bValue = sortValue(b, sortColumn);
+        if (aValue == null && bValue != null) return 1;
+        if (bValue == null && aValue != null) return -1;
+        let comparison = 0;
+        if (typeof aValue === 'string') comparison = aValue.localeCompare(bValue);
+        else comparison = aValue - bValue;
+        if (comparison) return sortDirection === 'asc' ? comparison : -comparison;
+        return a.title.localeCompare(b.title);
+      });
+    }
+
+    function updateSortHeaders() {
+      const labels = { title:'event', dates:'dates', registrants:'registrants', expenses:'spend', inquiries:'inquiries', applicants:useAdjustedApplicants ? 'adjusted applicants' : 'applicants', students:'students', cost:useAdjustedApplicants ? 'cost per adjusted applicant' : 'cost per applicant' };
+      sortColumns.forEach(function (column) {
+        const active = column === sortColumn;
+        const header = document.getElementById('event-sort-' + column + '-header');
+        const button = document.getElementById('event-sort-' + column);
+        const indicator = button.querySelector('.sort-indicator');
+        header.setAttribute('aria-sort', active ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none');
+        indicator.textContent = active ? (sortDirection === 'asc' ? '↑' : '↓') : '↕';
+        button.title = active ? 'Sorted ' + sortDirection + '; click to reverse' : 'Sort by ' + labels[column];
+      });
+    }
+
+    function renderDrilldown(filteredRecords) {
+      const events = sortedEvents(filteredRecords);
+      const totalPages = Math.max(1, Math.ceil(events.length / pageSize));
+      currentPage = Math.min(Math.max(1, currentPage), totalPages);
+      const start = (currentPage - 1) * pageSize;
+      const pageEvents = events.slice(start, start + pageSize);
+      renderTable(pageEvents, blendedCost);
+      renderPagination(events.length, totalPages, start, pageEvents.length);
+      updateSortHeaders();
+    }
+
+    function renderTable(events, blended) {
+      const body = document.getElementById('event-table'); body.replaceChildren();
+      if (!events.length) {
+        const row = body.insertRow(); const cell = row.insertCell(); cell.colSpan = 8; cell.appendChild(ui.emptyState(eventSearch || selectedStartDate || selectedEndDate ? 'No events match the current filters.' : 'No event data available.')); return;
+      }
+      events.forEach(function (event) {
+        const applicants = applicantCount(event);
+        const cost = applicantCost(event);
+        const row = body.insertRow();
+        row.className = 'clickable-event';
+        row.addEventListener('click', function () { openEvent(event); });
+        const title = row.insertCell(); title.className = 'event-title';
+        const titleButton = document.createElement('button'); titleButton.className = 'event-title-button'; titleButton.type = 'button'; titleButton.textContent = event.title; titleButton.setAttribute('aria-label', 'Open funnel for ' + event.title); title.appendChild(titleButton);
+        const dates = row.insertCell(); dates.className = 'event-dates'; dates.textContent = eventDateLabel(event);
+        [event.registrants.toLocaleString(), currency.format(event.expenses), inquiryCount(event).toLocaleString(), formatCount(applicants), event.students.toLocaleString()].forEach(function (value) {
+          const cell = row.insertCell(); cell.className = 'align-right number'; cell.textContent = value;
+        });
+        const costCell = row.insertCell(); costCell.className = 'align-right';
+        const badge = document.createElement('span'); badge.className = 'badge';
+        if (cost == null) { badge.textContent = 'No applicants'; }
+        else {
+          badge.textContent = currency.format(cost);
+          badge.classList.add(blended && cost <= blended ? 'badge-good' : 'badge-bad');
+        }
+        costCell.appendChild(badge);
+      });
+    }
+
+    function renderPagination(totalRecords, totalPages, start, visibleCount) {
+      const pagination = document.getElementById('event-pagination');
+      const summary = document.getElementById('event-page-summary');
+      const buttons = document.getElementById('event-page-buttons');
+      buttons.replaceChildren();
+
+      if (!totalRecords) {
+        summary.textContent = '0 events';
+        pagination.hidden = true;
+        return;
+      }
+
+      pagination.hidden = false;
+      summary.textContent = 'Showing ' + (start + 1).toLocaleString() + '–' + (start + visibleCount).toLocaleString() + ' of ' + totalRecords.toLocaleString() + ' events';
+
+      function addButton(label, page, disabled, active, ariaLabel) {
+        const button = document.createElement('button');
+        button.className = 'page-button' + (active ? ' active' : '');
+        button.type = 'button';
+        button.textContent = label;
+        button.disabled = disabled;
+        button.setAttribute('aria-label', ariaLabel);
+        if (active) button.setAttribute('aria-current', 'page');
+        button.addEventListener('click', function () { currentPage = page; renderDrilldown(filteredEvents()); });
+        buttons.appendChild(button);
+      }
+
+      addButton('‹', currentPage - 1, currentPage === 1, false, 'Previous page');
+      for (let page = 1; page <= totalPages; page += 1) addButton(String(page), page, false, page === currentPage, 'Page ' + page);
+      addButton('›', currentPage + 1, currentPage === totalPages, false, 'Next page');
+    }
+
+    sortColumns.forEach(function (column) {
+      document.getElementById('event-sort-' + column).addEventListener('click', function () {
+        if (sortColumn === column) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        else {
+          sortColumn = column;
+          sortDirection = column === 'title' ? 'asc' : 'desc';
+        }
+        currentPage = 1;
+        renderDrilldown(filteredEvents());
+      });
+    });
+    function updateDateRange(changedInput) {
+      selectedStartDate = document.getElementById('event-date-start').value;
+      selectedEndDate = document.getElementById('event-date-end').value;
+      if (selectedStartDate && selectedEndDate && selectedStartDate > selectedEndDate) {
+        if (changedInput.id === 'event-date-start') {
+          selectedEndDate = selectedStartDate;
+          document.getElementById('event-date-end').value = selectedEndDate;
+        } else {
+          selectedStartDate = selectedEndDate;
+          document.getElementById('event-date-start').value = selectedStartDate;
+        }
+      }
+      currentPage = 1;
+      renderView();
+    }
+    document.getElementById('event-date-start').addEventListener('change', function (event) { updateDateRange(event.target); });
+    document.getElementById('event-date-end').addEventListener('change', function (event) { updateDateRange(event.target); });
+    document.getElementById('event-search').addEventListener('input', function (event) {
+      eventSearch = event.target.value.trim();
+      currentPage = 1;
+      renderView();
+    });
+    document.getElementById('use-adjusted-applicants').addEventListener('change', function (event) {
+      useAdjustedApplicants = event.target.checked;
+      document.getElementById('event-advanced-controls').hidden = !useAdjustedApplicants;
+      currentPage = 1;
+      renderView();
+    });
+    document.getElementById('adjustment-percentage').addEventListener('input', function (event) {
+      const value = Number(event.target.value);
+      adjustmentPercentage = Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+      currentPage = 1;
+      renderView();
+    });
+    document.getElementById('adjustment-percentage').addEventListener('change', function (event) {
+      event.target.value = String(adjustmentPercentage);
+    });
+    document.getElementById('event-back').addEventListener('click', function () {
+      closeEventStage();
+      renderView();
+    });
+    document.getElementById('event-stage-close').addEventListener('click', closeEventStage);
+    document.getElementById('event-stage-search').addEventListener('input', function () { if (activeEvent && activeEventStage) renderEventStageRecords(activeEvent, activeEventStage); });
+    document.getElementById('event-stage-export').addEventListener('click', function () {
+      if (!activeEvent || !activeEventStage) return;
+      const records = filteredEventStageRecords(activeEvent, activeEventStage).slice().sort(function (a, b) { return clean(a.name).localeCompare(clean(b.name), undefined, { sensitivity:'base' }); });
+      ui.downloadCsv(activeEvent.title + '-' + activeEventStage.label + '-records', [
+        { label:'Name', key:'name' }, { label:'Email', key:'email' }, { label:'Phone', key:'phone' },
+        { label:'Student ID', key:'sisid' }, { label:'Status', key:'status' }, { label:'Program', key:'program' }
+      ], records);
+    });
+    const stageInfoButton = document.getElementById('event-stage-info-button');
+    const stageInfoPopover = document.getElementById('event-stage-info-popover');
+    function setStageInfoOpen(open) {
+      stageInfoPopover.hidden = !open;
+      stageInfoButton.setAttribute('aria-expanded', String(open));
+    }
+    stageInfoButton.addEventListener('click', function (event) {
+      event.stopPropagation();
+      setStageInfoOpen(stageInfoPopover.hidden);
+    });
+    document.addEventListener('click', function (event) {
+      if (!stageInfoPopover.hidden && !event.target.closest('.event-stage-info')) setStageInfoOpen(false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !stageInfoPopover.hidden) {
+        setStageInfoOpen(false);
+        stageInfoButton.focus();
+      }
+    });
+    document.getElementById('portal-home').addEventListener('click', function () { window.location.reload(); });
+  }());
+  </script>
+</body>
+</html>

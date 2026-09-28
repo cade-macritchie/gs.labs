@@ -6,8 +6,8 @@ These are the current production templates. Each file sends Slate query results 
 
 - `pipeline-overview-wrapper.liquid.html`
 - `teaching-site-overview-wrapper.liquid.html`
-- `event-tracker-wrapper.liquid.html`
-- `public-event-registrants-wrapper.liquid.html`
+- `enrollment-events-wrapper.liquid.html`
+- `advancement-student-life-events-wrapper.liquid.html`
 - `funnel-overview-wrapper.liquid.html`
 - `student-lookup-wrapper.liquid.html`
 - `regional-campus-wrapper.liquid.html`

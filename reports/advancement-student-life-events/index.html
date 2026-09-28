@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="origin">
+  <title>Advancement and Student Life Events</title>
+  <script defer src="../../assets/portal-analytics.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Playfair+Display:wght@600;700&amp;family=Montserrat:wght@400;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/dashboard.css">
+  <style>
+    /* GS 2026 brand refresh. Scoped to .public-event-dashboard, using
+       namespaced --nb-* vars rather than assets/dashboard.css's shared
+       --navy/--teal/--gold/--border/--radius (those stay untouched — see
+       BRANDGUIDE.md). */
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+    .public-event-dashboard {
+      --nb-black:#0c0f14; --nb-darkgray:#2c343a; --nb-teal:#234048; --nb-rust:#c44329; --nb-gold:#d3a422; --nb-grayblue:#708aa2;
+      --nb-radius:4px;
+      --nb-font-heading:'Tiempos Fine',Georgia,serif; --nb-font-subheading:Montserrat,'Segoe UI',sans-serif; --nb-font-body:'Open Sans',system-ui,sans-serif;
+    }
+    .public-event-dashboard .gs-header { background: linear-gradient(120deg, var(--nb-black), var(--nb-darkgray)); }
+    .public-event-dashboard .wordmark { display: flex; align-items: center; }
+    .public-event-dashboard .wordmark-logo { height: 26px; width: auto; }
+    .public-event-dashboard .header-title { display: inline-flex; align-items: center; gap: 10px; color: var(--nb-gold); font-family: var(--nb-font-subheading); }
+    .public-event-dashboard .header-title::before, .public-event-dashboard .header-title::after { content: ''; width: 16px; height: 1px; background: var(--nb-gold); }
+
+    .public-event-dashboard .page-intro { background: linear-gradient(122deg, var(--nb-black), var(--nb-darkgray)); border-radius: var(--nb-radius); }
+    .public-event-dashboard .page-intro::before {
+      border: 0; box-shadow: none; border-radius: 0;
+      width: 260px; height: 260px; top: auto; right: -30px; bottom: -30px;
+      background: url('../assets/brand-new/gs-logomark-white.png') no-repeat center / contain;
+      opacity: .14;
+    }
+    .public-event-dashboard .page-intro::after { background: var(--nb-gold); }
+    .public-event-dashboard .intro-heading { font-family: var(--nb-font-heading); }
+    .public-event-dashboard .intro-subtitle { color: rgba(255,255,255,.82); }
+
+    .public-event-dashboard .stat-cell { border-radius: var(--nb-radius); }
+    .public-event-dashboard .stat-val { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .public-event-dashboard .stat-lbl { font-family: var(--nb-font-subheading); }
+    .public-event-dashboard .stat-cell:nth-child(1)::before { background: var(--nb-black); }
+    .public-event-dashboard .stat-cell:nth-child(2)::before { background: var(--nb-gold); }
+
+    .public-event-dashboard .event-sort-button:hover, .public-event-dashboard .event-sort-button:focus-visible, .public-event-dashboard .event-sort-button.active { color: var(--nb-black); }
+    .public-event-dashboard .sort-indicator { color: var(--nb-gold); }
+    .public-event-dashboard .event-card { border-radius: var(--nb-radius); }
+    .public-event-dashboard .event-card:hover, .public-event-dashboard .event-card:focus-visible { border-color: var(--nb-rust); }
+    .public-event-dashboard .event-card::before { background: var(--nb-gold); }
+    .public-event-dashboard .event-title { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .public-event-dashboard .event-analytics-button:hover { text-decoration-color: var(--nb-gold); }
+    .public-event-dashboard .event-link-button { color: var(--nb-teal); }
+    .public-event-dashboard .event-link-button:hover { color: var(--nb-black); }
+    .public-event-dashboard .event-detail-label { font-family: var(--nb-font-subheading); }
+    .public-event-dashboard .event-count { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .public-event-dashboard .event-empty { border-radius: var(--nb-radius); }
+
+    .public-event-dashboard .registration-detail > .back-button {
+      border-radius: var(--nb-radius);
+      color: var(--nb-black);
+      font-family: var(--nb-font-subheading);
+    }
+    .public-event-dashboard .registration-detail > .back-button span { color: var(--nb-gold); }
+    .public-event-dashboard .registration-detail > .back-button:hover { border-color: rgba(211,164,34,.6); }
+    .public-event-dashboard .registration-detail > .back-button:focus-visible { outline-color: rgba(211,164,34,.35); }
+    .public-event-dashboard .registration-chart-heading { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .public-event-dashboard .chart-axis-label { font-family: var(--nb-font-body); }
+    .public-event-dashboard .chart-line { stroke: var(--nb-gold); }
+    .public-event-dashboard .chart-point { stroke: var(--nb-gold); }
+    .public-event-dashboard .chart-total-label { fill: var(--nb-black); font-family: var(--nb-font-subheading); }
+    .public-event-dashboard .registration-chart-empty { border-radius: var(--nb-radius); }
+
+    .public-event-dashboard .container { max-width: 1040px; }
+    .public-event-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .public-event-summary .stat-cell { text-align: center; }
+    .event-card-panel { overflow: visible; border: 0; background: transparent; box-shadow: none; }
+    .event-sort-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 190px 170px;
+      gap: 16px;
+      align-items: stretch;
+      margin-bottom: 10px;
+      padding: 0 22px;
+    }
+    .event-sort-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 38px;
+      padding: 6px 0;
+      border: 0;
+      color: var(--muted);
+      font-size: .69rem;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-align: left;
+      text-transform: uppercase;
+      background: transparent;
+      cursor: pointer;
+    }
+    .event-sort-button:nth-child(n+2) { justify-content: flex-end; text-align: right; }
+    .event-sort-button:hover, .event-sort-button:focus-visible { color: var(--navy); }
+    .event-sort-button.active { color: var(--navy); }
+    .sort-indicator { width: 1rem; color: var(--gold); font-size: .9rem; text-align: center; }
+    .event-list-controls { display: flex; justify-content: flex-end; margin-bottom: 6px; padding: 0 22px; }
+    .past-events-toggle { display: inline-flex; align-items: center; gap: 9px; color: var(--nb-black); font-size: .82rem; font-weight: 700; cursor: pointer; }
+    .past-events-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--nb-teal); }
+    .event-cards { display: grid; gap: 12px; }
+    .event-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 190px 170px;
+      gap: 16px;
+      align-items: center;
+      width: 100%;
+      min-height: 112px;
+      padding: 22px;
+      overflow: hidden;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .event-card:hover, .event-card:focus-visible { border-color: var(--gold); box-shadow: 0 8px 24px rgba(26,43,74,.14); transform: translateY(-2px); outline: 0; }
+    .event-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: linear-gradient(180deg, var(--gold), #e2bb61);
+    }
+    .event-title { margin: 0; color: var(--navy); font: 700 clamp(1.08rem, 2.4vw, 1.35rem)/1.3 'Playfair Display', Georgia, serif; }
+    .event-analytics-button { padding: 0; border: 0; color: inherit; font: inherit; text-align: left; background: transparent; cursor: pointer; }
+    .event-analytics-button:hover { text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 4px; }
+    .event-link-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 0;
+      border: 0;
+      color: #315f91;
+      font-size: .76rem;
+      font-weight: 750;
+      background: transparent;
+      cursor: pointer;
+    }
+    .event-link-button:hover { color: var(--navy); text-decoration: underline; }
+    .event-detail { min-width: 0; text-align: right; }
+    .event-detail-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: .65rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+    .event-date { color: var(--ink); font-size: .91rem; font-weight: 650; }
+    .event-count { color: var(--navy); font: 700 1.8rem/1 'Playfair Display', Georgia, serif; font-variant-numeric: tabular-nums; }
+    .event-empty { border: 1.5px solid var(--border); border-radius: var(--radius); background: var(--white); box-shadow: var(--shadow); }
+    .registration-detail { min-width: 0; }
+    .registration-detail > .back-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 26px;
+      padding: 9px 14px;
+      border: 1px solid #d7dde6;
+      border-radius: 999px;
+      color: var(--navy);
+      font: 700 .78rem/1 Inter, sans-serif;
+      background: rgba(255,255,255,.78);
+      box-shadow: 0 2px 8px rgba(26,43,74,.07);
+      cursor: pointer;
+      transition: color .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .registration-detail > .back-button span { color: var(--gold); font-size: 1rem; transition: transform .18s ease; }
+    .registration-detail > .back-button:hover { border-color: rgba(200,149,42,.7); background: var(--white); box-shadow: 0 5px 14px rgba(26,43,74,.11); transform: translateY(-1px); }
+    .registration-detail > .back-button:hover span { transform: translateX(-2px); }
+    .registration-detail > .back-button:focus-visible { outline: 3px solid rgba(200,149,42,.3); outline-offset: 3px; }
+    .registration-detail-head { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 24px; }
+    .registration-detail-head .public-event-summary { width: min(420px, 100%); margin-bottom: 0; }
+    .registration-detail-date { color: var(--muted); font-size: .88rem; font-weight: 650; }
+    .btc-registration-details .stat-bar { margin-bottom: 10px; }
+    .btc-registration-details .stat-cell { text-align: center; }
+    .btc-registration-note { margin: 0 0 24px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+    .registration-chart-panel { padding: 24px; }
+    .registration-chart-heading { margin: 0; color: var(--navy); font: 700 1.3rem/1.25 'Playfair Display', Georgia, serif; }
+    .registration-chart-copy { margin: 6px 0 24px; color: var(--muted); font-size: .84rem; line-height: 1.5; }
+    .registration-chart { width: 100%; min-height: 340px; overflow-x: auto; }
+    .registration-chart svg { display: block; width: 100%; min-width: 620px; height: 340px; overflow: visible; }
+    .chart-grid-line { stroke: #dfe4ec; stroke-width: 1; }
+    .chart-axis-label { fill: var(--muted); font: 11px Inter, sans-serif; }
+    .chart-area { fill: url(#registration-area-gradient); }
+    .chart-line { fill: none; stroke: #c78b18; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    .chart-point { fill: var(--white); stroke: var(--gold); stroke-width: 3; }
+    .chart-total-label { fill: var(--navy); font: 700 12px Inter, sans-serif; }
+    .registration-chart-empty { border: 1px dashed var(--border); border-radius: 8px; }
+    @media (max-width: 720px) {
+      .event-sort-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0; }
+      .event-sort-button, .event-sort-button:nth-child(n+2) { justify-content: center; text-align: center; }
+      .event-card { grid-template-columns: minmax(0, 1fr) auto; gap: 18px 14px; padding: 20px; }
+      .event-card-title { grid-column: 1/-1; }
+      .event-detail { text-align: left; }
+      .event-detail:last-child { text-align: right; }
+      .registration-detail-head { align-items: start; flex-direction: column; }
+    }
+    @media (max-width: 480px) {
+      .public-event-summary { grid-template-columns: 1fr 1fr; }
+      .public-event-summary .stat-cell { padding: 19px 12px; }
+      .event-sort-row { display: flex; flex-wrap: wrap; }
+      .event-sort-button, .event-sort-button:nth-child(n+2) { flex: 1 1 110px; }
+    }
+  </style>
+</head>
+<body class="public-event-dashboard">
+  <header class="gs-header">
+    <button id="portal-home" class="wordmark portal-home" type="button" aria-label="Reset Advancement and Student Life Events"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></button>
+    <div class="header-divider"></div>
+    <a class="header-title header-home" href="../../" target="_top" aria-label="Return to Admissions">Home</a>
+  </header>
+
+  <div id="loading" class="loading">Waiting for public event data from Slate&hellip;</div>
+
+  <main id="app" class="container" hidden>
+    <section id="event-overview">
+    <div class="page-intro">
+      <h1 class="intro-heading">Advancement and Student Life Events</h1>
+      <p class="intro-subtitle">Review advancement and student life events by date and compare their registration totals.</p>
+    </div>
+
+    <div class="stat-bar public-event-summary">
+      <div class="stat-cell"><div id="event-total" class="stat-val">0</div><div class="stat-lbl">Events</div></div>
+      <div class="stat-cell"><div id="registrant-total" class="stat-val">0</div><div class="stat-lbl">Registrants</div></div>
+    </div>
+
+    <div class="section-divider">
+      <div class="section-eyebrow">Event Overview</div>
+      <div class="section-heading">Registration by Event</div>
+    </div>
+
+    <section class="panel event-card-panel" aria-labelledby="event-list-heading">
+      <h2 id="event-list-heading" hidden>Events</h2>
+      <div class="event-list-controls">
+        <label class="past-events-toggle" for="show-past-events"><input id="show-past-events" type="checkbox"> Show past events</label>
+      </div>
+      <div id="event-sort-row" class="event-sort-row" role="toolbar" aria-label="Sort events">
+        <button class="event-sort-button" type="button" data-sort="title">Event title <span class="sort-indicator" aria-hidden="true">&#8597;</span></button>
+        <button class="event-sort-button active" type="button" data-sort="date">Event date <span class="sort-indicator" aria-hidden="true">&#8593;</span></button>
+        <button class="event-sort-button" type="button" data-sort="registrants">Registrants <span class="sort-indicator" aria-hidden="true">&#8597;</span></button>
+      </div>
+      <div id="event-cards" class="event-cards"></div>
+      <div id="event-empty" class="empty-state event-empty" hidden>No event registrations were provided.</div>
+    </section>
+    </section>
+
+    <section id="event-detail" class="registration-detail" hidden>
+      <button id="event-back" class="back-button" type="button"><span aria-hidden="true">&#8592;</span> Back to all events</button>
+      <div class="registration-detail-head">
+        <div>
+          <div class="section-eyebrow">Registration Analytics</div>
+          <h1 id="detail-title" class="intro-heading">Event</h1>
+          <p id="detail-date" class="registration-detail-date"></p>
+        </div>
+        <div class="stat-bar public-event-summary">
+          <div class="stat-cell"><div id="detail-registrants" class="stat-val">0</div><div class="stat-lbl">Registrants</div></div>
+          <div class="stat-cell"><div id="detail-days" class="stat-val">0</div><div class="stat-lbl">Registration Days</div></div>
+        </div>
+      </div>
+
+      <section id="btc-registration-details" class="btc-registration-details" hidden>
+        <div class="section-divider"><div class="section-eyebrow">Registration Details</div><div class="section-heading">Bible Teaching Conference</div></div>
+        <div class="stat-bar">
+          <div class="stat-cell"><div id="btc-tickets-purchased" class="stat-val">—</div><div class="stat-lbl">Group Tickets Purchased</div></div>
+          <div class="stat-cell"><div id="btc-tickets-redeemed" class="stat-val">—</div><div class="stat-lbl">Group Tickets Redeemed</div></div>
+          <div class="stat-cell"><div id="btc-tickets-remaining" class="stat-val">—</div><div class="stat-lbl">Group Tickets Remaining</div></div>
+          <div class="stat-cell"><div id="btc-individual-registrants" class="stat-val">—</div><div class="stat-lbl">Individual Registrants</div></div>
+          <div class="stat-cell"><div id="btc-projected-attendance" class="stat-val">—</div><div class="stat-lbl">Projected Attendance</div></div>
+        </div>
+        <p id="btc-registration-note" class="btc-registration-note"></p>
+      </section>
+
+      <div class="panel registration-chart-panel">
+        <h2 class="registration-chart-heading">Registration growth over time</h2>
+        <p id="chart-copy" class="registration-chart-copy">Cumulative registrations based on each registrant's registration date.</p>
+        <div id="registration-chart" class="registration-chart" role="img" aria-label="Cumulative event registrations over time"></div>
+        <div id="registration-chart-empty" class="empty-state registration-chart-empty" hidden>No valid registration dates were provided for this event.</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="../../assets/dashboard-common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    const ui = window.DashboardUI;
+    const dateFormatter = new Intl.DateTimeFormat('en-US', { month:'short', day:'numeric', year:'numeric', timeZone:'UTC' });
+    const cards = document.getElementById('event-cards');
+    const empty = document.getElementById('event-empty');
+    const sortButtons = Array.from(document.querySelectorAll('[data-sort]'));
+    let eventRecords = [];
+    let totalRegistrants = 0;
+    let sortColumn = 'date';
+    let sortDirection = 'asc';
+    let showPastEvents = false;
+
+    function clean(value) {
+      return ui.text(value, '').trim();
+    }
+
+    function parseDate(value) {
+      const raw = clean(value);
+      if (!raw) return null;
+      let parts = raw.match(/^(\d{4})[-\/]([01]?\d)[-\/]([0-3]?\d)/);
+      if (parts) return new Date(Date.UTC(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])));
+      parts = raw.match(/^([01]?\d)[-\/]([0-3]?\d)[-\/](\d{4})/);
+      if (parts) return new Date(Date.UTC(Number(parts[3]), Number(parts[1]) - 1, Number(parts[2])));
+      const parsed = new Date(raw);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function dateLabel(value) {
+      const parsed = parseDate(value);
+      return parsed ? dateFormatter.format(parsed) : (clean(value) || 'Date not provided');
+    }
+
+    function normalizedRecords(records) {
+      const groups = new Map();
+      (Array.isArray(records) ? records : []).forEach(function (record) {
+        const title = clean(record && record.title) || 'Untitled event';
+        const key = title.toLocaleLowerCase();
+        const registrants = Math.max(0, Math.round(ui.number(record && record.registrants)));
+        const hasRegistrationDates = Array.isArray(record && record.registrationDates);
+        const dates = hasRegistrationDates
+          ? record.registrationDates.map(clean)
+          : Array.from({ length:registrants }, function () { return clean(record && record.date); });
+        const eventDate = hasRegistrationDates ? clean(record && record.date) : '';
+        const existing = groups.get(key);
+
+        if (existing) {
+          existing.registrants += registrants;
+          existing.registrationDates.push.apply(existing.registrationDates, dates);
+          if (!existing.date && eventDate) existing.date = eventDate;
+          if (!existing.url && clean(record && record.url)) existing.url = clean(record.url);
+        } else {
+          groups.set(key, {
+            title: title,
+            date: eventDate,
+            registrants: registrants,
+            registrationDates: dates,
+            url: clean(record && record.url)
+          });
+        }
+      });
+
+      return Array.from(groups.values()).map(function (record) {
+        record.dateValue = parseDate(record.date);
+        return record;
+      });
+    }
+
+    function cumulativeRegistrations(record) {
+      const registrationsByDate = new Map();
+      let missingDates = 0;
+
+      record.registrationDates.forEach(function (value) {
+        const date = parseDate(value);
+        if (!date) {
+          missingDates += 1;
+          return;
+        }
+        const key = date.toISOString().slice(0, 10);
+        registrationsByDate.set(key, (registrationsByDate.get(key) || 0) + 1);
+      });
+
+      let cumulative = 0;
+      const points = Array.from(registrationsByDate.entries())
+        .sort(function (left, right) { return left[0].localeCompare(right[0]); })
+        .map(function (entry) {
+          cumulative += entry[1];
+          return { date:entry[0], count:entry[1], cumulative:cumulative };
+        });
+
+      return { points:points, missingDates:missingDates };
+    }
+
+    function svgElement(name, attributes, text) {
+      const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+      Object.keys(attributes || {}).forEach(function (key) { element.setAttribute(key, attributes[key]); });
+      if (text != null) element.textContent = text;
+      return element;
+    }
+
+    function chartAxisMaximum(value) {
+      if (value <= 4) return 4;
+      const roughStep = value / 4;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+      const normalized = roughStep / magnitude;
+      const step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10) * magnitude;
+      return step * 4;
+    }
+
+    function renderRegistrationChart(record) {
+      const chart = document.getElementById('registration-chart');
+      const emptyChart = document.getElementById('registration-chart-empty');
+      const timeline = cumulativeRegistrations(record);
+      chart.replaceChildren();
+      emptyChart.hidden = timeline.points.length > 0;
+      chart.hidden = timeline.points.length === 0;
+      document.getElementById('detail-days').textContent = timeline.points.length.toLocaleString();
+
+      const copy = record.registrants.toLocaleString() + ' total registration' + (record.registrants === 1 ? '' : 's') + '.';
+      document.getElementById('chart-copy').textContent = copy + (timeline.missingDates ? ' ' + timeline.missingDates.toLocaleString() + ' registration' + (timeline.missingDates === 1 ? ' has' : 's have') + ' no usable registration date and ' + (timeline.missingDates === 1 ? 'is' : 'are') + ' not plotted.' : '');
+      if (!timeline.points.length) return;
+
+      const width = 760;
+      const height = 340;
+      const margin = { top:30, right:38, bottom:54, left:54 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const maximum = chartAxisMaximum(timeline.points[timeline.points.length - 1].cumulative);
+      const svg = svgElement('svg', { viewBox:'0 0 ' + width + ' ' + height, preserveAspectRatio:'xMidYMid meet', 'aria-hidden':'true' });
+      const definitions = svgElement('defs');
+      const gradient = svgElement('linearGradient', { id:'registration-area-gradient', x1:'0', y1:'0', x2:'0', y2:'1' });
+      gradient.appendChild(svgElement('stop', { offset:'0%', 'stop-color':'#d3a422', 'stop-opacity':'.28' }));
+      gradient.appendChild(svgElement('stop', { offset:'100%', 'stop-color':'#d3a422', 'stop-opacity':'.03' }));
+      definitions.appendChild(gradient);
+      svg.appendChild(definitions);
+
+      for (let step = 0; step <= 4; step += 1) {
+        const y = margin.top + plotHeight - (step / 4 * plotHeight);
+        const value = maximum * step / 4;
+        svg.appendChild(svgElement('line', { x1:margin.left, y1:y, x2:width - margin.right, y2:y, class:'chart-grid-line' }));
+        svg.appendChild(svgElement('text', { x:margin.left - 12, y:y + 4, 'text-anchor':'end', class:'chart-axis-label' }, value.toLocaleString()));
+      }
+
+      const firstTime = Date.parse(timeline.points[0].date);
+      const lastTime = Date.parse(timeline.points[timeline.points.length - 1].date);
+      const timeRange = lastTime - firstTime;
+      const coordinates = timeline.points.map(function (point) {
+        const pointTime = Date.parse(point.date);
+        const x = timeRange === 0 ? margin.left + plotWidth / 2 : margin.left + (pointTime - firstTime) / timeRange * plotWidth;
+        const y = margin.top + plotHeight - point.cumulative / maximum * plotHeight;
+        return { x:x, y:y, point:point };
+      });
+      const linePath = coordinates.map(function (item, index) { return (index ? 'L' : 'M') + item.x + ',' + item.y; }).join(' ');
+      const areaPath = 'M' + coordinates[0].x + ',' + (margin.top + plotHeight) +
+        ' L' + coordinates[0].x + ',' + coordinates[0].y +
+        coordinates.slice(1).map(function (item) { return ' L' + item.x + ',' + item.y; }).join('') +
+        ' L' + coordinates[coordinates.length - 1].x + ',' + (margin.top + plotHeight) + ' Z';
+      svg.appendChild(svgElement('path', { d:areaPath, class:'chart-area' }));
+      svg.appendChild(svgElement('path', { d:linePath, class:'chart-line' }));
+
+      let lastLabelX = -Infinity;
+      coordinates.forEach(function (item, index) {
+        const date = parseDate(item.point.date);
+        const point = svgElement('circle', { cx:item.x, cy:item.y, r:5, class:'chart-point' });
+        point.appendChild(svgElement('title', {}, dateLabel(item.point.date) + ': ' + item.point.cumulative.toLocaleString() + ' total registrations'));
+        svg.appendChild(point);
+        const isFirst = index === 0;
+        const isLast = index === coordinates.length - 1;
+        const enoughRoom = item.x - lastLabelX >= 105 && coordinates[coordinates.length - 1].x - item.x >= 82;
+        if (isFirst || isLast || enoughRoom) {
+          const anchor = isFirst ? 'start' : isLast ? 'end' : 'middle';
+          svg.appendChild(svgElement('text', { x:item.x, y:height - 20, 'text-anchor':anchor, class:'chart-axis-label' }, dateFormatter.format(date)));
+          lastLabelX = item.x;
+        }
+      });
+
+      const last = coordinates[coordinates.length - 1];
+      svg.appendChild(svgElement('text', { x:last.x, y:Math.max(14, last.y - 12), 'text-anchor':'middle', class:'chart-total-label' }, last.point.cumulative.toLocaleString()));
+      chart.appendChild(svg);
+      chart.setAttribute('aria-label', 'Cumulative registrations for ' + record.title + ', reaching ' + last.point.cumulative.toLocaleString() + ' across ' + timeline.points.length.toLocaleString() + ' registration days.');
+    }
+
+    // Group-ticket stats for the Bible Teaching Conference, sourced from the
+    // waiver-codes D1 worker's public, aggregate-only summary route (no admin
+    // key belongs in this public page). Every Slate registrant either
+    // registered individually or redeemed one use of a group waiver code, so:
+    //   redeemed    = purchased - remaining
+    //   individuals = Slate registrants - redeemed
+    //   projected   = Slate registrants + remaining (assumes every unredeemed
+    //                 group ticket is eventually used)
+    // BTC-only for now.
+    var BTC_API_BASE_URL = 'https://slate-waiver-codes.gs-labs.workers.dev';
+    var BTC_EVENT_TITLE_PATTERN = /bible teaching conference/i;
+    var BTC_STAT_IDS = ['btc-tickets-purchased', 'btc-tickets-redeemed', 'btc-tickets-remaining', 'btc-individual-registrants', 'btc-projected-attendance'];
+    var btcSummaryRequestId = 0;
+
+    function isBtcEvent(record) {
+      return BTC_EVENT_TITLE_PATTERN.test(record.title || '');
+    }
+
+    function setBtcStats(values) {
+      BTC_STAT_IDS.forEach(function (id, index) {
+        document.getElementById(id).textContent = values ? values[index].toLocaleString() : '—';
+      });
+    }
+
+    function loadBtcRegistrationDetails(record) {
+      const section = document.getElementById('btc-registration-details');
+      if (!isBtcEvent(record)) { section.hidden = true; return; }
+      section.hidden = false;
+      const noteEl = document.getElementById('btc-registration-note');
+      setBtcStats(null);
+      noteEl.textContent = 'Loading group ticket totals…';
+      const requestId = ++btcSummaryRequestId;
+
+      fetch(BTC_API_BASE_URL + '/api/waiver-codes/summary')
+        .then(function (res) {
+          if (!res.ok) throw new Error('request failed: ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          if (requestId !== btcSummaryRequestId) return; // a newer event was opened meanwhile
+          const purchased = Math.max(0, Number(data.ticketsPurchased) || 0);
+          const remaining = Math.max(0, Number(data.ticketsRemaining) || 0);
+          const redeemed = Math.max(0, purchased - remaining);
+          const individuals = Math.max(0, record.registrants - redeemed);
+          setBtcStats([purchased, redeemed, remaining, individuals, record.registrants + remaining]);
+          noteEl.textContent = 'Group tickets come from ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin. Individual registrants are Slate registrants minus redeemed group tickets. Projected attendance is Slate registrants plus unredeemed group tickets, assuming every group ticket gets used.';
+        })
+        .catch(function (err) {
+          if (requestId !== btcSummaryRequestId) return;
+          setBtcStats(null);
+          noteEl.textContent = 'Could not load group ticket totals.';
+          console.error('[public-event-registrants] BTC group ticket summary failed:', err);
+        });
+    }
+
+    function openEvent(record) {
+      document.getElementById('event-overview').hidden = true;
+      document.getElementById('event-detail').hidden = false;
+      document.getElementById('detail-title').textContent = record.title;
+      document.getElementById('detail-date').textContent = 'Event date: ' + dateLabel(record.date);
+      document.getElementById('detail-registrants').textContent = record.registrants.toLocaleString();
+      document.title = record.title + ' — Registration Analytics';
+      renderRegistrationChart(record);
+      loadBtcRegistrationDetails(record);
+      window.scrollTo({ top:0, behavior:'smooth' });
+      eventBridge.resize();
+    }
+
+    function closeEvent() {
+      document.getElementById('event-detail').hidden = true;
+      document.getElementById('event-overview').hidden = false;
+      document.title = 'Advancement and Student Life Events';
+      eventBridge.resize();
+    }
+
+    function isPastEvent(record) {
+      if (!record.dateValue) return false;
+      const now = new Date();
+      return record.dateValue.getTime() < Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    }
+
+    function sortedRecords() {
+      const records = showPastEvents ? eventRecords.slice() : eventRecords.filter(function (record) { return !isPastEvent(record); });
+      return records.sort(function (left, right) {
+        let result = 0;
+        if (sortColumn === 'date') {
+          if (!left.dateValue && right.dateValue) return 1;
+          if (left.dateValue && !right.dateValue) return -1;
+          result = left.dateValue && right.dateValue ? left.dateValue.getTime() - right.dateValue.getTime() : 0;
+        } else if (sortColumn === 'registrants') {
+          result = left.registrants - right.registrants;
+        } else {
+          result = left.title.localeCompare(right.title, undefined, { sensitivity:'base', numeric:true });
+        }
+        if (result !== 0) return sortDirection === 'asc' ? result : -result;
+        return left.title.localeCompare(right.title, undefined, { sensitivity:'base', numeric:true });
+      });
+    }
+
+    function renderSortControls() {
+      sortButtons.forEach(function (button) {
+        const active = button.dataset.sort === sortColumn;
+        const indicator = button.querySelector('.sort-indicator');
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+        button.setAttribute('aria-label', 'Sort by ' + button.textContent.trim() + (active ? ', currently ' + (sortDirection === 'asc' ? 'ascending' : 'descending') : ''));
+        indicator.textContent = active ? (sortDirection === 'asc' ? '\u2191' : '\u2193') : '\u2195';
+      });
+    }
+
+    function renderCards() {
+      cards.replaceChildren();
+      const records = sortedRecords();
+      empty.hidden = records.length > 0;
+      empty.textContent = eventRecords.length && !showPastEvents ? 'No upcoming events. Check "Show past events" to see earlier ones.' : 'No event registrations were provided.';
+
+      records.forEach(function (record) {
+        const card = document.createElement('article');
+        card.className = 'event-card';
+        card.addEventListener('click', function () { openEvent(record); });
+
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'event-card-title';
+        const title = document.createElement('h3');
+        title.className = 'event-title';
+        const analyticsButton = document.createElement('button');
+        analyticsButton.className = 'event-analytics-button';
+        analyticsButton.type = 'button';
+        analyticsButton.textContent = record.title;
+        analyticsButton.setAttribute('aria-label', 'View registration growth for ' + record.title);
+        analyticsButton.addEventListener('click', function (event) {
+          event.stopPropagation();
+          openEvent(record);
+        });
+        title.appendChild(analyticsButton);
+        titleWrap.appendChild(title);
+        if (record.url) {
+          const eventLink = document.createElement('button');
+          eventLink.className = 'event-link-button';
+          eventLink.type = 'button';
+          eventLink.textContent = 'Open event in Slate \u2192';
+          eventLink.addEventListener('click', function (event) {
+            event.stopPropagation();
+            eventBridge.openRecord(record.url);
+          });
+          eventLink.addEventListener('keydown', function (event) { event.stopPropagation(); });
+          titleWrap.appendChild(eventLink);
+        }
+
+        const date = document.createElement('div');
+        date.className = 'event-detail';
+        const dateCaption = document.createElement('span');
+        dateCaption.className = 'event-detail-label';
+        dateCaption.textContent = 'Event date';
+        const dateValue = document.createElement('span');
+        dateValue.className = 'event-date';
+        dateValue.textContent = dateLabel(record.date);
+        date.append(dateCaption, dateValue);
+
+        const count = document.createElement('div');
+        count.className = 'event-detail';
+        const countCaption = document.createElement('span');
+        countCaption.className = 'event-detail-label';
+        countCaption.textContent = 'Registrants';
+        const countValue = document.createElement('span');
+        countValue.className = 'event-count';
+        countValue.textContent = record.registrants.toLocaleString();
+        count.append(countCaption, countValue);
+
+        card.append(titleWrap, date, count);
+        cards.appendChild(card);
+      });
+
+      renderSortControls();
+    }
+
+    function render(payload) {
+      eventRecords = normalizedRecords(payload.events);
+      const suppliedTotal = ui.number(payload.totalRegistrants);
+      totalRegistrants = suppliedTotal >= 0 ? suppliedTotal : eventRecords.reduce(function (sum, event) { return sum + event.registrants; }, 0);
+      document.getElementById('event-total').textContent = eventRecords.length.toLocaleString();
+      document.getElementById('registrant-total').textContent = totalRegistrants.toLocaleString();
+      renderCards();
+      ui.showApp();
+    }
+
+    sortButtons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        const nextColumn = button.dataset.sort;
+        if (sortColumn === nextColumn) sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        else {
+          sortColumn = nextColumn;
+          sortDirection = nextColumn === 'registrants' ? 'desc' : 'asc';
+        }
+        renderCards();
+      });
+    });
+
+    document.getElementById('show-past-events').addEventListener('change', function (event) {
+      showPastEvents = event.target.checked;
+      renderCards();
+    });
+
+    const eventBridge = window.DashboardBridge.create('public-event-registrants', render);
+    document.getElementById('event-back').addEventListener('click', closeEvent);
+    document.getElementById('portal-home').addEventListener('click', function () { window.location.reload(); });
+  }());
+  </script>
+</body>
+</html>
