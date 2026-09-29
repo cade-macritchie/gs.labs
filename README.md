@@ -2,6 +2,67 @@
 
 This repository is the single source of truth for the Admissions hub and its associated tools.
 
+## Repo map
+
+Every folder, grouped by category. The tags are only labels — folders stay where
+they are, because their paths are the live GitHub Pages URLs that the hub and
+the Slate wrappers point at.
+
+| Tag | Meaning |
+|---|---|
+| `[hub]` | The Admissions landing page |
+| `[dashboard]` | Read-only reporting pages, usually fed by a Slate wrapper |
+| `[tool]` | Interactive staff tools |
+| `[training]` | Staff training material |
+| `[slate]` | Templates pasted into Slate |
+| `[worker]` | Server-side code (Cloudflare Workers, Supabase). Deployed by hand, not by pushing |
+| `[shared]` | Styles, scripts, fonts, and brand files used across pages |
+| `[internal]` | Admin-only pages not linked from the hub |
+| `[repo]` | Repo configuration and docs |
+
+```text
+gs.labs/
+├── index.html                              [hub]        Admissions hub (GitHub Pages root)
+├── homepage/                               [hub]        Older hub version meant for pasting into Slate
+│
+├── pipeline-overview/                      [dashboard]  Pipeline Overview
+├── reports/
+│   ├── funnel-overview/                    [dashboard]  Funnel Overview
+│   ├── teaching-site-overview/             [dashboard]  Teaching Sites
+│   ├── enrollment-events/                  [dashboard]  Enrollment Events
+│   ├── advancement-student-life-events/    [dashboard]  Advancement & Student Life Events
+│   ├── public-event-registrants/           [dashboard]  Public event registrant counts
+│   ├── event-tracker/                      [dashboard]  Event Tracker
+│   └── regional-campus/                    [dashboard]  Regional Campus funnel & drilldown
+│
+├── tools/
+│   ├── queryomatic/                        [tool]       BetterQuery (Queryomatic) frontend
+│   │   └── worker.js                       [worker]     gs-labs-slate-gateway (Slate query proxy)
+│   ├── student-lookup/                     [tool]       Record Lookup
+│   └── checkin/                            [tool]       Check-In + Dymo label printing
+│
+├── training/
+│   └── slate-concepts/                     [training]   Slate glossary & guided lesson
+│
+├── slate-templates/
+│   └── wrappers/                           [slate]      Slate wrappers that embed each page in an iframe
+│
+├── waiver-codes-worker/                    [worker]     slate-waiver-codes (Cloudflare Worker + D1)
+├── supabase/functions/telegram-codex/      [worker]     Telegram → Codex automation
+│
+├── assets/                                 [shared]     dashboard.css, dashboard-common.js, analytics beacon
+│   ├── fonts/  brand-new/                  [shared]     Brand fonts and 2026 brand files
+│   └── vendor/                             [shared]     Third-party libraries (ExcelJS, …)
+├── BRANDGUIDE.md                           [shared]     Brand palette & usage
+│
+├── analytics/                              [internal]   Portal usage dashboard (unlisted)
+│
+├── .github/workflows/                      [repo]       Pages deploy + Telegram automation
+├── .claude/   CLAUDE.md                    [repo]       Claude Code settings & working agreements
+├── docs/                                   [repo]       Setup docs
+└── local-files/                            (untracked)  One-off exports and reports
+```
+
 ## Structure
 
 - `index.html` — hub published at the GitHub Pages root.
