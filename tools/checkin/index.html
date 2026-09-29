@@ -143,8 +143,9 @@
     .label-settings summary { cursor: pointer; color: var(--navy); font: 700 .78rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
     .label-settings[open] summary { margin-bottom: 14px; }
     .setting-field { display: grid; gap: 6px; margin-bottom: 12px; color: var(--muted); font-size: .85rem; }
-    .setting-field input { height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); color: var(--ink); font-size: 1rem; }
-    .setting-field input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(35,64,72,.14); }
+    .setting-field input, .setting-field select { height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); color: var(--ink); font-size: 1rem; }
+    .setting-field input:focus, .setting-field select:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(35,64,72,.14); }
+    .setting-check.disabled { opacity: .5; cursor: default; }
     .setting-check { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: .92rem; cursor: pointer; }
     .setting-check input { width: 18px; height: 18px; accent-color: var(--teal); }
     .label-preview { margin: 16px 0 12px; text-align: center; }
@@ -213,12 +214,16 @@
       <details class="label-settings">
         <summary>Label settings</summary>
         <label class="setting-field">
+          <span>Label size (match what's loaded in the printer)</span>
+          <select id="setting-stock"></select>
+        </label>
+        <label class="setting-field">
           <span>Event title</span>
           <input id="setting-title" type="text" maxlength="80" placeholder="e.g. Fall Preview Day 2026">
         </label>
         <label class="setting-check"><input id="setting-logo" type="checkbox"> Gateway logo in the header</label>
         <label class="setting-check"><input id="setting-name" type="checkbox"> Print the registrant's name</label>
-        <label class="setting-check"><input id="setting-vertical" type="checkbox"> Vertical layout (name under the QR code)</label>
+        <label class="setting-check" id="setting-vertical-row"><input id="setting-vertical" type="checkbox"> Vertical layout (name under the QR code)</label>
         <div class="label-preview">
           <img id="label-preview-img" alt="Label preview" hidden>
           <p id="label-preview-status" class="print-station-status"></p>
@@ -414,12 +419,24 @@
     // - getPrinters() rows use the printerType value "LabelWriterPrinter".
     // ----------------------------------------------------------------
 
-    // DYMO 30256 shipping label, 2-5/16" x 4", printed landscape. The
-    // printable rect comes from the LabelWriter 450 driver's own entry for
-    // Shipping30256 (PrintableOrigin 17,140 / PrintableArea 665,2224 at
-    // 300x600 dpi, in Drivers/DLS/lw450c.gpd under DYMO Connect's install).
-    const LABEL_STOCK = { name: 'LargeShipping', x: 0.2333, y: 0.0567, width: 3.7067, height: 2.2167 };
+    // Label stocks, printed landscape. `name` is DYMO Connect's own <Id> for
+    // the stock (the <DieCutLabel> catalog embedded in DYMOConnect.exe), not
+    // the driver's paper name, which it rejects. Printable rects come from
+    // the LabelWriter 450 driver (Drivers/DLS/lw450c.gpd, 300x600 dpi); the
+    // 550's lw5xx.gpd gives the same rects at 300x300.
+    // - 30256: Shipping30256, PrintableOrigin 17,140 / PrintableArea 665,2224.
+    // - 30252: Address30252, PrintableOrigin 18,138 / PrintableArea 299,1926.
+    //   Only ~1in tall, so it gets the compact layout and no vertical mode.
+    const LABEL_STOCKS = {
+      shipping: { label: 'Large shipping — 2-5/16" x 4" (DYMO 30256)', name: 'LargeShipping', x: 0.2333, y: 0.0567, width: 3.7067, height: 2.2167, compact: false },
+      address: { label: 'Address — 1-1/8" x 3-1/2" (DYMO 30252)', name: 'Address', x: 0.23, y: 0.06, width: 3.21, height: 0.9967, compact: true },
+    };
+    const DEFAULT_STOCK = 'shipping';
     const LABEL_MARGIN = 0.07;
+
+    function labelStock(key) {
+      return LABEL_STOCKS[key] || LABEL_STOCKS[DEFAULT_STOCK];
+    }
 
     function xmlEscape(value) {
       return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -529,68 +546,28 @@
     // right. Vertical (portrait, 2.2in wide): a large QR with the name
     // centered under it. Anything switched off or blank is left out and the
     // body grows into the room.
-    // opts: { vertical, logoBase64, title, name, qrText | qrImageBase64 }
+    // opts: { stock, vertical, logoBase64, title, name, qrText | qrImageBase64 }
     function buildLabelXml(opts) {
+      const labelStockInfo = labelStock(opts.stock);
+      const vertical = Boolean(opts.vertical) && !labelStockInfo.compact;
       // Portrait is the same printable rect with the axes swapped.
-      const stock = opts.vertical
-        ? { x: LABEL_STOCK.y, y: LABEL_STOCK.x, width: LABEL_STOCK.height, height: LABEL_STOCK.width }
-        : LABEL_STOCK;
-      const align = opts.vertical ? 'Center' : 'Left';
+      const stock = vertical
+        ? { x: labelStockInfo.y, y: labelStockInfo.x, width: labelStockInfo.height, height: labelStockInfo.width }
+        : labelStockInfo;
+      const align = vertical ? 'Center' : 'Left';
       const left = stock.x + LABEL_MARGIN;
       const right = stock.x + stock.width - LABEL_MARGIN;
       const bottom = stock.y + stock.height - LABEL_MARGIN;
-      const objects = [];
-      let top = stock.y + LABEL_MARGIN;
-
-      if (opts.logoBase64) {
-        const logoWidth = Math.min(2.0, right - left);
-        const logoLeft = opts.vertical ? (left + right - logoWidth) / 2 : left;
-        objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(logoLeft, top, logoWidth, 0.26), align));
-        top += 0.32;
-      }
-      if (opts.title) {
-        const titleLines = opts.vertical ? splitInTwo(opts.title, 24) : [opts.title];
-        const titleHeight = titleLines.length > 1 ? 0.5 : 0.32;
-        objects.push(textObjectXml('TITLE', titleLines, objectLayoutXml(left, top, right - left, titleHeight), 16, true, align));
-        top += titleHeight + 0.04;
-      }
-      if (opts.logoBase64 || opts.title) {
-        objects.push(imageObjectXml('RULE', BLACK_PIXEL_PNG_BASE64, objectLayoutXml(left, top, right - left, 0.02), 'Left', 'Fill'));
-        top += 0.08;
-      }
-
-      let qrLayout;
-      let nameLayout;
-      if (opts.vertical) {
-        const nameHeight = opts.name ? 0.8 : 0;
-        const gap = opts.name ? 0.12 : 0;
-        const qrSize = Math.min(right - left, bottom - top - nameHeight - gap);
-        const bodyTop = top + (bottom - top - qrSize - gap - nameHeight) / 2;
-        qrLayout = objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
-        nameLayout = objectLayoutXml(left, bodyTop + qrSize + gap, right - left, nameHeight);
-      } else {
-        const qrSize = Math.min(1.6, bottom - top);
-        const bodyTop = top + (bottom - top - qrSize) / 2;
-        qrLayout = opts.name
-          ? objectLayoutXml(left, bodyTop, qrSize, qrSize)
-          : objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
-        const nameLeft = left + qrSize + 0.15;
-        nameLayout = objectLayoutXml(nameLeft, bodyTop, right - nameLeft, qrSize);
-      }
-
-      objects.push(opts.qrImageBase64
-        ? imageObjectXml('QR', opts.qrImageBase64, qrLayout, 'Center')
-        : qrObjectXml(opts.qrText, qrLayout));
-      if (opts.name) {
-        objects.push(textObjectXml('NAME', splitInTwo(opts.name, 14), nameLayout, 28, true, align));
-      }
+      const objects = labelStockInfo.compact
+        ? compactLabelObjects(opts, left, stock.y + LABEL_MARGIN, right, bottom)
+        : standardLabelObjects(opts, vertical, align, left, stock.y + LABEL_MARGIN, right, bottom);
 
       return '<?xml version="1.0" encoding="utf-8"?>' +
         '<DesktopLabel Version="1">' +
           '<DYMOLabel Version="4">' +
             '<Description>DYMO Label</Description>' +
-            '<Orientation>' + (opts.vertical ? 'Portrait' : 'Landscape') + '</Orientation>' +
-            '<LabelName>' + LABEL_STOCK.name + '</LabelName>' +
+            '<Orientation>' + (vertical ? 'Portrait' : 'Landscape') + '</Orientation>' +
+            '<LabelName>' + labelStockInfo.name + '</LabelName>' +
             '<InitialLength>0</InitialLength>' +
             '<BorderStyle>SolidLine</BorderStyle>' +
             '<DYMORect><DYMOPoint><X>' + stock.x + '</X><Y>' + stock.y + '</Y></DYMOPoint>' +
@@ -610,6 +587,98 @@
         '</DesktopLabel>';
     }
 
+    function qrObject(opts, layoutXml) {
+      return opts.qrImageBase64
+        ? imageObjectXml('QR', opts.qrImageBase64, layoutXml, 'Center')
+        : qrObjectXml(opts.qrText, layoutXml);
+    }
+
+    // Compact stock (30252, ~1in tall): there's no room for a header across
+    // the top, so the QR fills the label's height on the left and the logo,
+    // title and name stack in the column to its right, centered vertically.
+    function compactLabelObjects(opts, left, top, right, bottom) {
+      const objects = [];
+      const qrSize = bottom - top;
+      const hasText = Boolean(opts.logoBase64 || opts.title || opts.name);
+      if (!hasText) {
+        objects.push(qrObject(opts, objectLayoutXml((left + right - qrSize) / 2, top, qrSize, qrSize)));
+        return objects;
+      }
+      objects.push(qrObject(opts, objectLayoutXml(left, top, qrSize, qrSize)));
+
+      const colLeft = left + qrSize + 0.12;
+      const colWidth = right - colLeft;
+      const logoHeight = opts.logoBase64 ? 0.18 : 0;
+      const titleHeight = opts.title ? 0.2 : 0;
+      const header = logoHeight + titleHeight + (logoHeight && titleHeight ? 0.02 : 0);
+      const ruleSpace = header && opts.name ? 0.07 : 0;
+      const nameHeight = opts.name ? Math.min(0.55, qrSize - header - ruleSpace) : 0;
+      let y = top + (qrSize - header - ruleSpace - nameHeight) / 2;
+
+      if (opts.logoBase64) {
+        objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(colLeft, y, Math.min(1.4, colWidth), logoHeight), 'Left'));
+        y += logoHeight + (titleHeight ? 0.02 : 0);
+      }
+      if (opts.title) {
+        objects.push(textObjectXml('TITLE', [opts.title], objectLayoutXml(colLeft, y, colWidth, titleHeight), 10, true, 'Left'));
+        y += titleHeight;
+      }
+      if (ruleSpace) {
+        objects.push(imageObjectXml('RULE', BLACK_PIXEL_PNG_BASE64, objectLayoutXml(colLeft, y + 0.025, colWidth, 0.015), 'Left', 'Fill'));
+        y += ruleSpace;
+      }
+      if (opts.name) {
+        objects.push(textObjectXml('NAME', splitInTwo(opts.name, 14), objectLayoutXml(colLeft, y, colWidth, nameHeight), 20, true, 'Left'));
+      }
+      return objects;
+    }
+
+    function standardLabelObjects(opts, vertical, align, left, top, right, bottom) {
+      const objects = [];
+
+      if (opts.logoBase64) {
+        const logoWidth = Math.min(2.0, right - left);
+        const logoLeft = vertical ? (left + right - logoWidth) / 2 : left;
+        objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(logoLeft, top, logoWidth, 0.26), align));
+        top += 0.32;
+      }
+      if (opts.title) {
+        const titleLines = vertical ? splitInTwo(opts.title, 24) : [opts.title];
+        const titleHeight = titleLines.length > 1 ? 0.5 : 0.32;
+        objects.push(textObjectXml('TITLE', titleLines, objectLayoutXml(left, top, right - left, titleHeight), 16, true, align));
+        top += titleHeight + 0.04;
+      }
+      if (opts.logoBase64 || opts.title) {
+        objects.push(imageObjectXml('RULE', BLACK_PIXEL_PNG_BASE64, objectLayoutXml(left, top, right - left, 0.02), 'Left', 'Fill'));
+        top += 0.08;
+      }
+
+      let qrLayout;
+      let nameLayout;
+      if (vertical) {
+        const nameHeight = opts.name ? 0.8 : 0;
+        const gap = opts.name ? 0.12 : 0;
+        const qrSize = Math.min(right - left, bottom - top - nameHeight - gap);
+        const bodyTop = top + (bottom - top - qrSize - gap - nameHeight) / 2;
+        qrLayout = objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
+        nameLayout = objectLayoutXml(left, bodyTop + qrSize + gap, right - left, nameHeight);
+      } else {
+        const qrSize = Math.min(1.6, bottom - top);
+        const bodyTop = top + (bottom - top - qrSize) / 2;
+        qrLayout = opts.name
+          ? objectLayoutXml(left, bodyTop, qrSize, qrSize)
+          : objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
+        const nameLeft = left + qrSize + 0.15;
+        nameLayout = objectLayoutXml(nameLeft, bodyTop, right - nameLeft, qrSize);
+      }
+
+      objects.push(qrObject(opts, qrLayout));
+      if (opts.name) {
+        objects.push(textObjectXml('NAME', splitInTwo(opts.name, 14), nameLayout, 28, true, align));
+      }
+      return objects;
+    }
+
     // ----------------------------------------------------------------
     // Label settings — kept in the print station's own browser, since only
     // the machine that prints needs them. Read fresh on every print, so
@@ -617,7 +686,7 @@
     // ----------------------------------------------------------------
 
     const LABEL_SETTINGS_KEY = 'checkin.labelSettings';
-    const DEFAULT_LABEL_SETTINGS = { title: '', showLogo: true, showName: true, vertical: false };
+    const DEFAULT_LABEL_SETTINGS = { stock: DEFAULT_STOCK, title: '', showLogo: true, showName: true, vertical: false };
 
     function loadLabelSettings() {
       try {
@@ -662,6 +731,7 @@
     async function labelXmlFor(person) {
       const settings = loadLabelSettings();
       const opts = {
+        stock: settings.stock,
         vertical: Boolean(settings.vertical),
         logoBase64: settings.showLogo ? await loadLogoBase64() : '',
         title: settings.title.trim(),
@@ -685,8 +755,23 @@
       }
     }
 
+    // Only a printer DYMO Connect reports as connected. Windows keeps the old
+    // queue when a Dymo is replugged or reinstalled and adds a new one named
+    // "... (Copy 1)", and the stale one is often listed first. Printing to it
+    // "succeeds" and nothing comes out (found 2026-09-29 on a LabelWriter 550).
+    function labelWriters(printers) {
+      return (printers || []).filter(function (p) { return p.printerType === 'LabelWriterPrinter'; });
+    }
+
     function findLabelPrinter(printers) {
-      return (printers || []).find(function (p) { return p.printerType === 'LabelWriterPrinter'; });
+      return labelWriters(printers).find(function (p) { return p.isConnected; });
+    }
+
+    function noPrinterMessage(printers) {
+      const known = labelWriters(printers);
+      return known.length
+        ? 'The Dymo isn’t connected (' + known.map(function (p) { return p.name; }).join(', ') + '). Check its USB cable and power.'
+        : 'No Dymo label printer is set up on this computer.';
     }
 
     function refreshDeviceStatus() {
@@ -695,8 +780,11 @@
         return;
       }
       try {
-        const labelPrinter = findLabelPrinter(window.dymo.label.framework.getPrinters());
-        deviceStatus.textContent = labelPrinter ? ('DYMO ready — ' + labelPrinter.name) : 'DYMO Connect running, no label printer found';
+        const printers = window.dymo.label.framework.getPrinters();
+        const labelPrinter = findLabelPrinter(printers);
+        deviceStatus.textContent = labelPrinter
+          ? ('DYMO ready — ' + labelPrinter.name)
+          : (labelWriters(printers).length ? 'DYMO printer not connected' : 'DYMO Connect running, no label printer found');
       } catch (e) {
         deviceStatus.textContent = 'DYMO Connect present but unreachable';
       }
@@ -724,9 +812,10 @@
       }
 
       try {
-        const labelPrinter = findLabelPrinter(window.dymo.label.framework.getPrinters());
+        const printers = window.dymo.label.framework.getPrinters();
+        const labelPrinter = findLabelPrinter(printers);
         if (!labelPrinter) {
-          statusEl.textContent = 'No Dymo label printer is connected.';
+          statusEl.textContent = noPrinterMessage(printers);
           fallbackBtn.hidden = false;
           return;
         }
@@ -1138,6 +1227,8 @@
     // DYMO Connect itself will print.
     // ----------------------------------------------------------------
 
+    const settingStock = document.getElementById('setting-stock');
+    const settingVerticalRow = document.getElementById('setting-vertical-row');
     const settingTitle = document.getElementById('setting-title');
     const settingLogo = document.getElementById('setting-logo');
     const settingName = document.getElementById('setting-name');
@@ -1169,20 +1260,36 @@
     }
 
     let previewDebounce = null;
+    // Compact stock has no vertical layout (see LABEL_STOCKS).
+    function syncVerticalOption() {
+      const compact = labelStock(settingStock.value).compact;
+      settingVertical.disabled = compact;
+      settingVerticalRow.classList.toggle('disabled', compact);
+    }
+
     function onSettingsChange() {
-      saveLabelSettings({ title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked, vertical: settingVertical.checked });
+      syncVerticalOption();
+      saveLabelSettings({ stock: settingStock.value, title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked, vertical: settingVertical.checked });
       clearTimeout(previewDebounce);
       previewDebounce = setTimeout(refreshLabelPreview, 250);
     }
 
     if (!IS_MOBILE) {
       const initialSettings = loadLabelSettings();
+      Object.keys(LABEL_STOCKS).forEach(function (key) {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = LABEL_STOCKS[key].label;
+        settingStock.appendChild(option);
+      });
+      settingStock.value = LABEL_STOCKS[initialSettings.stock] ? initialSettings.stock : DEFAULT_STOCK;
       settingTitle.value = initialSettings.title;
       settingLogo.checked = initialSettings.showLogo;
       settingName.checked = initialSettings.showName;
       settingVertical.checked = initialSettings.vertical;
-      [settingTitle, settingLogo, settingName, settingVertical].forEach(function (el) {
-        el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', onSettingsChange);
+      syncVerticalOption();
+      [settingStock, settingTitle, settingLogo, settingName, settingVertical].forEach(function (el) {
+        el.addEventListener(el.type === 'text' ? 'input' : 'change', onSettingsChange);
       });
       document.querySelector('.label-settings').addEventListener('toggle', function (event) {
         if (event.target.open) refreshLabelPreview();

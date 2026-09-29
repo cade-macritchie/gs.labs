@@ -167,7 +167,16 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
   can print as a solid black box. The header rule is a 1x1 black PNG
   stretched with `ScaleMode` `Fill`. Both `ImageObject` uses were checked with
   `RenderLabel`.
-- **Settings** (event title, logo on/off, name on/off, vertical layout) live in the print
+- **Label size** (setting, added 2026-09-29): 30256 (default) or **DYMO
+  30252 address labels** (1-1/8" x 3-1/2"), which DYMO Connect calls
+  `Address` (same `<DieCutSKU>` catalog). Its printable rect is the 450
+  driver's `Address30252` entry; the 550's `lw5xx.gpd` gives the same numbers.
+  At about 1in tall it gets a compact layout, checked with `RenderLabel`: the
+  QR fills the height on the left, and the logo, title and name stack to its
+  right. Vertical layout is disabled for this size. Pick the size that's
+  actually loaded in the printer. `LABEL_STOCKS` in `index.html` is where to
+  add another size.
+- **Settings** (label size, event title, logo on/off, name on/off, vertical layout) live in the print
   station's own browser (`localStorage`, key `checkin.labelSettings`), set
   from the "Label settings" panel under the print-station toggle. They're
   read fresh on every print, and the panel shows a live preview rendered by
@@ -192,6 +201,22 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
 The header shows a live "DYMO ready — <printer name>" / "DYMO Connect not
 detected" status so staff can tell at a glance whether printing will work,
 without having to try a search first.
+
+**Only a printer DYMO Connect reports as connected is used**
+(`findLabelPrinter()`). When a Dymo is replugged or its driver reinstalled,
+Windows keeps the old queue and adds a new one, e.g. `DYMO LabelWriter 550`
+(disconnected) next to `DYMO LabelWriter 550 (Copy 1)` (connected), and the
+stale one is often listed first. Before 2026-09-29 the page took the first
+LabelWriter in the list, so a new machine "printed" to a dead queue and
+nothing came out. If none is connected, the header says "DYMO printer not
+connected", and a print attempt names the queues it found.
+
+**A new print station needs no DYMO Connect setup beyond the install.** No
+label files or templates are configured in DYMO Connect. The page sends the
+complete label XML with every print. What a new machine does need: DYMO
+Connect installed and running (its tray web service is what the page talks
+to), the Dymo plugged in and showing as connected, and the header reading
+"DYMO ready — …".
 
 ### If this ever breaks again
 
