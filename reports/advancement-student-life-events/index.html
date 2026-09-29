@@ -273,7 +273,7 @@
         <div class="stat-bar">
           <div class="stat-cell"><div id="btc-tickets-purchased" class="stat-val">—</div><div class="stat-lbl">Group Tickets Purchased</div></div>
           <div class="stat-cell"><div id="btc-tickets-redeemed" class="stat-val">—</div><div class="stat-lbl">Group Tickets Redeemed</div></div>
-          <div class="stat-cell"><div id="btc-tickets-remaining" class="stat-val">—</div><div class="stat-lbl">Group Tickets Remaining</div></div>
+          <div class="stat-cell"><div id="btc-space-available" class="stat-val">—</div><div class="stat-lbl">Total Space Available</div></div>
           <div class="stat-cell"><div id="btc-individual-registrants" class="stat-val">—</div><div class="stat-lbl">Individual Registrants</div></div>
           <div class="stat-cell"><div id="btc-projected-attendance" class="stat-val">—</div><div class="stat-lbl">Projected Attendance</div></div>
         </div>
@@ -482,10 +482,12 @@
     //   individuals = Slate registrants - redeemed
     //   projected   = Slate registrants + remaining (assumes every unredeemed
     //                 group ticket is eventually used)
+    //   available   = BTC_CAPACITY - projected
     // BTC-only for now.
     var BTC_API_BASE_URL = 'https://slate-waiver-codes.gs-labs.workers.dev';
     var BTC_EVENT_TITLE_PATTERN = /bible teaching conference/i;
-    var BTC_STAT_IDS = ['btc-tickets-purchased', 'btc-tickets-redeemed', 'btc-tickets-remaining', 'btc-individual-registrants', 'btc-projected-attendance'];
+    var BTC_CAPACITY = 750;
+    var BTC_STAT_IDS = ['btc-tickets-purchased', 'btc-tickets-redeemed', 'btc-space-available', 'btc-individual-registrants', 'btc-projected-attendance'];
     var btcSummaryRequestId = 0;
 
     function isBtcEvent(record) {
@@ -518,8 +520,10 @@
           const remaining = Math.max(0, Number(data.ticketsRemaining) || 0);
           const redeemed = Math.max(0, purchased - remaining);
           const individuals = Math.max(0, record.registrants - redeemed);
-          setBtcStats([purchased, redeemed, remaining, individuals, record.registrants + remaining]);
-          noteEl.textContent = 'Group tickets come from ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin. Individual registrants are Slate registrants minus redeemed group tickets. Projected attendance is Slate registrants plus unredeemed group tickets, assuming every group ticket gets used.';
+          const projected = record.registrants + remaining;
+          const available = Math.max(0, BTC_CAPACITY - projected);
+          setBtcStats([purchased, redeemed, available, individuals, projected]);
+          noteEl.textContent = 'Group tickets come from ' + Number(data.codeCount || 0).toLocaleString() + ' waiver code(s), excluding codes marked admin. Individual registrants are Slate registrants minus redeemed group tickets. Projected attendance is Slate registrants plus unredeemed group tickets, assuming every group ticket gets used. Total space available is the ' + BTC_CAPACITY.toLocaleString() + '-seat capacity minus projected attendance.';
         })
         .catch(function (err) {
           if (requestId !== btcSummaryRequestId) return;
