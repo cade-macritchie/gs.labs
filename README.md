@@ -17,24 +17,11 @@ This repository is the single source of truth for the Admissions hub and its ass
 - `pipeline-overview/`, `reports/teaching-site-overview/`, `reports/enrollment-events/`, and `reports/funnel-overview/` — GitHub-hosted dashboard interfaces.
 - `assets/dashboard.css` and `assets/dashboard-common.js` — shared dashboard presentation, iframe bridge, and academic-period definitions.
 - `slate-templates/wrappers/*-wrapper.liquid.html` — thin Slate templates that serialize query results and host the corresponding dashboard iframe.
-- `merch-order-form/` — merchandise catalog admin, public order form, and branded catalog PDF generator. Unlike the other tools this is a Next.js **server** app (SQLite via Prisma, Puppeteer for the PDF), so GitHub Pages does not host it — see its own `README.md` and "Deployment model" below.
 - `supabase/functions/telegram-codex/` and `.github/workflows/telegram-codex.yml` — optional, allowlisted Telegram-to-Codex automation that proposes changes through pull requests. See `docs/telegram-codex.md` for setup.
 
 ## Deployment model
 
 GitHub Pages hosts the front-end pages. Slate retains the queries and renders their results into a small wrapper, which sends the data to the relevant page using `window.postMessage`. This keeps UI code deployable from this repository while each Slate portal controls its own query.
-
-`merch-order-form/` is the one exception. It needs a Node runtime, a writable
-SQLite file, and local disk for uploaded product images, so it cannot run on
-Pages; the Pages build simply carries its source along as static files. Deploy
-it separately to an always-on Node host and keep the source here so it stays
-with the other internal tools. The Slate portal
-`https://enroll.gs.edu/portal/merch-order` (linked from the hub's Tools tab)
-embeds its `/order` page in an iframe via
-`slate-templates/wrappers/merch-order-wrapper.liquid.html` — Slate can't proxy
-to an outside server, so the portal shows Slate's "Unsupported method" error
-until the app is running on its host and that wrapper is pasted into the portal
-with the host's URL filled in.
 
 Use the files in `slate-templates/wrappers/` for the iframe-based portals. Normal HTML, CSS, labels, charts, and client-side behavior can be changed in this repository without repasting a Slate template. Repaste a wrapper only when its query/export names, exported fields, URL parameters, iframe URL, or message contract changes.
 
