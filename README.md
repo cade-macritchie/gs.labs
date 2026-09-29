@@ -28,9 +28,13 @@ GitHub Pages hosts the front-end pages. Slate retains the queries and renders th
 SQLite file, and local disk for uploaded product images, so it cannot run on
 Pages; the Pages build simply carries its source along as static files. Deploy
 it separately to an always-on Node host and keep the source here so it stays
-with the other internal tools. It's reverse-proxied at
-`https://enroll.gs.edu/portal/merch-order`, linked from the hub's Tools tab
-like the other portals.
+with the other internal tools. The Slate portal
+`https://enroll.gs.edu/portal/merch-order` (linked from the hub's Tools tab)
+embeds its `/order` page in an iframe via
+`slate-templates/wrappers/merch-order-wrapper.liquid.html` — Slate can't proxy
+to an outside server, so the portal shows Slate's "Unsupported method" error
+until the app is running on its host and that wrapper is pasted into the portal
+with the host's URL filled in.
 
 Use the files in `slate-templates/wrappers/` for the iframe-based portals. Normal HTML, CSS, labels, charts, and client-side behavior can be changed in this repository without repasting a Slate template. Repaste a wrapper only when its query/export names, exported fields, URL parameters, iframe URL, or message contract changes.
 

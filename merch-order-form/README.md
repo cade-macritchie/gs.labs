@@ -104,5 +104,22 @@ npm run build
 npm run start
 ```
 
+### Slate embed
+
+Staff reach the order form through the Slate portal
+`https://enroll.gs.edu/portal/merch-order`, which iframes this app's `/order`
+page using `../slate-templates/wrappers/merch-order-wrapper.liquid.html`. After
+deploying, replace `MERCH-APP-HOST` in that wrapper (both the iframe `src` and
+`MERCH_APP_ORIGIN`) with the real host and paste it into the portal.
+
+- `next.config.ts` lets only `https://enroll.gs.edu` frame `/order`, and forbids
+  framing `/admin` (its `SameSite=Lax` cookie wouldn't work in a cross-site
+  iframe anyway), so admins use the app's own URL directly.
+- `src/lib/embed.ts` posts `merch-order-resize` (page height) and
+  `merch-order-scroll-top` (after a successful submit) to the wrapper. If the
+  portal ever moves off `enroll.gs.edu`, update the origin in both files.
+- The host must serve HTTPS, or the browser will block the iframe as mixed
+  content.
+
 Back up **both** `dev.db` (or whatever `DATABASE_URL` points at) and
 `public/uploads/products/` — the database references those files by path.

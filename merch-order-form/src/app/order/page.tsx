@@ -1,4 +1,5 @@
 import { BrandHeader } from "@/components/BrandHeader";
+import { EmbedResizeReporter } from "@/components/order/EmbedResizeReporter";
 import { OrderFormClient } from "@/components/order/OrderFormClient";
 import { groupByCategory, listProducts } from "@/lib/products";
 
@@ -16,6 +17,7 @@ export default async function OrderPage() {
 
   return (
     <>
+      <EmbedResizeReporter />
       <BrandHeader
         eyebrow="Merchandise"
         title="Order Form"

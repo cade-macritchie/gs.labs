@@ -1,0 +1,32 @@
+<!--
+  Merch Order Form Slate wrapper (portal: /portal/merch-order).
+
+  Like the Check-In wrapper, this needs no Slate query export and hands off no
+  data. It embeds the order form from merch-order-form/, a Next.js server app
+  that runs on its own Node host (NOT GitHub Pages), and grows the iframe to fit
+  its content.
+
+  Before pasting: set MERCH_APP_ORIGIN below (and the iframe src) to wherever
+  the app is actually deployed. The app only allows itself to be framed by
+  https://enroll.gs.edu (see merch-order-form/next.config.ts).
+
+  Admin pages (/admin) are deliberately not embeddable; staff open them directly
+  on the app's own host.
+-->
+<iframe id="merchOrderFrame" src="https://MERCH-APP-HOST/order" title="Merch Order Form" referrerpolicy="origin" style="width:100%;height:900px;min-height:700px;border:0;display:block"></iframe>
+<script>
+(function () {
+  'use strict';
+  const MERCH_APP_ORIGIN = 'https://MERCH-APP-HOST';
+  const frame = document.getElementById('merchOrderFrame');
+
+  window.addEventListener('message', function (event) {
+    if (event.origin !== MERCH_APP_ORIGIN || event.source !== frame.contentWindow || !event.data) return;
+    if (event.data.type === 'merch-order-resize') {
+      const height = Math.max(700, Math.min(Number(event.data.height) || 900, 20000));
+      frame.style.height = height + 'px';
+    }
+    if (event.data.type === 'merch-order-scroll-top') frame.scrollIntoView({ block:'start' });
+  });
+}());
+</script>

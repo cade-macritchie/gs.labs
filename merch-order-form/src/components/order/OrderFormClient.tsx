@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ProductCard } from "@/components/order/ProductCard";
 import { formatCents } from "@/lib/currency";
+import { postToParent } from "@/lib/embed";
 import type { Product } from "@/generated/prisma/client";
 
 type Group = { category: string; products: Product[] };
@@ -74,6 +75,9 @@ export function OrderFormClient({ groups }: { groups: Group[] }) {
 
     if (response.ok) {
       setSubmittedId(data.orderId);
+      // Inside the Slate iframe the portal page may be scrolled past the confirmation.
+      postToParent({ type: "merch-order-scroll-top" });
+      window.scrollTo({ top: 0 });
       return;
     }
 
