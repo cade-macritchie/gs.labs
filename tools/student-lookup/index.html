@@ -331,7 +331,11 @@
       const records=[];
       const seen=new Set();
       const primaryDegree=value(primaryRecord && primaryRecord.app_degree).toLowerCase();
-      if (hasApplication(primaryRecord)) { records.push(primaryRecord); seen.add(applicationIdentity(primaryRecord)); }
+      const embedded=Array.isArray(primaryRecord && primaryRecord.embedded_applications) ? primaryRecord.embedded_applications : [];
+      if (embedded.length > 1) {
+        // Applications Slate exported together in the person's own row: keep every one, even same-program repeats.
+        embedded.forEach(record => { const identity=applicationIdentity(record); if (!hasApplication(record) || seen.has(identity)) return; seen.add(identity); records.push(record); });
+      } else if (hasApplication(primaryRecord)) { records.push(primaryRecord); seen.add(applicationIdentity(primaryRecord)); }
       (Array.isArray(additionalRecords) ? additionalRecords : []).forEach(record => {
         const degree=value(record && record.app_degree);
         const identity=applicationIdentity(record || {});

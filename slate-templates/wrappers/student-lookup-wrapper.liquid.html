@@ -14,7 +14,7 @@
   app_created_date. It is called only when an opened record has Student status.
   Legacy field aliases remain as fallbacks during rollout.
 -->
-<iframe id="studentLookupFrame" src="https://cade-macritchie.github.io/gs.labs/tools/student-lookup/?v=student-lookup-v22" title="Record Lookup" referrerpolicy="origin" style="width:100%;height:600px;min-height:600px;border:0;display:block"></iframe>
+<iframe id="studentLookupFrame" src="https://cade-macritchie.github.io/gs.labs/tools/student-lookup/?v=student-lookup-v23" title="Record Lookup" referrerpolicy="origin" style="width:100%;height:600px;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
@@ -141,6 +141,48 @@
     return terms.every(function (term) { return candidateName.includes(term); });
   }
 
+  // Slate may export several applications per person as concatenated lists in
+  // each app_* field (values separated by APP_LIST_DELIMITER, in matching
+  // order). Secondary applications are only built when more than
+  // APP_MULTI_FIELD_THRESHOLD of the app_* fields actually hold multiple
+  // values, so a stray delimiter inside one value is not mistaken for a list.
+  const APP_LIST_DELIMITER = '|';
+  const APP_MULTI_FIELD_THRESHOLD = 3;
+
+  function splitApplicationList(raw) {
+    return plain(raw).split(APP_LIST_DELIMITER).map(function (part) { return part.trim(); });
+  }
+
+  function splitMaterials(raw, count) {
+    const parts = decodeEntities(scalar(raw)).split(APP_LIST_DELIMITER);
+    return parts.length === count ? parts.map(function (part) { return materialList(part); }) : null;
+  }
+
+  function embeddedApplications(row, sisid) {
+    const keys = {
+      app_degree:['app_degree','app_program','per_degree_current'], app_round:['app_round'], app_status:['app_status'],
+      app_created_date:['app_created_date','application_created_date'], decision_code:['decision_code','app_decision_code','app_code'],
+      app_term:['app_term'], app_year:['app_year'], app_f1:['app_f1']
+    };
+    const lists = {};
+    let count = 1;
+    let multiFields = 0;
+    Object.keys(keys).forEach(function (key) {
+      lists[key] = splitApplicationList(field(row, keys[key]));
+      if (lists[key].length > 1) { multiFields += 1; count = Math.max(count, lists[key].length); }
+    });
+    if (multiFields <= APP_MULTI_FIELD_THRESHOLD) return [];
+    const missing = splitMaterials(field(row, ['app_missing_mats_list','missing_mats_list']), count);
+    const full = splitMaterials(field(row, ['app_full_mats_list','full_mats_list']), count);
+    const applications = [];
+    for (let index = 0; index < count; index += 1) {
+      const application = { SIS_ID:sisid, app_url:'', missing_mats_list:missing ? missing[index] : '', full_mats_list:full ? full[index] : '' };
+      Object.keys(keys).forEach(function (key) { application[key] = lists[key][index] || ''; });
+      applications.push(application);
+    }
+    return applications;
+  }
+
   function normalize(row, index) {
     const rawName = field(row, ['per_name','name','full_name','fullname','person_name']);
     const rawPersonUrl = field(row, ['per_url','url','record_url','person_url']);
@@ -151,9 +193,13 @@
     const resolvedFirst = first || (nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : name);
     const resolvedLast = last || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : '');
     const sisid = plain(field(row, ['per_sisid','sisid','SIS_ID','SISID','student_id']));
-    const createdDate = plain(field(row, ['app_created_date','application_created_date']));
-    const appDegree = plain(field(row, ['app_degree', 'per_degree_current']));
+    const embedded = embeddedApplications(row, plain(field(row, ['per_sisid','sisid','SIS_ID','SISID','student_id'])));
+    const lead = embedded[0] || null;
+    function appValue(key, names) { return lead ? lead[key] : plain(field(row, names)); }
+    const createdDate = appValue('app_created_date', ['app_created_date','application_created_date']);
+    const appDegree = appValue('app_degree', ['app_degree','app_program','per_degree_current']);
     return {
+      embedded_applications: embedded,
       SIS_ID: sisid,
       first: resolvedFirst,
       last: resolvedLast,
@@ -167,36 +213,36 @@
       birthdate: plain(field(row, ['per_birthdate','per_birtdate','birthdate','birth_date'])),
       app_created_date: createdDate,
       record_created_date: createdDate,
-      decision_code: plain(field(row, ['decision_code','app_code'])),
-      vear: plain(field(row, 'app_year')),
-      year: plain(field(row, 'app_year')),
-      term: plain(field(row, 'app_term')),
+      decision_code: appValue('decision_code', ['decision_code','app_decision_code','app_code']),
+      vear: appValue('app_year', 'app_year'),
+      year: appValue('app_year', 'app_year'),
+      term: appValue('app_term', 'app_term'),
       program: appDegree,
       church: '',
       url: link(rawPersonUrl) || link(rawName),
       app_degree: appDegree,
-      app_round: plain(field(row, 'app_round')),
-      app_status: plain(field(row, 'app_status')),
-      app_term: plain(field(row, 'app_term')),
-      app_year: plain(field(row, 'app_year')),
-      app_f1: plain(field(row, 'app_f1')),
+      app_round: appValue('app_round', 'app_round'),
+      app_status: appValue('app_status', 'app_status'),
+      app_term: appValue('app_term', 'app_term'),
+      app_year: appValue('app_year', 'app_year'),
+      app_f1: appValue('app_f1', 'app_f1'),
       app_url: link(field(row, ['app_url','application_url'])),
-      missing_mats_list: materialList(field(row, ['app_missing_mats_list','missing_mats_list'])),
-      full_mats_list: materialList(field(row, ['app_full_mats_list','full_mats_list']))
+      missing_mats_list: lead ? lead.missing_mats_list : materialList(field(row, ['app_missing_mats_list','missing_mats_list'])),
+      full_mats_list: lead ? lead.full_mats_list : materialList(field(row, ['app_full_mats_list','full_mats_list']))
     };
   }
 
   function normalizeApplication(row) {
     return {
       SIS_ID: plain(field(row, ['per_sisid','sisid','SIS_ID','SISID','student_id'])),
-      app_degree: plain(field(row, ['app_degree','per_degree_current','degree','program'])),
+      app_degree: plain(field(row, ['app_degree','app_program','per_degree_current','degree','program'])),
       app_round: plain(field(row, ['app_round','application_round'])),
       app_status: plain(field(row, ['app_status','application_status'])),
       app_term: plain(field(row, ['app_term','term'])),
       app_year: plain(field(row, ['app_year','year'])),
       app_f1: plain(field(row, ['app_f1','f1'])),
       app_created_date: plain(field(row, ['app_created_date','application_created_date'])),
-      decision_code: plain(field(row, ['decision_code','app_code'])),
+      decision_code: appValue('decision_code', ['decision_code','app_decision_code','app_code']),
       app_url: link(field(row, ['app_url','application_url'])),
       missing_mats_list: materialList(field(row, ['app_missing_mats_list','missing_mats_list'])),
       full_mats_list: materialList(field(row, ['app_full_mats_list','full_mats_list']))
