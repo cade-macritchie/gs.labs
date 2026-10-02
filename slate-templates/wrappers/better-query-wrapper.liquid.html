@@ -1,0 +1,13 @@
+<!--
+  BetterQuery Slate wrapper (portal page: enroll.gs.edu/portal/better_query).
+
+  Just an iframe embed — BetterQuery (tools/queryomatic/) talks to the
+  gs-labs-slate-gateway Worker on its own, so no Slate query export or
+  postMessage handoff is needed. The embed previously pointed at the retired
+  enrollmentgateway-lab.github.io/enrollmentgatewaytools/ site, which 404s;
+  paste this over the portal page's HTML to repoint it.
+
+  ?mode=admin matches what the portal page embedded before. Drop it for the
+  plain user view.
+-->
+<iframe id="betterQueryFrame" src="https://cade-macritchie.github.io/gs.labs/tools/queryomatic/?mode=admin" title="BetterQuery" referrerpolicy="origin" style="width:100%;height:100vh;min-height:700px;border:0;display:block"></iframe>
