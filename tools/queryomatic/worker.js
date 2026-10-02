@@ -117,9 +117,27 @@ const QUERY_PARAMETER_KEYS = Object.freeze([
   "app_code",
   "app_createddate_start",
   "app_createddate_end",
+  "person_created_date_start",
+  "person_created_date_end",
   "campus_assigned",
   "alt_form_type",
 ]);
+
+// Date-typed maindb parameters: Slate rejects "" for these, so a blank is
+// omitted from the query rather than sent empty.
+const DATE_PARAMETER_KEYS = Object.freeze([
+  "app_createddate_start",
+  "app_createddate_end",
+  "person_created_date_start",
+  "person_created_date_end",
+]);
+
+// The person-created fields expect M/D/YYYY (no leading zeros); the model
+// returns YYYY-MM-DD. Anything that isn't a YYYY-MM-DD date passes through.
+function toSlatePersonDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${Number(m[2])}/${Number(m[3])}/${m[1]}` : value;
+}
 
 
 
@@ -2497,6 +2515,8 @@ When the user asks for "students", use the exact person_status value "Student" i
 
 Application Created Date is a date range. Use app_createddate_start for the inclusive beginning of the requested range and app_createddate_end for the inclusive end. Return dates in YYYY-MM-DD format. If the user provides only one boundary, leave the other boundary empty. If they name a full month, use its first and last calendar dates. Never return app_createddate.
 
+Person Created Date is a separate date range for when the person's record was created (when they first inquired or entered Slate), not when an application was created. Use person_created_date_start for the inclusive beginning and person_created_date_end for the inclusive end, in YYYY-MM-DD format, following the same rules as Application Created Date. Use it for requests like "inquiries from last month" or "people added since August"; use the app_createddate fields only when the user says application created or submitted. Leave both empty otherwise.
+
 OPTIONS.MD
 ============================================================
 
@@ -2712,9 +2732,13 @@ async function runSlateQuery(
     of Object.entries(normalizedParams)
   ) {
 
+    if (DATE_PARAMETER_KEYS.includes(key) && !value) continue;
+
     url.searchParams.set(
       key,
-      value ?? ""
+      key.startsWith("person_created_date_")
+        ? toSlatePersonDate(value)
+        : value ?? ""
     );
   }
 

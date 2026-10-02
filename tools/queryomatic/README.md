@@ -196,6 +196,7 @@ The main Slate query and Queryomatic currently share this parameter contract:
 - Person identity: `first`, `last`, `sisid`
 - Academic and enrollment: `term`, `year`, `status`, `pipeline`, `teachingsite`, `campus_assigned`, `program`
 - Application: `app_code`, `app_createddate_start`, `app_createddate_end`
+- Person record: `person_created_date_start`, `person_created_date_end` (the model returns `YYYY-MM-DD`; the Worker converts to `M/D/YYYY`, and blank date bounds are omitted rather than sent as `""`)
 - Alternate form population: `alt_form_type` (`Event` for event-associated people)
 
 Keep the `SLATE_QUERY_URL`, the frontend `PARAMS` list, and the Worker's generated JSON schema in sync when adding another parameter. Fixed prompt values belong in `options.md`; free-text identity and date parameters are described directly in the Worker prompt.
