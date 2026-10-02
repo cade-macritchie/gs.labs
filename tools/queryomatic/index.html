@@ -224,26 +224,13 @@
 </style>
 </head>
 <body>
-<div class="wrap" id="loginPanel">
-  <div class="title-mark"><h1>BetterQuery</h1></div>
-  <div class="panel">
-    <h3>Staff sign-in</h3>
-    <p class="hint">Enter the shared staff password to access this tool.</p>
-    <label for="password">Password</label>
-    <input id="password" type="password" autocomplete="current-password" />
-    <div class="row">
-      <button id="loginBtn">Sign in</button>
-      <span class="status" id="loginStatus"></span>
-    </div>
-  </div>
-</div>
 <div class="rail" id="rail" aria-hidden="true">
   <div class="seg" data-step="ask" title="Ask"></div>
   <div class="seg" data-step="parse" title="Parse"></div>
   <div class="seg" data-step="results" title="Results"></div>
 </div>
 
-<div class="wrap" id="appContent" style="display:none;">
+<div class="wrap" id="appContent">
   <div class="title-mark"><h1 id="pageTitle">BetterQuery</h1></div>
   <p class="sub" id="modeSub">Type what you need. Hit Go.</p>
 
@@ -381,46 +368,9 @@
   async function apiFetch(path, options = {}) {
     return fetch(`${WORKER_URL}${path}`, {
       ...options,
-      credentials: "include",
       headers: { ...(options.headers || {}) },
     });
   }
-
-  function showApp() {
-    $("loginPanel").style.display = "none";
-    $("appContent").style.display = "block";
-  }
-
-  async function signIn() {
-    const password = $("password").value;
-    const button = $("loginBtn");
-    button.disabled = true;
-    setStatus($("loginStatus"), "Signing in...");
-    try {
-      const response = await apiFetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Sign-in failed");
-      $("password").value = "";
-      showApp();
-    } catch (error) {
-      setStatus($("loginStatus"), error.message, true);
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  $("loginBtn").addEventListener("click", signIn);
-  $("password").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") signIn();
-  });
-
-  apiFetch("/api/session").then((response) => {
-    if (response.ok) showApp();
-  }).catch(() => {});
 
   // Signature: the top rail always reflects which of the three states we're in.
   function setStep(step, pulsing = false) {

@@ -29,8 +29,6 @@ wrangler secret put SLATE_TOKEN_PROMPTS
 wrangler secret put SLATE_TOKEN_MAINDB
 wrangler secret put ANTHROPIC_API_KEY
 wrangler secret put GITHUB_TOKEN
-wrangler secret put APP_PASSWORD
-wrangler secret put SESSION_SECRET
 
 # The two Slate query URLs (each includes that query's id) — moved here from
 # wrangler.toml [vars] because vars are committed in plaintext. Between them
@@ -182,15 +180,6 @@ with an explicit parameter whitelist, then point the wrapper at
 `${workerBase}/api/slate/<route>` instead of `enroll.gs.edu`. Prefer another
 parameter set over the maindb query to standing up a new Slate query.
 
-`APP_PASSWORD` is the shared password shown to authorized staff. Use a long,
-random password and distribute it only through an approved channel.
-
-`SESSION_SECRET` signs browser sessions. Generate a separate random value (for
-example, with `openssl rand -base64 32`) and never share it. Changing either
-`SESSION_SECRET` invalidates active sessions after their next request. Changing
-`APP_PASSWORD` changes the password required for future sign-ins. Rotate both
-secrets after a password-security event.
-
 Set these via `wrangler secret put` (see above) rather than `wrangler.toml`,
 since `wrangler.toml`'s `[vars]` are committed in plaintext:
 - `SLATE_QUERY_URL` — the query that returns the actual export data
@@ -232,21 +221,16 @@ single-page app.
 
 ## Notes
 
-- The Worker requires the shared password for every API request. Login attempts
-  are limited to five per IP address in a 15-minute window, and sessions expire
-  after eight hours.
+- There is no staff sign-in: the page loads straight into the tool, and the
+  Worker has no `/api/login`, session cookie or `APP_PASSWORD`/`SESSION_SECRET`
+  secret. `/api/generate`, `/api/run` and `/api/options/refresh` are
+  unauthenticated, so treat the Worker URL as sensitive.
 
 - Your Slate tokens (Queryomatic's two, plus the six behind `/api/slate/*`)
   and Anthropic key live only in the Worker (via `wrangler secret`) — never
   in the frontend, a wrapper file, or the repo.
 - The Worker caches the parameter options in KV for 12 hours to cut down
   on Slate calls; call `GET /api/options?refresh=1` to force a refresh.
-- The API also supports a two-step CSV export for integrations. After signing
-  in through `POST /api/login` and retaining its session cookie, send
-  `POST /api/export` with `{ "prompt": "admitted students for fall 2026" }`.
-  The response contains `downloadUrl`; request that URL with `GET` and the
-  same session cookie to receive the CSV. Export files are retained in KV for
-  15 minutes, then `GET` returns `404`.
 - Cloudflare's free tier (100k requests/day) comfortably covers a
   medium-size office.
 - Before scaling this beyond testing, move off your personal Anthropic
