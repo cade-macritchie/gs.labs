@@ -19,6 +19,7 @@ paths" below).
 | `tools/student-lookup/index.html` (Record Lookup) | New brand |
 | `tools/checkin/index.html` (Check-In) | New brand, permanent (no toggle); built tablet/mobile-first |
 | `training/slate-concepts/` (Slate Concepts lesson) | Current brand, unchanged |
+| `training/intro-to-slate/` (Introduction to Slate lesson) | New brand, built on it from the start; staff read it as a bundled artifact (`node training/intro-to-slate/build-artifact.js`, which inlines the Tiempos fonts and logo) |
 | The 5 report dashboards (`reports/funnel-overview/`, `reports/teaching-site-overview/`, `reports/regional-campus/`, `reports/enrollment-events/`, `reports/advancement-student-life-events/`) | Current brand, unchanged |
 | `pipeline-overview/` (not linked from the homepage) | Current brand, unchanged |
 
