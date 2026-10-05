@@ -14,12 +14,12 @@ paths" below).
 | `index.html` (homepage) — header, hero, tab bar | New brand, permanent |
 | `index.html` — Reports tab (Funnel Overview, Teaching Sites, Regional Campus Portal, Enrollment Events, Advancement and Student Life Events) | New brand |
 | `index.html` — Tools tab (BetterQuery, Record Lookup) | New brand |
-| `index.html` — Training Materials tab (Slate Video Training Documents folder: Introduction to Slate, Slate Concepts) | New brand |
+| `index.html` — Training Materials tab (Slate Video Training Documents folder: Introduction to Slate, Person Record, Application Record, Slate Concepts) | New brand |
 | `tools/queryomatic/index.html` (BetterQuery) | New brand |
 | `tools/student-lookup/index.html` (Record Lookup) | New brand |
 | `tools/checkin/index.html` (Check-In) | New brand, permanent (no toggle); built tablet/mobile-first |
 | `training/slate-concepts/` (Slate Concepts lesson) | Current brand, unchanged |
-| `training/intro-to-slate/` (Introduction to Slate lesson) | New brand, built on it from the start; staff read it as a bundled artifact (`node training/intro-to-slate/build-artifact.js`, which inlines the Tiempos fonts and logo) |
+| `training/intro-to-slate/`, `training/person-record/`, `training/application-record/` (Slate video training lessons) | New brand, built on it from the start; staff read them as bundled artifacts (`node training/build-artifact.js <lesson-folder>`, which inlines the Tiempos fonts and logo) |
 | The 5 report dashboards (`reports/funnel-overview/`, `reports/teaching-site-overview/`, `reports/regional-campus/`, `reports/enrollment-events/`, `reports/advancement-student-life-events/`) | Current brand, unchanged |
 | `pipeline-overview/` (not linked from the homepage) | Current brand, unchanged |
 

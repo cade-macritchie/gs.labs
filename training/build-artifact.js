@@ -1,13 +1,18 @@
-// Bundles index.html into a single self-contained file suitable for publishing
-// as a Claude Artifact, which can't load relative-path assets. The Tiempos Fine
-// fonts and the GS logo are inlined as data URIs, and links back to the tools
-// homepage are made absolute. Run with:
-//   node training/intro-to-slate/build-artifact.js > training/intro-to-slate/artifact.html
+// Bundles one training lesson's index.html into a single self-contained file
+// suitable for publishing as a Claude Artifact, which can't load relative-path
+// assets. The Tiempos Fine fonts and the GS logo are inlined as data URIs, and
+// links back to the tools homepage are made absolute. Run with the lesson's
+// folder name:
+//   node training/build-artifact.js intro-to-slate > intro-to-slate.html
+// Works for the new-brand lessons (intro-to-slate, person-record,
+// application-record). slate-concepts has its own build script.
 const fs = require('fs');
 const path = require('path');
 
-const dir = __dirname;
-const repo = path.join(dir, '..', '..');
+const lesson = process.argv[2];
+if (!lesson) throw new Error('Usage: node training/build-artifact.js <lesson-folder>');
+const dir = path.join(__dirname, lesson);
+const repo = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
 
 const HOMEPAGE = 'https://cade-macritchie.github.io/gs.labs/';

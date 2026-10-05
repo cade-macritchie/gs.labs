@@ -1,0 +1,1398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Understanding the Person Record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+
+@font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* Layout: full-bleed chapters alternating canvas, white, and the brand's dark
+   surfaces (black, teal), with content in a 1200px shell.
+   GS 2026 brand (see BRANDGUIDE.md at the repo root): the guide's 7 swatches only, plus the
+   neutral canvas/border/muted values already used on the other new-brand pages.
+   No invented tints — light states are outlined instead of filled. */
+:root {
+  --black: #0c0f14;
+  --darkgray: #2c343a;
+  --teal: #234048;
+  --rust: #c44329;
+  --gold: #d3a422;
+  --grayblue: #708aa2;
+  --white: #ffffff;
+  --ink: #2c343a;
+  --muted: #5c6670;
+  --border: #dcd8d0;
+  --canvas: #f4f2ee;
+
+  --radius: 4px;
+  --shadow: 0 4px 16px rgba(12, 15, 20, .08);
+  --shadow-lg: 0 24px 60px rgba(12, 15, 20, .22);
+
+  --font-heading: 'Tiempos Fine', Georgia, serif;
+  --font-subheading: Montserrat, 'Segoe UI', sans-serif;
+  --font-body: 'Open Sans', system-ui, sans-serif;
+
+  --ease: cubic-bezier(.2, .75, .2, 1);
+  --slam: cubic-bezier(.2, 1.6, .4, 1);
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 60px; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+h1, h2, h3, h4 { margin: 0; font-family: var(--font-heading); font-weight: 600; text-wrap: balance; }
+p { margin: 0; }
+em { font-style: normal; }
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+svg { display: block; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+}
+.skip-link {
+  position: fixed; z-index: 1000; top: 12px; left: 12px;
+  padding: 10px 16px; color: var(--black); background: var(--gold);
+  border-radius: var(--radius); font: 700 .8rem var(--font-subheading);
+  transform: translateY(-160%);
+}
+.skip-link:focus { transform: none; }
+
+.shell { width: min(1200px, calc(100% - 32px)); margin-inline: auto; }
+
+/* ---------- Header ---------- */
+.site-header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px clamp(16px, 4vw, 48px);
+  color: var(--white);
+  background: linear-gradient(120deg, var(--black), var(--darkgray));
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+}
+.wordmark { display: flex; align-items: center; text-decoration: none; }
+.wordmark img { height: 24px; width: auto; }
+.header-divider { width: 1px; height: 30px; background: rgba(255, 255, 255, .28); }
+.page-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--gold); font: 700 .74rem var(--font-subheading);
+  letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
+}
+.page-title::before, .page-title::after { content: ''; width: 14px; height: 1px; background: var(--gold); }
+.home-link {
+  display: inline-flex; align-items: center; gap: 8px; margin-left: auto;
+  color: rgba(255, 255, 255, .78); font: 700 .74rem var(--font-subheading);
+  letter-spacing: .04em; text-decoration: none;
+}
+.home-link:hover { color: var(--gold); }
+.home-link svg { width: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Chapter bar ---------- */
+.chapter-bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 80;
+  color: var(--white); background: rgba(12, 15, 20, .94);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.chapter-links {
+  display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+  width: min(1200px, calc(100% - 32px)); margin-inline: auto;
+}
+.chapter-links::-webkit-scrollbar { display: none; }
+.chapter-links a {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: 13px 14px; color: rgba(255, 255, 255, .58);
+  font: 700 .7rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase;
+  text-decoration: none; transition: color .2s ease;
+}
+.chapter-links a span { color: rgba(255, 255, 255, .32); font: 600 .95rem var(--font-heading); letter-spacing: 0; transition: color .2s ease; }
+.chapter-links a:hover, .chapter-links a.active { color: var(--white); }
+.chapter-links a.active span { color: var(--gold); }
+.chapter-progress { height: 2px; background: rgba(255, 255, 255, .1); }
+.chapter-progress span { display: block; width: 0; height: 100%; background: var(--gold); }
+
+/* ---------- Shared type ---------- */
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px; margin: 0 0 14px;
+  color: var(--rust); font: 800 .72rem var(--font-subheading);
+  letter-spacing: .16em; line-height: 1.4; text-transform: uppercase;
+}
+.eyebrow::before, .eyebrow::after { content: ''; flex: 0 0 auto; width: 24px; height: 2px; background: currentColor; }
+.on-dark .eyebrow { color: var(--gold); }
+
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px; padding: 12px 20px;
+  border: 1px solid transparent; border-radius: var(--radius);
+  font: 800 .74rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase;
+  text-decoration: none; cursor: pointer;
+  transition: transform .18s ease, background-color .18s ease, color .18s ease, border-color .18s ease;
+}
+.button:hover { transform: translateY(-2px); }
+.button-gold { color: var(--black); background: var(--gold); }
+.button-gold:hover { color: var(--white); background: var(--black); }
+.on-dark .button-gold:hover { color: var(--black); background: var(--white); }
+.button-ghost { color: var(--white); border-color: rgba(255, 255, 255, .35); background: transparent; }
+.button-ghost:hover { border-color: var(--gold); color: var(--gold); }
+.button-outline { color: var(--darkgray); border-color: var(--darkgray); background: transparent; }
+.button-outline:hover { color: var(--white); background: var(--black); border-color: var(--black); }
+.button:disabled { opacity: .4; cursor: default; transform: none; }
+.button svg { width: 14px; height: 14px; fill: currentColor; }
+
+/* ---------- Hero ---------- */
+.hero {
+  position: relative; isolation: isolate; overflow: hidden;
+  color: var(--white);
+  background: linear-gradient(126deg, var(--black) 0%, var(--black) 45%, var(--darkgray) 100%);
+}
+.hero::after {
+  content: ''; position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 5px;
+  background: linear-gradient(90deg, var(--rust) 0 33.33%, var(--gold) 33.33% 66.66%, var(--grayblue) 66.66% 100%);
+}
+#constellation { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; }
+.hero-inner {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, .7fr);
+  gap: clamp(40px, 7vw, 96px); align-items: center;
+  padding-block: clamp(64px, 9vw, 116px);
+}
+.hero h1 {
+  font-size: clamp(2.7rem, 6.2vw, 5.4rem); font-weight: 600;
+  line-height: 1.04; letter-spacing: -.02em;
+}
+.hl { display: block; overflow: hidden; padding-bottom: .06em; }
+.hl > span { display: inline-block; animation: lineUp 1s var(--ease) both; animation-delay: calc(.15s + var(--i) * .16s); }
+.hero h1 em { position: relative; color: var(--gold); }
+.hero h1 em::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: .02em; height: .07em;
+  background: var(--gold); transform-origin: left;
+  animation: underline .8s var(--ease) both; animation-delay: calc(.8s + var(--i) * .2s);
+}
+.hero-rule { width: 40px; height: 3px; margin: 30px 0 0; background: var(--gold); }
+.hero-lede { max-width: 58ch; margin-top: 22px; color: rgba(255, 255, 255, .74); font-size: 1.06rem; line-height: 1.8; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+
+.lesson-card {
+  position: relative; padding: clamp(24px, 3vw, 34px);
+  color: var(--ink); background: var(--white);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  animation: cardIn 1s var(--ease) .5s both;
+}
+.lesson-card::before {
+  content: ''; position: absolute; top: -12px; right: 26px;
+  width: 46px; height: 24px; border: 2px solid var(--gold); border-bottom: 0;
+}
+.card-kicker { color: var(--rust); font: 800 .7rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.lesson-card h2 { margin-top: 6px; font-size: 1.6rem; line-height: 1.2; }
+.lesson-card h2::after { content: ''; display: block; width: 40px; height: 2px; margin-top: 14px; background: var(--rust); }
+.lesson-list { display: grid; margin: 18px 0 0; padding: 0; list-style: none; }
+.lesson-list a {
+  display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: center;
+  padding: 13px 0; border-top: 1px solid var(--border); text-decoration: none;
+  transition: padding .2s ease;
+}
+.lesson-list li:first-child a { border-top: 0; }
+.lesson-list a:hover { padding-left: 6px; }
+.lesson-list .idx { color: var(--rust); font: 600 1.25rem var(--font-heading); }
+.lesson-list strong { display: block; font: 700 .82rem var(--font-subheading); letter-spacing: .02em; }
+.lesson-list small { display: block; color: var(--muted); font-size: .84rem; line-height: 1.4; }
+.lesson-list .go { color: var(--border); font-weight: 700; transition: color .2s ease, transform .2s ease; }
+.lesson-list a:hover .go { color: var(--gold); transform: translateX(3px); }
+.card-foot {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-top: 16px;
+  border-top: 1px solid var(--border); color: var(--muted);
+  font: 600 .8rem var(--font-subheading);
+}
+.card-foot svg { width: 22px; height: 22px; flex: 0 0 auto; fill: none; stroke: var(--teal); stroke-width: 1.6; }
+
+/* ---------- Chapters ---------- */
+.chapter { padding-block: clamp(72px, 9vw, 128px); }
+.chapter.white { background: var(--white); }
+.chapter.teal { color: var(--white); background: var(--teal); }
+.chapter.black { color: var(--white); background: var(--black); }
+
+.chapter-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: clamp(16px, 3vw, 28px); align-items: start; max-width: 900px; }
+.chapter-num { color: var(--rust); font: 600 clamp(3rem, 6vw, 4.8rem)/.85 var(--font-heading); font-variant-numeric: tabular-nums; }
+.on-dark .chapter-num { color: var(--gold); }
+.chapter-head .eyebrow { margin-bottom: 8px; }
+.chapter-head h2 { font-size: clamp(2.1rem, 4.4vw, 3.5rem); line-height: 1.08; letter-spacing: -.015em; }
+.chapter-head h2 em { color: var(--gold); }
+.chapter-head h2::after { content: ''; display: block; width: 40px; height: 3px; margin-top: 20px; background: var(--rust); }
+.on-dark .chapter-head h2::after { background: var(--gold); }
+.lede { max-width: 66ch; margin-top: 20px; color: var(--muted); font-size: 1.05rem; line-height: 1.8; }
+.on-dark .lede { color: rgba(255, 255, 255, .76); }
+
+.sub { margin-top: clamp(72px, 9vw, 112px); }
+.sub-head { max-width: 760px; }
+.sub-head.center { margin-inline: auto; text-align: center; }
+.sub-head h3 { font-size: clamp(1.75rem, 3.2vw, 2.5rem); line-height: 1.14; letter-spacing: -.01em; }
+.sub-head h3::after { content: ''; display: block; width: 40px; height: 2px; margin-top: 16px; background: var(--rust); }
+.sub-head.center h3::after { margin-inline: auto; }
+.on-dark .sub-head h3::after { background: var(--gold); }
+.sub-head p { margin-top: 16px; color: var(--muted); font-size: 1rem; line-height: 1.75; }
+.on-dark .sub-head p { color: rgba(255, 255, 255, .74); }
+
+/* Reveal: elements are fully visible by default. JS "arms" only those below
+   the fold, and the observer releases them into their resting state. */
+.reveal { transition: opacity .8s var(--ease), transform .8s var(--ease); }
+.armed:not(.is-in).reveal, .armed:not(.is-in) .reveal { opacity: 0; transform: translateY(26px); }
+.armed:not(.is-in), .armed:not(.is-in) *, .armed:not(.is-in) *::before, .armed:not(.is-in) *::after {
+  transition-duration: 0s !important; transition-delay: 0s !important;
+}
+
+/* ---------- Shared record pieces ---------- */
+.rec-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.avatar {
+  display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px;
+  color: var(--gold); background: var(--black); border-radius: 50%;
+  font: 700 .95rem var(--font-heading);
+}
+.rec-head h4 { font-size: 1.15rem; line-height: 1.2; }
+.rec-head p { color: var(--muted); font: 700 .62rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+.rec-label { display: flex; align-items: center; gap: 8px; padding: 12px 18px 4px; color: var(--rust); font: 800 .62rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.rec-label::after { content: ''; width: 24px; height: 2px; background: var(--rust); }
+.timeline { display: grid; margin: 0; padding: 0 18px 8px; list-style: none; }
+.timeline li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); font-size: .84rem; line-height: 1.35; }
+.timeline li:first-child { border-top: 0; }
+.timeline li.new { animation: newEntry 1.2s var(--ease); }
+.tag {
+  padding: 3px 0; color: var(--teal); border: 1px solid var(--teal); border-radius: var(--radius);
+  font: 800 .58rem var(--font-subheading); letter-spacing: .08em; text-align: center; text-transform: uppercase;
+}
+.rec-foot { padding: 10px 18px 14px; color: var(--muted); border-top: 1px solid var(--border); font-size: .74rem; }
+
+/* ---------- Recap ---------- */
+.recap-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 48px; }
+.recap-tile { padding: 26px 24px; border: 1px solid rgba(255, 255, 255, .16); border-radius: var(--radius); }
+.recap-tile.reveal:nth-child(2) { transition-delay: .1s; }
+.recap-tile.reveal:nth-child(3) { transition-delay: .2s; }
+.recap-tile.reveal:nth-child(4) { transition-delay: .3s; }
+.recap-tile small { color: var(--gold); font: 800 .66rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.recap-tile small::after { content: ''; display: block; width: 24px; height: 2px; margin-top: 10px; background: var(--gold); }
+.recap-tile p { margin-top: 14px; font: 600 1.2rem/1.35 var(--font-heading); }
+.areas { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.areas li { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, .12); font: 700 .78rem var(--font-subheading); }
+.areas li:last-child { border-bottom: 0; padding-bottom: 0; }
+.areas li span { color: rgba(255, 255, 255, .55); font: 400 .78rem var(--font-body); text-align: right; }
+.up-next {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 22px;
+  margin-top: 40px; padding: clamp(24px, 4vw, 36px); border: 1px solid var(--gold); border-radius: var(--radius);
+}
+.up-next h3 { font-size: clamp(1.5rem, 2.6vw, 2rem); }
+.up-next p { max-width: 60ch; margin-top: 8px; color: rgba(255, 255, 255, .72); }
+.up-next .eyebrow { margin-bottom: 6px; }
+
+.site-footer {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 26px clamp(16px, 4vw, 48px); color: rgba(255, 255, 255, .55);
+  background: var(--black); border-top: 1px solid rgba(255, 255, 255, .1); font-size: .78rem;
+}
+.site-footer img { height: 22px; width: auto; }
+.site-footer p { max-width: 520px; text-align: right; }
+.recap-grid.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+
+/* ---------- Previously band ---------- */
+.review { background: var(--white); border-bottom: 1px solid var(--border); }
+.review-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 28px; padding-block: 22px; }
+.review-label { color: var(--rust); font: 800 .68rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.review-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.review-chips span { padding: 5px 10px; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius); font: 700 .72rem var(--font-subheading); }
+.review-chips span.on { color: var(--white); background: var(--black); border-color: var(--black); }
+.review p { flex: 1 1 280px; color: var(--muted); font-size: .92rem; }
+.review p strong { color: var(--ink); }
+.review a { color: var(--teal); font: 700 .76rem var(--font-subheading); text-decoration: none; border-bottom: 1px solid currentColor; white-space: nowrap; }
+
+.two-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 80px); align-items: center; margin-top: 48px; }
+.points { display: grid; gap: 22px; margin: 0; padding: 0; list-style: none; }
+.points li { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; }
+.points .pn { color: var(--rust); font: 600 1.9rem/1 var(--font-heading); }
+.points strong { display: block; font: 600 1.25rem/1.25 var(--font-heading); }
+.points p { margin-top: 6px; color: var(--muted); }
+
+/* ---------- 01 Folder ---------- */
+.folder-scene { position: relative; width: 100%; max-width: 440px; height: clamp(340px, 38vw, 420px); margin-inline: auto; }
+.f-back { position: absolute; left: 5%; right: 5%; top: 16%; bottom: 4%; background: var(--darkgray); border-radius: var(--radius); }
+.f-back::before { content: ''; position: absolute; top: -24px; left: 0; width: 40%; height: 26px; background: var(--darkgray); border-radius: var(--radius) var(--radius) 0 0; }
+.paper {
+  position: absolute; left: 11%; right: 11%; height: 58%;
+  top: calc(50% - 40px - (4 - var(--k)) * 30px);
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 14px; background: var(--white); border: 1px solid var(--border); border-radius: 2px;
+  box-shadow: 0 -2px 8px rgba(12, 15, 20, .12);
+  transform: rotate(var(--rot)); transition: transform .7s var(--slam), opacity .4s ease;
+}
+.paper b { color: var(--rust); font: 600 .95rem var(--font-heading); font-variant-numeric: tabular-nums; }
+.paper span { font: 700 .74rem/1.5 var(--font-subheading); }
+.paper.out { opacity: 0; transform: translateY(-70px) rotate(var(--rot)); }
+.f-front {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 50%; z-index: 6;
+  display: grid; align-content: center; justify-items: center; gap: 4px;
+  background: var(--gold); border-radius: var(--radius);
+  clip-path: polygon(2% 0, 98% 0, 100% 100%, 0 100%);
+}
+.f-label { padding: 10px 22px; background: var(--white); border-radius: 2px; text-align: center; box-shadow: 0 2px 0 rgba(12, 15, 20, .18); }
+.f-label strong { display: block; color: var(--black); font: 700 1.5rem/1.1 var(--font-heading); }
+.f-label small { color: var(--muted); font: 800 .6rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.f-count { color: var(--black); font: 800 .66rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; }
+.f-count b { font-variant-numeric: tabular-nums; }
+
+/* ---------- 02 Anatomy ---------- */
+.anatomy { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: clamp(20px, 3vw, 32px); align-items: start; margin-top: 44px; }
+.mock { overflow: hidden; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.zone {
+  position: relative; display: block; width: 100%; padding: 16px 52px 16px 20px; text-align: left;
+  color: var(--ink); background: var(--white); border: 0; border-top: 1px solid var(--border); cursor: pointer;
+  transition: background-color .25s ease, box-shadow .25s ease;
+}
+.zone:hover { background: var(--canvas); }
+.zone.active { background: var(--canvas); box-shadow: inset 0 0 0 2px var(--gold); }
+.zone-n {
+  position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 26px; height: 26px;
+  color: var(--rust); border: 1.5px solid var(--rust); border-radius: 50%; font: 700 .8rem var(--font-heading);
+  transition: background-color .25s ease, color .25s ease, border-color .25s ease;
+}
+.zone.active .zone-n { color: var(--black); background: var(--gold); border-color: var(--gold); }
+.zone-t { display: block; margin-bottom: 8px; color: var(--muted); font: 800 .62rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.zone.head { display: flex; align-items: center; gap: 16px; padding: 20px 52px 20px 22px; color: var(--white); background: var(--black); border-top: 0; }
+.zone.head:hover { background: var(--black); }
+.zone.head.active { background: var(--black); box-shadow: inset 0 0 0 3px var(--gold); }
+.zone.head .zone-n { color: var(--gold); border-color: var(--gold); }
+.zone.head .avatar { width: 56px; height: 56px; color: var(--black); background: var(--gold); font-size: 1.2rem; }
+.zone.head strong { display: block; font: 600 1.55rem/1.1 var(--font-heading); }
+.zone.head small { color: rgba(255, 255, 255, .62); font: 700 .66rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+.pill { display: inline-block; margin-top: 8px; padding: 3px 9px; color: var(--gold); border: 1.5px solid var(--gold); border-radius: var(--radius); font: 800 .62rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.mock-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.mock-grid .zone:nth-child(odd) { border-right: 1px solid var(--border); }
+.mock-grid .zone.wide { grid-column: 1 / -1; border-right: 0; }
+.kv { display: grid; gap: 5px; margin: 0; }
+.kv div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; font-size: .84rem; line-height: 1.4; }
+.kv dt { color: var(--muted); font: 700 .62rem/1.9 var(--font-subheading); letter-spacing: .06em; text-transform: uppercase; }
+.kv dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.mini-tl { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.mini-tl li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: .84rem; }
+.mini-tl li em { color: var(--muted); font-size: .76rem; font-variant-numeric: tabular-nums; }
+.app-rows { display: grid; gap: 6px; }
+.app-rows span { display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; border: 1px solid var(--border); border-left: 3px solid var(--grayblue); border-radius: 2px; font-size: .8rem; font-weight: 600; }
+.app-rows span em { color: var(--muted); font-weight: 400; white-space: nowrap; }
+.note-line { padding-left: 10px; border-left: 2px solid var(--gold); font-family: var(--font-heading); font-size: .98rem; line-height: 1.45; }
+.note-line small { display: block; margin-top: 4px; color: var(--muted); font: 600 .7rem var(--font-subheading); }
+
+.explain { position: sticky; top: 72px; padding: clamp(22px, 3vw, 30px); color: var(--white); background: var(--black); border-radius: var(--radius); }
+.explain-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.explain-idx { color: var(--gold); font: 600 1.05rem var(--font-heading); font-variant-numeric: tabular-nums; }
+.explain h3 { margin-top: 12px; font-size: 1.7rem; line-height: 1.15; }
+.explain h3::after { content: ''; display: block; width: 32px; height: 2px; margin-top: 14px; background: var(--gold); }
+.explain p { margin-top: 14px; color: rgba(255, 255, 255, .8); }
+.explain .ask { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--gold); border-radius: var(--radius); }
+.explain .ask small { display: block; color: var(--gold); font: 800 .62rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.explain .ask span { display: block; margin-top: 4px; font-family: var(--font-heading); font-size: 1.05rem; line-height: 1.4; }
+.explain-body { animation: swapIn .45s var(--ease); }
+.dots { display: flex; gap: 6px; }
+.dots button { width: 10px; height: 10px; padding: 0; border: 1.5px solid rgba(255, 255, 255, .45); border-radius: 50%; background: transparent; cursor: pointer; }
+.dots button.on { background: var(--gold); border-color: var(--gold); }
+.explain-nav { display: flex; gap: 8px; margin-top: 22px; }
+.ghost-sm {
+  padding: 8px 12px; color: var(--white); background: transparent; border: 1px solid rgba(255, 255, 255, .3); border-radius: var(--radius);
+  font: 800 .66rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+}
+.ghost-sm:hover { color: var(--black); background: var(--gold); border-color: var(--gold); }
+
+/* ---------- 03 Status ---------- */
+.stairs { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; align-items: end; height: 300px; margin-top: 76px; }
+.stair {
+  position: relative; height: calc(34% + var(--s) * 16.5%); display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
+  padding: 14px; border: 1px solid rgba(255, 255, 255, .25); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+  background: rgba(255, 255, 255, .03);
+  transition: background-color .4s ease, border-color .4s ease, color .4s ease;
+}
+.stair b { color: rgba(255, 255, 255, .45); font: 600 1.4rem/1 var(--font-heading); transition: color .4s ease; }
+.stair strong { font: 600 1.2rem/1.15 var(--font-heading); }
+.stair small { color: rgba(255, 255, 255, .6); font-size: .78rem; line-height: 1.4; transition: color .4s ease; }
+.stair.reached { border-color: var(--gold); background: rgba(255, 255, 255, .08); box-shadow: inset 0 3px 0 var(--gold); }
+.stair.reached b { color: var(--gold); }
+.stair.current { color: var(--black); background: var(--gold); border-color: var(--gold); }
+.stair.current b, .stair.current small { color: var(--black); }
+.stair-token {
+  position: absolute; z-index: 3; top: 0; left: 0; display: grid; place-items: center; width: 40px; height: 40px;
+  color: var(--gold); background: var(--black); border: 2px solid var(--gold); border-radius: 50%;
+  font: 700 .85rem var(--font-heading); transition: transform .8s var(--slam);
+}
+.stair-token.nudge { animation: nudge .9s var(--ease); }
+.stairs-base { height: 3px; background: var(--gold); }
+.scrub { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin-top: 26px; }
+.scrub button {
+  display: grid; gap: 2px; padding: 10px 10px 12px; text-align: left; color: rgba(255, 255, 255, .62);
+  background: transparent; border: 1px solid rgba(255, 255, 255, .18); border-radius: var(--radius); cursor: pointer;
+  transition: border-color .25s ease, color .25s ease, background-color .25s ease;
+}
+.scrub button b { font: 600 1.05rem var(--font-heading); font-variant-numeric: tabular-nums; }
+.scrub button span { font: 700 .66rem/1.35 var(--font-subheading); }
+.scrub button:hover { color: var(--white); border-color: rgba(255, 255, 255, .45); }
+.scrub button.on { color: var(--black); background: var(--white); border-color: var(--white); }
+.status-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; margin-top: 16px; }
+.status-now { flex: 1 1 320px; padding: 14px 18px; border: 1px solid rgba(255, 255, 255, .2); border-radius: var(--radius); font-size: .95rem; }
+.status-now strong { color: var(--gold); }
+.status-now.alert { border-color: var(--gold); }
+.remember { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; padding: 2px 8px; color: var(--black); background: var(--gold); border-radius: var(--radius); font: 800 .62rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+
+.pop-compare { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 18px; align-items: stretch; margin-top: 56px; }
+.pop-box { padding: 24px; border: 1px solid rgba(255, 255, 255, .2); border-radius: var(--radius); }
+.pop-box small { color: rgba(255, 255, 255, .6); font: 800 .62rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.pop-box h4 { margin-top: 6px; font-size: 1.3rem; }
+.pop-box p { margin-top: 6px; color: rgba(255, 255, 255, .72); font-size: .9rem; }
+.pop-people { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.pop-people span { padding: 5px 9px; border: 1px solid rgba(255, 255, 255, .3); border-radius: var(--radius); font: 700 .72rem var(--font-subheading); }
+.pop-people .jordan { color: var(--black); background: var(--gold); border-color: var(--gold); transition: transform .7s var(--slam) .3s, opacity .4s ease .3s; }
+.pop-people .missed { color: var(--rust); border: 1.5px dashed var(--rust); background: transparent; }
+.pop-box.hit { border-color: var(--gold); }
+.armed:not(.is-in) .pop-people .jordan { opacity: 0; transform: translateY(-24px) scale(.8); }
+.pop-vs { align-self: center; display: grid; place-items: center; width: 42px; height: 42px; color: var(--black); background: var(--white); border-radius: 50%; font: 600 .9rem var(--font-heading); }
+.verdict { display: block; margin-top: 14px; font: 800 .64rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; }
+.verdict.bad { color: var(--rust); }
+.verdict.good { color: var(--gold); }
+
+/* ---------- 04 Sources ---------- */
+.flow { position: relative; max-width: 1040px; aspect-ratio: 1000 / 440; margin: 48px auto 0; }
+#flow-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.flow-path { fill: none; stroke: var(--border); stroke-width: 2; stroke-dasharray: 4 7; animation: dash 1.4s linear infinite; }
+.flow-path.yes { stroke: var(--teal); stroke-dasharray: none; opacity: .35; animation: none; }
+.flow-path.no { stroke: var(--gold); stroke-dasharray: none; opacity: .55; animation: none; }
+.fpacket { fill: var(--darkgray); }
+.fpacket.match { fill: var(--teal); }
+.fpacket.new { fill: var(--gold); }
+.flow-nodes { position: absolute; inset: 0; }
+.door {
+  position: absolute; display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 9px; transform: translate(-50%, -50%);
+  background: var(--white); border: 1px solid var(--border); border-radius: var(--radius);
+  font: 700 .78rem var(--font-subheading); white-space: nowrap; transition: border-color .3s ease, box-shadow .3s ease;
+}
+.door.ping { border-color: var(--gold); box-shadow: 0 0 0 5px rgba(211, 164, 34, .25); }
+.door i { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--teal); border-radius: 50%; }
+.door svg, .out svg { width: 16px; height: 16px; fill: none; stroke: var(--teal); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.gate { position: absolute; left: 50%; top: 50%; width: 150px; height: 150px; transform: translate(-50%, -50%); display: grid; place-items: center; text-align: center; }
+.gate::before { content: ''; position: absolute; inset: 18px; background: var(--black); border: 2px solid var(--gold); border-radius: var(--radius); transform: rotate(45deg); transition: box-shadow .3s ease; }
+.gate.ping::before { box-shadow: 0 0 0 8px rgba(211, 164, 34, .3); }
+.gate span { position: relative; color: var(--white); font: 600 1rem/1.15 var(--font-heading); }
+.gate small { display: block; color: var(--gold); font: 800 .56rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.out {
+  position: absolute; width: 22%; transform: translate(-50%, -50%); padding: 14px 16px;
+  background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.out.yes { border-top: 3px solid var(--teal); }
+.out.no { border-top: 3px solid var(--gold); }
+.out.ping { animation: cardGlow .7s ease; }
+.out-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.out small { font: 800 .6rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; }
+.out.yes small { color: var(--teal); }
+.out.no small { color: var(--darkgray); }
+.out strong { display: block; margin-top: 4px; font: 600 1.05rem/1.25 var(--font-heading); }
+.out b { font: 600 1.7rem/1 var(--font-heading); font-variant-numeric: tabular-nums; }
+.flow-merge { display: none; }
+
+.dup { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: clamp(24px, 4vw, 56px); align-items: center; margin-top: clamp(64px, 8vw, 96px); }
+.dup-stage { position: relative; min-height: 320px; }
+.dup-cards { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; transition: gap .6s var(--ease); }
+.dup-card { overflow: hidden; background: var(--white); border: 1px solid var(--border); border-top: 3px solid var(--rust); border-radius: var(--radius); box-shadow: var(--shadow); transition: transform .7s var(--ease), opacity .5s ease, border-color .4s ease; }
+.dup-card .rec-head { padding: 12px 14px; }
+.dup-card .rec-head p { text-transform: none; letter-spacing: 0; font: 600 .74rem var(--font-body); overflow-wrap: anywhere; }
+.dup-card .timeline { padding: 0 14px 8px; }
+.dup-flag { display: inline-block; margin: 10px 14px 0; padding: 2px 8px; color: var(--rust); border: 1.5px solid var(--rust); border-radius: var(--radius); font: 800 .58rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.dup-stage.merged .dup-cards { grid-template-columns: minmax(0, 1fr); }
+.dup-stage.merged .dup-b { display: none; }
+.dup-stage.merged .dup-a { border-top-color: var(--teal); }
+.dup-stage.merged .dup-flag { color: var(--teal); border-color: var(--teal); }
+.dup-stage.merging .dup-b { transform: translateX(-60%) scale(.9); opacity: 0; }
+.dup-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+.dup-status { color: var(--muted); font-size: .88rem; }
+
+/* ---------- 05 Habits ---------- */
+.habits { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-top: 44px; }
+.habit { padding: 22px 20px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); }
+.habit.reveal:nth-child(2) { transition-delay: .08s; }
+.habit.reveal:nth-child(3) { transition-delay: .16s; }
+.habit.reveal:nth-child(4) { transition-delay: .24s; }
+.habit.reveal:nth-child(5) { transition-delay: .32s; }
+.habit svg { width: 40px; height: 40px; fill: none; stroke: var(--teal); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.habit svg .hot { stroke: var(--gold); }
+.habit h4 { margin-top: 14px; font-size: 1.15rem; line-height: 1.2; }
+.habit h4::after { content: ''; display: block; width: 28px; height: 2px; margin-top: 10px; background: var(--rust); }
+.habit p { margin-top: 10px; color: var(--muted); font-size: .88rem; line-height: 1.55; }
+.notes-compare { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr); gap: 16px; align-items: center; margin-top: 40px; }
+.note-card { padding: 22px 24px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); }
+.note-card small { display: inline-block; padding: 2px 8px; border: 1.5px solid currentColor; border-radius: var(--radius); font: 800 .6rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; }
+.note-card.vague small { color: var(--rust); }
+.note-card.good small { color: var(--teal); }
+.note-card p { margin-top: 12px; font: 600 1.15rem/1.45 var(--font-heading); min-height: 1.45em; }
+.note-card.vague p { color: var(--muted); }
+.note-card .why { margin-top: 10px; color: var(--muted); font: 400 .84rem var(--font-body); min-height: 0; }
+.typed::after { content: '|'; margin-left: 1px; color: var(--gold); animation: blink 1s steps(1) infinite; }
+.typed.done::after { content: ''; }
+.n-arrow { color: var(--gold); font: 600 1.8rem var(--font-heading); }
+
+/* ---------- Keyframes ---------- */
+@keyframes lineUp { from { transform: translateY(108%); } to { transform: none; } }
+@keyframes underline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes cardIn { from { opacity: 0; transform: translateX(40px) rotate(1.5deg); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(1.35, 1.9); opacity: 0; } }
+@keyframes bob { 50% { transform: translateY(-4px); } }
+@keyframes ripple { 0% { transform: scale(.3); opacity: .9; } 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes turn { 0%, 15% { transform: scaleX(1); } 45%, 70% { transform: scaleX(-1); } 100% { transform: scaleX(1); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes hop { 0% { translate: 0 0; } 35% { translate: 0 -38px; } 70% { translate: 0 4px; } 100% { translate: 0 0; } }
+@keyframes shadowHop { 35% { transform: scale(.6); opacity: .5; } }
+@keyframes bang { 0% { transform: scale(.2) rotate(-30deg); opacity: 0; } 60% { transform: scale(1.25) rotate(8deg); opacity: 1; } 100% { transform: none; } }
+@keyframes crowd { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes dash { to { stroke-dashoffset: -22; } }
+@keyframes cardGlow { 0% { box-shadow: var(--shadow-lg), 0 0 0 0 rgba(211, 164, 34, .5); } 100% { box-shadow: var(--shadow-lg), 0 0 0 14px rgba(211, 164, 34, 0); } }
+@keyframes newEntry { 0% { opacity: 0; transform: translateY(-10px); box-shadow: inset 3px 0 0 var(--gold); } 30% { opacity: 1; transform: none; } 100% { box-shadow: inset 0 0 0 var(--gold); } }
+@keyframes run { 0% { left: 12.5%; opacity: 0; } 6% { opacity: 1; } 75% { left: 87.5%; opacity: 1; } 90%, 100% { left: 87.5%; opacity: 0; } }
+@keyframes lit { 0%, 4% { border-color: rgba(255, 255, 255, .45); background: var(--teal); } 8%, 22% { border-color: var(--gold); background: var(--gold); } 34%, 100% { border-color: rgba(255, 255, 255, .45); background: var(--teal); } }
+@keyframes runner { 0% { transform: translateX(0); opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { transform: translateX(96px); opacity: 0; } }
+@keyframes confetti {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  40% { transform: translate(calc(var(--x) * .6), var(--y)) rotate(calc(var(--r) * .5)); opacity: 1; }
+  100% { transform: translate(var(--x), calc(var(--y) * -.4)) rotate(var(--r)); opacity: 0; }
+}
+@keyframes swapIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes nudge { 0%, 100% { translate: 0 0; } 30% { translate: 0 -10px; } 55% { translate: -6px 0; } 75% { translate: 6px 0; } }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1000px) {
+  .hero-inner { grid-template-columns: minmax(0, 1fr); }
+  .lesson-card { max-width: 560px; }
+  .habits { grid-template-columns: minmax(0, 1fr); }
+  .habit { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 16px; }
+  .habit svg { grid-row: 1 / 3; }
+  .habit h4 { margin-top: 0; }
+  .recap-grid, .recap-grid.six { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+  .two-col, .anatomy, .dup { grid-template-columns: minmax(0, 1fr); }
+  .explain { position: relative; top: 0; }
+  .stairs { height: auto; grid-template-columns: minmax(0, 1fr); align-items: stretch; margin-top: 24px; }
+  .stair { height: auto; padding-left: calc(14px + var(--s) * 6%); border-bottom: 1px solid rgba(255, 255, 255, .25); border-radius: var(--radius); }
+  .stair-token { display: none; }
+  .stairs-base { display: none; }
+  .scrub { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pop-compare { grid-template-columns: minmax(0, 1fr); }
+  .pop-vs { justify-self: center; }
+  .flow { aspect-ratio: auto; display: grid; gap: 14px; }
+  #flow-svg { display: none; }
+  .flow-nodes { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .door, .gate, .out { position: static; transform: none; }
+  .door { white-space: normal; }
+  .gate { width: 120px; height: 120px; justify-self: center; grid-column: 1 / -1; }
+  .out { width: auto; }
+  .notes-compare { grid-template-columns: minmax(0, 1fr); }
+  .n-arrow { justify-self: center; transform: rotate(90deg); }
+}
+@media (max-width: 620px) {
+  .header-divider, .home-link span { display: none; }
+  .chapter-head { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .recap-grid, .recap-grid.six, .mock-grid, .dup-cards { grid-template-columns: minmax(0, 1fr); }
+  .mock-grid .zone:nth-child(odd) { border-right: 0; }
+  .scrub { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-footer p { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0s !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<header class="site-header">
+  <a class="wordmark" href="../../" aria-label="Gateway Seminary Enrollment Tools home">
+    <img src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary">
+  </a>
+  <span class="header-divider" aria-hidden="true"></span>
+  <span class="page-title">The Person Record</span>
+  <a class="home-link" href="../../">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5M6.5 10v9h11v-9M10 19v-5h4v5"/></svg>
+    <span>Tools home</span>
+  </a>
+</header>
+
+<nav class="chapter-bar" aria-label="Lesson chapters">
+  <div class="chapter-links">
+    <a href="#record" data-ch="record"><span>01</span>One record</a>
+    <a href="#anatomy" data-ch="anatomy"><span>02</span>Anatomy</a>
+    <a href="#status" data-ch="status"><span>03</span>Status</a>
+    <a href="#sources" data-ch="sources"><span>04</span>Sources</a>
+    <a href="#habits" data-ch="habits"><span>05</span>Habits</a>
+    <a href="#recap" data-ch="recap"><span>&#10003;</span>Recap</a>
+  </div>
+  <div class="chapter-progress" aria-hidden="true"><span id="progress-fill"></span></div>
+</nav>
+
+<main id="main-content">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero on-dark" aria-labelledby="page-title">
+    <canvas id="constellation" aria-hidden="true"></canvas>
+    <div class="hero-inner shell">
+      <div class="hero-copy">
+        <p class="eyebrow">Slate training &middot; Part two</p>
+        <h1 id="page-title">
+          <span class="hl" style="--i:0"><span>One person.</span></span>
+          <span class="hl" style="--i:1"><span>One record.</span></span>
+          <span class="hl" style="--i:2"><span>For <em>life</em>.</span></span>
+        </h1>
+        <div class="hero-rule" aria-hidden="true"></div>
+        <p class="hero-lede">Everything in Slate either reads from a person record or writes to one. This lesson walks through what a person record is, what lives on it, what person status really means, and how to keep it healthy.</p>
+        <div class="hero-actions">
+          <a class="button button-gold" href="#record">Start the lesson</a>
+          <a class="button button-ghost" href="#anatomy">Explore a record</a>
+        </div>
+      </div>
+
+      <aside class="lesson-card" aria-labelledby="lesson-card-title">
+        <p class="card-kicker">In this lesson</p>
+        <h2 id="lesson-card-title">Know the person</h2>
+        <ol class="lesson-list">
+          <li><a href="#record"><span class="idx">01</span><span><strong>One record</strong><small>One person, for life</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#anatomy"><span class="idx">02</span><span><strong>Anatomy</strong><small>What lives on a record</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#status"><span class="idx">03</span><span><strong>Person status</strong><small>How far they've ever gone</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#sources"><span class="idx">04</span><span><strong>Sources</strong><small>Where records come from</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#habits"><span class="idx">05</span><span><strong>Habits</strong><small>Keeping records healthy</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+        </ol>
+        <p class="card-foot">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M10 8.5v7l5.5-3.5z"/></svg>
+          Followed by a live demo in Slate
+        </p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="review" aria-label="Previously">
+    <div class="shell review-inner">
+      <span class="review-label">Previously</span>
+      <div class="review-chips" aria-label="The four areas of Slate">
+        <span class="on">Records</span><span>Reports/Queries</span><span>Mailings/Inbox</span><span>Forms/Events</span>
+      </div>
+      <p><strong>Today we zoom in on Records.</strong> If you only learn one part of Slate, learn this one.</p>
+      <a href="https://claude.ai/artifact/5oYfQzCJr7o29RNx5ceFYG" target="_blank" rel="noopener">Part one: Introduction to Slate &#8599;</a>
+    </div>
+  </section>
+
+  <!-- ============ 01 ONE RECORD ============ -->
+  <section id="record" class="chapter" data-chapter="record" aria-labelledby="record-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">01</span>
+        <div>
+          <p class="eyebrow">One record</p>
+          <h2 id="record-title">One person. One record. For life.</h2>
+          <p class="lede">A person record is one human being's page in Slate. It stays with them for their whole relationship with Gateway: from the first form they fill out, through applying, studying, graduating, and maybe coming back for another degree years later.</p>
+        </div>
+      </header>
+
+      <div class="two-col">
+        <ol class="points" data-anim>
+          <li class="reveal"><span class="pn">1</span><div><strong>Exactly one per person</strong><p>Every person gets one record. Think of it as a file folder with their name on the tab.</p></div></li>
+          <li class="reveal"><span class="pn">2</span><div><strong>It grows over time</strong><p>More and more papers go into the folder over the years, but it's still one folder. Jordan's has six years of history and three applications in it.</p></div></li>
+          <li class="reveal"><span class="pn">3</span><div><strong>Two records means half a story</strong><p>If Jordan has two records, half of his history is on each and nobody sees the whole picture. That's why the first habit of Slate is <b>search before you create</b>.</p></div></li>
+        </ol>
+
+        <figure class="folder-scene" id="folder" aria-label="A file folder labeled Jordan Lee filling with papers from 2020 to 2026" style="margin:0">
+          <div class="f-back" aria-hidden="true"></div>
+          <div class="paper" style="--k:0;--rot:-1.6deg"><b>2020</b><span>Requested info</span></div>
+          <div class="paper" style="--k:1;--rot:1.2deg"><b>2021</b><span>Applied: M.Div.</span></div>
+          <div class="paper" style="--k:2;--rot:-.8deg"><b>2022</b><span>Enrolled</span></div>
+          <div class="paper" style="--k:3;--rot:1.5deg"><b>2024</b><span>Graduated</span></div>
+          <div class="paper" style="--k:4;--rot:-1.1deg"><b>2026</b><span>Asked about the D.Min.</span></div>
+          <div class="f-front">
+            <div class="f-label"><small>Person record</small><strong>Jordan Lee</strong></div>
+            <span class="f-count"><b id="f-count">5</b> moments &middot; 1 record</span>
+          </div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 ANATOMY ============ -->
+  <section id="anatomy" class="chapter white" data-chapter="anatomy" aria-labelledby="anatomy-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">02</span>
+        <div>
+          <p class="eyebrow">Anatomy</p>
+          <h2 id="anatomy-title">What lives on a person record</h2>
+          <p class="lede">Tap any part of Jordan's record to see what it's for. A field is simply a stored fact, and person fields are facts about the individual, not about any one application.</p>
+        </div>
+      </header>
+
+      <div class="anatomy" id="anatomy-ui">
+        <div class="mock" role="group" aria-label="Example person record for Jordan Lee (fictional)">
+          <div class="zone head" role="button" tabindex="0" data-z="0">
+            <span class="avatar" aria-hidden="true">JL</span>
+            <span><strong>Jordan Lee</strong><small>Preferred name: Jordan</small><br><span class="pill">Graduate</span></span>
+            <span class="zone-n">1</span>
+          </div>
+          <div class="mock-grid">
+            <div class="zone" role="button" tabindex="0" data-z="1">
+              <span class="zone-t">Contact</span>
+              <dl class="kv">
+                <div><dt>Email</dt><dd>jordan.lee@example.com</dd></div>
+                <div><dt>Phone</dt><dd>(555) 010-0134</dd></div>
+                <div><dt>Address</dt><dd>Ontario, CA</dd></div>
+                <div><dt>Birthdate</dt><dd>04/12/1996</dd></div>
+              </dl>
+              <span class="zone-n">2</span>
+            </div>
+            <div class="zone" role="button" tabindex="0" data-z="2">
+              <span class="zone-t">Relationship with Gateway</span>
+              <dl class="kv">
+                <div><dt>SIS ID</dt><dd>100482</dd></div>
+                <div><dt>Campus</dt><dd>Ontario Campus</dd></div>
+                <div><dt>Teaching site</dt><dd>Burbank Site</dd></div>
+                <div><dt>Pipeline</dt><dd>California Baptist University</dd></div>
+                <div><dt>Interests</dt><dd>Theology, New Testament</dd></div>
+              </dl>
+              <span class="zone-n">3</span>
+            </div>
+            <div class="zone wide" role="button" tabindex="0" data-z="3">
+              <span class="zone-t">Timeline</span>
+              <ul class="mini-tl">
+                <li><span class="tag">Form</span><span>Requested D.Min. information</span><em>Sep 2026</em></li>
+                <li><span class="tag">Email</span><span>Opened &ldquo;Lead where you serve&rdquo;</span><em>Sep 2026</em></li>
+                <li><span class="tag">Event</span><span>Attended Commencement</span><em>May 2024</em></li>
+              </ul>
+              <span class="zone-n">4</span>
+            </div>
+            <div class="zone" role="button" tabindex="0" data-z="4">
+              <span class="zone-t">Applications</span>
+              <span class="app-rows">
+                <span>D.Min. <em>Fall 2027</em></span>
+                <span>Certificate <em>Spring 2024</em></span>
+                <span>M.Div. <em>Fall 2021</em></span>
+              </span>
+              <span class="zone-n">5</span>
+            </div>
+            <div class="zone" role="button" tabindex="0" data-z="5">
+              <span class="zone-t">Interactions &amp; notes</span>
+              <span class="note-line">&ldquo;Wants to lead a church revitalization. Asked if D.Min. classes can be online.&rdquo;<small>Admissions &middot; Sep 2026</small></span>
+              <span class="zone-n">6</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="explain" aria-live="polite">
+          <div class="explain-top">
+            <span class="explain-idx" id="ex-idx">01 / 06</span>
+            <div class="dots" id="ex-dots"></div>
+          </div>
+          <div class="explain-body" id="ex-body"></div>
+          <div class="explain-nav">
+            <button class="ghost-sm" type="button" id="ex-prev">Previous</button>
+            <button class="ghost-sm" type="button" id="ex-next">Next</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 03 STATUS ============ -->
+  <section id="status" class="chapter teal on-dark" data-chapter="status" aria-labelledby="status-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">03</span>
+        <div>
+          <p class="eyebrow">Person status</p>
+          <h2 id="status-title">Status <em>remembers</em></h2>
+          <p class="lede">Person status records the furthest stage someone has ever reached with Gateway. It moves forward. It never moves backward. Play through Jordan's story and watch.</p>
+        </div>
+      </header>
+
+      <div id="status-ui">
+        <div class="stairs" id="stairs">
+          <div class="stair" style="--s:0"><b>1</b><strong>Inquiry</strong><small>Raised a hand, hasn't applied</small></div>
+          <div class="stair" style="--s:1"><b>2</b><strong>Prospect</strong><small>Came through a recruiting source or event</small></div>
+          <div class="stair" style="--s:2"><b>3</b><strong>Applicant</strong><small>Started an application</small></div>
+          <div class="stair" style="--s:3"><b>4</b><strong>Student</strong><small>Admitted</small></div>
+          <div class="stair" style="--s:4"><b>5</b><strong>Graduate</strong><small>Completed a degree</small></div>
+          <span class="stair-token" id="stair-token" aria-hidden="true">JL</span>
+        </div>
+        <div class="stairs-base" aria-hidden="true"></div>
+
+        <div class="scrub" id="scrub" role="group" aria-label="Jordan's story">
+          <button type="button"><b>2020</b><span>Requests info</span></button>
+          <button type="button"><b>2020</b><span>Attends a preview day</span></button>
+          <button type="button"><b>2021</b><span>Starts an M.Div. application</span></button>
+          <button type="button"><b>2021</b><span>Admitted</span></button>
+          <button type="button"><b>2024</b><span>Graduates</span></button>
+          <button type="button"><b>2026</b><span>Asks about the D.Min.</span></button>
+        </div>
+        <div class="status-bar">
+          <p class="status-now" id="status-now" aria-live="polite"></p>
+          <button class="button button-gold" type="button" id="status-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Play</span></button>
+        </div>
+      </div>
+
+      <div class="sub">
+        <div class="sub-head reveal" data-anim>
+          <p class="eyebrow">Status remembers. Populations respond.</p>
+          <h3>So who is interested right now?</h3>
+          <p>Person status answers &ldquo;How far have they ever gone?&rdquo; A <strong>population</strong> is a group based on current relevance, and it answers &ldquo;Do they belong in this audience now?&rdquo;</p>
+        </div>
+        <div class="pop-compare" data-anim>
+          <div class="pop-box">
+            <small>Send the D.Min. email to</small>
+            <h4>Person status: Inquiry</h4>
+            <p>Everyone whose furthest stage is Inquiry.</p>
+            <div class="pop-people"><span>A. Ortiz</span><span>S. Cho</span><span>G. Kim</span><span class="missed">Jordan</span></div>
+            <span class="verdict bad">Jordan is missed. His status is Graduate.</span>
+          </div>
+          <span class="pop-vs" aria-hidden="true">vs</span>
+          <div class="pop-box hit">
+            <small>Send the D.Min. email to</small>
+            <h4>Population: current D.Min. interest</h4>
+            <p>Everyone who is interested in the D.Min. right now.</p>
+            <div class="pop-people"><span>R. Patel</span><span>M. Silva</span><span class="jordan">Jordan</span></div>
+            <span class="verdict good">Jordan is reached.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 SOURCES ============ -->
+  <section id="sources" class="chapter white" data-chapter="sources" aria-labelledby="sources-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">04</span>
+        <div>
+          <p class="eyebrow">Sources</p>
+          <h2 id="sources-title">Most records create themselves</h2>
+          <p class="lede">People come in through a handful of front doors. Each time, Slate checks whether that person is already in the system, by things like email and name. If they are, their record is updated. If not, a new one is created.</p>
+        </div>
+      </header>
+
+      <div class="flow" id="flow">
+        <svg id="flow-svg" viewBox="0 0 1000 440" aria-hidden="true">
+          <path class="flow-path" id="fp-form" d="M215 70C340 70 330 220 425 220"/>
+          <path class="flow-path" id="fp-event" d="M215 170C330 170 340 220 425 220"/>
+          <path class="flow-path" id="fp-app" d="M215 270C330 270 340 220 425 220"/>
+          <path class="flow-path" id="fp-list" d="M215 370C340 370 330 220 425 220"/>
+          <path class="flow-path yes" id="fp-yes" d="M575 220C660 220 660 110 745 110"/>
+          <path class="flow-path no" id="fp-no" d="M575 220C660 220 660 330 745 330"/>
+        </svg>
+        <div class="flow-nodes">
+          <span class="door" data-key="form" style="left:12%;top:15.9%"><i><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4M10 12h5M10 16h5"/></svg></i>Request-info form</span>
+          <span class="door" data-key="event" style="left:12%;top:38.6%"><i><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="1"/><path d="M4 9h16M8 3v4M16 3v4"/></svg></i>Event registration</span>
+          <span class="door" data-key="app" style="left:12%;top:61.4%"><i><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="m9 13 2 2 4-4"/></svg></i>Application</span>
+          <span class="door" data-key="list" style="left:12%;top:84.1%"><i><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></i>Partner list</span>
+          <div class="gate" id="gate"><span><small>Matching</small>Already in Slate?</span></div>
+          <div class="out yes" id="out-yes" style="left:86%;top:25%">
+            <div class="out-top"><small>Yes &middot; match found</small><b id="c-yes">0</b></div>
+            <strong>Existing record updated</strong>
+          </div>
+          <div class="out no" id="out-no" style="left:86%;top:75%">
+            <div class="out-top"><small>No match</small><b id="c-no">0</b></div>
+            <strong>New record created</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="dup">
+        <div class="sub-head reveal" data-anim>
+          <p class="eyebrow">When matching misses</p>
+          <h3>Two records, one human</h3>
+          <p>A new email address or a nickname can slip past matching and create a duplicate. Whoever opens the second record thinks Jordan is brand new. Merging puts the whole story back on one record.</p>
+        </div>
+        <div class="dup-stage" id="dup">
+          <div class="dup-cards">
+            <article class="dup-card dup-a">
+              <span class="dup-flag" id="dup-flag">Possible duplicate</span>
+              <div class="rec-head"><span class="avatar" aria-hidden="true">JL</span><div><h4>Jordan Lee</h4><p>jordan.lee@example.com</p></div></div>
+              <ul class="timeline" id="dup-a-tl">
+                <li><span class="tag">Event</span><span>Attended Commencement &middot; 2024</span></li>
+                <li><span class="tag">App</span><span>Applied: M.Div. &middot; 2021</span></li>
+                <li><span class="tag">Form</span><span>Requested info &middot; 2020</span></li>
+              </ul>
+            </article>
+            <article class="dup-card dup-b">
+              <span class="dup-flag">Possible duplicate</span>
+              <div class="rec-head"><span class="avatar" aria-hidden="true">JL</span><div><h4>Jordan Lee</h4><p>jlee.ministry@example.com</p></div></div>
+              <ul class="timeline">
+                <li><span class="tag">Event</span><span>Registered: D.Min. info session &middot; 2026</span></li>
+                <li><span class="tag">Form</span><span>Requested D.Min. info &middot; 2026</span></li>
+              </ul>
+            </article>
+          </div>
+          <div class="dup-actions">
+            <button class="button button-gold" type="button" id="dup-btn">Merge the records</button>
+            <span class="dup-status" id="dup-status" aria-live="polite">2 records &middot; history split in half</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 05 HABITS ============ -->
+  <section id="habits" class="chapter" data-chapter="habits" aria-labelledby="habits-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">05</span>
+        <div>
+          <p class="eyebrow">Habits</p>
+          <h2 id="habits-title">Keeping the record healthy</h2>
+          <p class="lede">Records create themselves. Our job is to keep them accurate, so the next person who opens one can trust what they see.</p>
+        </div>
+      </header>
+
+      <div class="habits" data-anim>
+        <article class="habit reveal">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="17" cy="17" r="10"/><path class="hot" d="m24.5 24.5 8 8"/></svg>
+          <h4>Search before you create</h4>
+          <p>Try name, email, and phone before making a new record.</p>
+        </article>
+        <article class="habit reveal">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M9 33l5-1 16-16-4-4L10 28z"/><path class="hot" d="M23 15l4 4"/></svg>
+          <h4>Leave a note</h4>
+          <p>After any meaningful conversation. Short and specific.</p>
+        </article>
+        <article class="habit reveal">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 20l7 7 17-17"/><path class="hot" d="M8 33h24"/></svg>
+          <h4>Fix it or flag it</h4>
+          <p>Bounced email? Misspelled name? Correct it or tell someone who can.</p>
+        </article>
+        <article class="habit reveal">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><rect x="5" y="8" width="13" height="24" rx="1"/><rect x="22" y="8" width="13" height="24" rx="1"/><path class="hot" d="M9 15h5M26 15h5"/></svg>
+          <h4>Facts in the right place</h4>
+          <p>Person facts on the person. Program, term, and decision on the application.</p>
+        </article>
+        <article class="habit reveal">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="14" cy="16" r="6"/><circle cx="26" cy="16" r="6"/><path class="hot" d="M6 33c1-5 4-8 8-8m12 0c4 0 7 3 8 8"/></svg>
+          <h4>Watch for duplicates</h4>
+          <p>Two records for one human? Report it so they can be merged.</p>
+        </article>
+      </div>
+
+      <div class="notes-compare" data-anim id="notes">
+        <div class="note-card vague reveal">
+          <small>Vague note</small>
+          <p>&ldquo;Talked to Jordan.&rdquo;</p>
+          <p class="why">Next month, nobody knows what was said or what to do next.</p>
+        </div>
+        <span class="n-arrow" aria-hidden="true">&rarr;</span>
+        <div class="note-card good reveal">
+          <small>Helpful note</small>
+          <p id="good-note" data-text="&ldquo;Called 9/30. Interested in the D.Min., starting Fall 2027. Asked whether classes can be online. Follow up after the Oct. 15 info session.&rdquo;">&ldquo;Called 9/30. Interested in the D.Min., starting Fall 2027. Asked whether classes can be online. Follow up after the Oct. 15 info session.&rdquo;</p>
+          <p class="why">When, what they want, what they asked, and what happens next.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RECAP ============ -->
+  <section id="recap" class="chapter black on-dark" data-chapter="recap" aria-labelledby="recap-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">&#10003;</span>
+        <div>
+          <p class="eyebrow">Recap</p>
+          <h2 id="recap-title">What to remember</h2>
+        </div>
+      </header>
+      <div class="recap-grid six" data-anim>
+        <article class="recap-tile reveal"><small>One record</small><p>One person, one record, for life. Search before you create.</p></article>
+        <article class="recap-tile reveal"><small>Person fields</small><p>Facts about the individual: who they are, how to reach them, and their relationship with Gateway.</p></article>
+        <article class="recap-tile reveal"><small>Timeline</small><p>The story so far. Read it before you reach out.</p></article>
+        <article class="recap-tile reveal"><small>Person status</small><p>The furthest stage ever reached: Inquiry, Prospect, Applicant, Student, Graduate. It never moves backward.</p></article>
+        <article class="recap-tile reveal"><small>Populations</small><p>Who belongs in an audience right now.</p></article>
+        <article class="recap-tile reveal"><small>Sources</small><p>Most records create themselves through forms, events, and applications. Our job is to keep them accurate.</p></article>
+      </div>
+      <div class="up-next reveal" data-anim>
+        <div>
+          <p class="eyebrow">Up next</p>
+          <h3>Understanding the Application Record</h3>
+          <p>First, a live demo in Slate. Then part three: the record that sits underneath the person, one for every program and term they apply to.</p>
+        </div>
+        <a class="button button-gold" href="https://claude.ai/artifact/PV6s87wBpkUmuT6CPJ8XXD" target="_blank" rel="noopener">Open part three &#8599;</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <img src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary">
+  <p>Enrollment Tools &middot; Understanding the Person Record. People and numbers shown are fictional examples.</p>
+</footer>
+
+<script>
+
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var hasIO = 'IntersectionObserver' in window;
+
+  function whenVisible(el, onIn, onOut, threshold) {
+    if (!el) return;
+    if (!hasIO) { onIn(); return; }
+    new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) onIn(); else if (onOut) onOut(); });
+    }, { threshold: threshold || 0 }).observe(el);
+  }
+
+  /* ---------- Reveal ---------- */
+  (function reveal() {
+    if (!hasIO || reduce) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.18, rootMargin: '0px 0px -6% 0px' });
+    var vh = window.innerHeight;
+    $$('[data-anim]').forEach(function (el) {
+      if (el.getBoundingClientRect().top > vh * 0.92) { el.classList.add('armed'); io.observe(el); }
+    });
+  })();
+
+  /* ---------- Chapter bar ---------- */
+  (function chapterBar() {
+    var fill = $('#progress-fill');
+    var links = $$('.chapter-links a');
+    var secs = $$('[data-chapter]');
+    var ticking = false;
+    function update() {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      fill.style.width = (max > 0 ? Math.min(100, window.scrollY / max * 100) : 0) + '%';
+      var cur = null;
+      secs.forEach(function (s) { if (s.getBoundingClientRect().top <= 140) cur = s.dataset.chapter; });
+      links.forEach(function (a) {
+        var on = a.dataset.ch === cur;
+        a.classList.toggle('active', on);
+        if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+      });
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  })();
+
+  /* ---------- Hero constellation ---------- */
+  (function constellation() {
+    var cv = $('#constellation');
+    var hero = $('.hero');
+    if (!cv || !cv.getContext) return;
+    var ctx = cv.getContext('2d');
+    var w = 0, h = 0, pts = [], mouse = null, running = false, raf = 0;
+    function size() {
+      var d = Math.min(window.devicePixelRatio || 1, 2);
+      w = hero.clientWidth; h = hero.clientHeight;
+      cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+      ctx.setTransform(d, 0, 0, d, 0, 0);
+      var n = Math.round(Math.min(95, Math.max(30, w * h / 13000)));
+      pts = [];
+      for (var i = 0; i < n; i++) {
+        pts.push({
+          x: Math.random() * w, y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.22, vy: (Math.random() - 0.5) * 0.22,
+          r: Math.random() * 1.5 + 0.8, g: Math.random() < 0.14, ph: Math.random() * 6.28
+        });
+      }
+    }
+    function frame(t) {
+      ctx.clearRect(0, 0, w, h);
+      var i, j, p, q, dx, dy, d, a;
+      for (i = 0; i < pts.length; i++) {
+        p = pts[i];
+        if (!reduce) { p.x += p.vx; p.y += p.vy; }
+        if (p.x < -10) p.x = w + 10; if (p.x > w + 10) p.x = -10;
+        if (p.y < -10) p.y = h + 10; if (p.y > h + 10) p.y = -10;
+      }
+      ctx.lineWidth = 1;
+      for (i = 0; i < pts.length; i++) {
+        p = pts[i];
+        for (j = i + 1; j < pts.length; j++) {
+          q = pts[j]; dx = p.x - q.x; dy = p.y - q.y; d = dx * dx + dy * dy;
+          if (d < 15000) {
+            a = (1 - Math.sqrt(d) / 122) * 0.22;
+            ctx.strokeStyle = (p.g || q.g) ? 'rgba(211,164,34,' + a + ')' : 'rgba(255,255,255,' + (a * 0.6) + ')';
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+          }
+        }
+        if (mouse) {
+          dx = p.x - mouse.x; dy = p.y - mouse.y; d = Math.sqrt(dx * dx + dy * dy);
+          if (d < 170) {
+            ctx.strokeStyle = 'rgba(211,164,34,' + ((1 - d / 170) * 0.5) + ')';
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
+          }
+        }
+      }
+      for (i = 0; i < pts.length; i++) {
+        p = pts[i];
+        if (p.g) {
+          var pr = p.r + 1.2 + Math.sin(t / 700 + p.ph) * 0.9;
+          ctx.fillStyle = 'rgba(211,164,34,.18)';
+          ctx.beginPath(); ctx.arc(p.x, p.y, pr * 3, 0, 6.283); ctx.fill();
+          ctx.fillStyle = '#d3a422';
+          ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, 6.283); ctx.fill();
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,.55)';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+        }
+      }
+      if (running) raf = requestAnimationFrame(frame);
+    }
+    size();
+    hero.addEventListener('pointermove', function (e) {
+      var r = hero.getBoundingClientRect(); mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+    });
+    hero.addEventListener('pointerleave', function () { mouse = null; });
+    window.addEventListener('resize', function () { size(); if (!running) frame(0); });
+    if (reduce) { frame(0); return; }
+    whenVisible(hero, function () {
+      if (!running) { running = true; raf = requestAnimationFrame(frame); }
+    }, function () { running = false; cancelAnimationFrame(raf); });
+  })();
+  /* ---------- Folder ---------- */
+  (function folder() {
+    var scene = $('#folder');
+    if (!scene || reduce) return;
+    var papers = $$('.paper', scene), count = $('#f-count'), timer = null, n = papers.length;
+    function show(k) {
+      papers.forEach(function (p, i) { p.classList.toggle('out', i >= k); });
+      count.textContent = k;
+    }
+    function cycle() {
+      var k = 0;
+      show(0);
+      clearInterval(timer);
+      timer = setInterval(function () {
+        k++;
+        if (k <= n) show(k);
+        else if (k > n + 3) { k = 0; show(0); }
+      }, 900);
+    }
+    whenVisible(scene, function () { if (!timer) cycle(); }, function () { clearInterval(timer); timer = null; show(n); }, 0.3);
+  })();
+
+  /* ---------- Anatomy explorer ---------- */
+  (function anatomy() {
+    var root = $('#anatomy-ui');
+    if (!root) return;
+    var zones = $$('.zone', root), body = $('#ex-body'), idx = $('#ex-idx'), dotsEl = $('#ex-dots');
+    var info = [
+      { t: 'The header', d: 'Who this is at a glance: their name, preferred name, and person status. Glance here first so you know who you’re talking to and how far they’ve gone with us.', a: 'Is this the person I think it is?' },
+      { t: 'Contact', d: 'How to reach them: email, phone, mailing address, and birthdate. These are facts about the person, so they’re the same no matter which program they apply to.', a: 'If this email bounced, who needs to know?' },
+      { t: 'Relationship with Gateway', d: 'SIS ID (their student ID), the campus they’re assigned to, a teaching site where they may take classes, the pipeline they’re coming through, and the academic interests they told us about on a request-for-info form.', a: 'What does this tell me about where they fit?' },
+      { t: 'Timeline', d: 'A running history of everything that’s happened: forms submitted, events attended, emails sent and opened, texts, and staff notes. Newest on top.', a: 'Have I read this before I call or email?' },
+      { t: 'Applications', d: 'Applications are their own records, attached to the person. The person record shows that they applied and lets you open each one. The details live on the application itself (part three).', a: 'Which application am I actually talking about?' },
+      { t: 'Interactions & notes', d: 'What you learned in a conversation. Notes are how the conversation you had today helps the coworker who talks to them next month.', a: 'Would a coworker know what to do next from this note?' }
+    ];
+    var cur = 0, timer = null;
+    dotsEl.innerHTML = info.map(function (_, i) { return '<button type="button" aria-label="Show part ' + (i + 1) + '"></button>'; }).join('');
+    var dots = $$('button', dotsEl);
+    function select(i) {
+      cur = (i + info.length) % info.length;
+      zones.forEach(function (z, k) { z.classList.toggle('active', k === cur); z.setAttribute('aria-pressed', String(k === cur)); });
+      dots.forEach(function (d, k) { d.classList.toggle('on', k === cur); });
+      idx.textContent = '0' + (cur + 1) + ' / 0' + info.length;
+      body.innerHTML = '';
+      var wrap = document.createElement('div'); wrap.className = 'explain-body';
+      var h = document.createElement('h3'); h.textContent = info[cur].t;
+      var p = document.createElement('p'); p.textContent = info[cur].d;
+      var ask = document.createElement('div'); ask.className = 'ask';
+      var s = document.createElement('small'); s.textContent = 'Ask yourself';
+      var sp = document.createElement('span'); sp.textContent = info[cur].a;
+      ask.appendChild(s); ask.appendChild(sp);
+      wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(ask);
+      body.appendChild(wrap);
+    }
+    function stopAuto() { clearInterval(timer); timer = -1; }
+    zones.forEach(function (z, k) {
+      z.addEventListener('click', function () { stopAuto(); select(k); });
+      z.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stopAuto(); select(k); }
+      });
+    });
+    dots.forEach(function (d, k) { d.addEventListener('click', function () { stopAuto(); select(k); }); });
+    $('#ex-prev').addEventListener('click', function () { stopAuto(); select(cur - 1); });
+    $('#ex-next').addEventListener('click', function () { stopAuto(); select(cur + 1); });
+    select(0);
+    if (reduce) return;
+    whenVisible(root, function () {
+      if (timer === null) timer = setInterval(function () { select(cur + 1); }, 4200);
+    }, function () { if (timer && timer !== -1) { clearInterval(timer); timer = null; } }, 0.35);
+  })();
+
+  /* ---------- Status stairs ---------- */
+  (function statusStairs() {
+    var root = $('#status-ui');
+    if (!root) return;
+    var stairs = $$('.stair', root), token = $('#stair-token'), btns = $$('#scrub button'), now = $('#status-now'), play = $('#status-play');
+    var names = ['Inquiry', 'Prospect', 'Applicant', 'Student', 'Graduate'];
+    var frames = [
+      { s: 0, t: 'Jordan requests information.' },
+      { s: 1, t: 'Jordan attends a preview day.' },
+      { s: 2, t: 'Jordan starts an M.Div. application.' },
+      { s: 3, t: 'Jordan is admitted.' },
+      { s: 4, t: 'Jordan graduates.' },
+      { s: 4, t: 'Jordan asks about the D.Min.', stay: true }
+    ];
+    var cur = 0, timer = null;
+    var playHtml = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Play</span>';
+    var pauseHtml = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg><span>Pause</span>';
+    function place() {
+      var st = stairs[frames[cur].s];
+      var x = st.offsetLeft + st.offsetWidth / 2 - 20, y = st.offsetTop - 52;
+      token.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+    }
+    function render(i) {
+      cur = i;
+      var f = frames[i];
+      stairs.forEach(function (st, k) { st.classList.toggle('reached', k < f.s); st.classList.toggle('current', k === f.s); });
+      btns.forEach(function (b, k) { b.classList.toggle('on', k === i); });
+      place();
+      now.classList.toggle('alert', !!f.stay);
+      now.innerHTML = '';
+      now.appendChild(document.createTextNode(f.t + ' Person status: '));
+      var st = document.createElement('strong'); st.textContent = names[f.s]; now.appendChild(st);
+      if (f.stay) {
+        var r = document.createElement('span'); r.className = 'remember'; r.textContent = 'Stays put'; now.appendChild(r);
+        now.appendChild(document.createTextNode(' It remembers how far Jordan has ever gone. He doesn’t become an Inquiry again.'));
+        if (!reduce) { token.classList.remove('nudge'); void token.offsetWidth; token.classList.add('nudge'); }
+      }
+    }
+    function stop() { clearInterval(timer); timer = null; play.innerHTML = playHtml; }
+    function start() {
+      stop();
+      if (cur >= frames.length - 1) render(0);
+      play.innerHTML = pauseHtml;
+      timer = setInterval(function () {
+        if (cur >= frames.length - 1) { stop(); return; }
+        render(cur + 1);
+        if (cur >= frames.length - 1) stop();
+      }, 2200);
+    }
+    btns.forEach(function (b, k) { b.addEventListener('click', function () { stop(); render(k); }); });
+    play.addEventListener('click', function () { if (timer) stop(); else start(); });
+    window.addEventListener('resize', place);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(place);
+    render(0);
+    if (reduce) { render(frames.length - 1); return; }
+    var started = false;
+    whenVisible(root, function () { if (!started) { started = true; start(); } }, null, 0.4);
+  })();
+
+  /* ---------- Sources flow ---------- */
+  (function sources() {
+    var root = $('#flow'), svg = $('#flow-svg');
+    if (!root) return;
+    var doors = $$('.door', root), gate = $('#gate'), yes = $('#out-yes'), no = $('#out-no');
+    var cYes = $('#c-yes'), cNo = $('#c-no'), nYes = 0, nNo = 0, timer = null, last = -1;
+    var ns = 'http://www.w3.org/2000/svg';
+    function ping(el) { el.classList.remove('ping'); void el.offsetWidth; el.classList.add('ping'); setTimeout(function () { el.classList.remove('ping'); }, 700); }
+    function travel(path, dot, dur, done) {
+      var len = path.getTotalLength(), t0 = performance.now();
+      function f(t) {
+        var k = Math.min(1, (t - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        var pt = path.getPointAtLength(e * len);
+        dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+        if (k < 1) requestAnimationFrame(f); else done();
+      }
+      requestAnimationFrame(f);
+    }
+    function finish(match) {
+      if (match) { nYes++; cYes.textContent = nYes; ping(yes); }
+      else { nNo++; cNo.textContent = nNo; ping(no); }
+    }
+    function send() {
+      var i; do { i = Math.floor(Math.random() * doors.length); } while (i === last); last = i;
+      var door = doors[i], key = door.dataset.key, match = Math.random() < 0.68;
+      ping(door);
+      if (getComputedStyle(svg).display === 'none') { setTimeout(function () { ping(gate); setTimeout(function () { finish(match); }, 400); }, 500); return; }
+      var dot = document.createElementNS(ns, 'circle'); dot.setAttribute('r', '7'); dot.setAttribute('class', 'fpacket');
+      svg.appendChild(dot);
+      travel($('#fp-' + key), dot, 1000, function () {
+        ping(gate);
+        dot.setAttribute('class', 'fpacket ' + (match ? 'match' : 'new'));
+        travel($(match ? '#fp-yes' : '#fp-no'), dot, 800, function () { svg.removeChild(dot); finish(match); });
+      });
+    }
+    if (reduce) { cYes.textContent = '14'; cNo.textContent = '6'; return; }
+    whenVisible(root, function () { if (!timer) { send(); timer = setInterval(send, 1500); } }, function () { clearInterval(timer); timer = null; }, 0.3);
+  })();
+
+  /* ---------- Duplicate merge ---------- */
+  (function merge() {
+    var stage = $('#dup'), btn = $('#dup-btn');
+    if (!stage) return;
+    var tl = $('#dup-a-tl'), flag = $('#dup-flag'), status = $('#dup-status');
+    var original = tl.innerHTML;
+    var extra = [['Event', 'Registered: D.Min. info session · 2026'], ['Form', 'Requested D.Min. info · 2026']];
+    var merged = false;
+    btn.addEventListener('click', function () {
+      if (!merged) {
+        stage.classList.add('merging');
+        setTimeout(function () {
+          stage.classList.remove('merging'); stage.classList.add('merged');
+          extra.slice().reverse().forEach(function (e) {
+            var li = document.createElement('li'); li.className = 'new';
+            var tg = document.createElement('span'); tg.className = 'tag'; tg.textContent = e[0];
+            var tx = document.createElement('span'); tx.textContent = e[1];
+            li.appendChild(tg); li.appendChild(tx); tl.insertBefore(li, tl.firstChild);
+          });
+          flag.textContent = 'Merged · one record';
+          status.textContent = '1 record · the whole story in one place';
+          btn.textContent = 'Reset';
+          merged = true;
+        }, reduce ? 0 : 650);
+      } else {
+        stage.classList.remove('merged');
+        tl.innerHTML = original;
+        flag.textContent = 'Possible duplicate';
+        status.textContent = '2 records · history split in half';
+        btn.textContent = 'Merge the records';
+        merged = false;
+      }
+    });
+  })();
+
+  /* ---------- Typed note ---------- */
+  (function typed() {
+    var el = $('#good-note'), root = $('#notes');
+    if (!el || reduce || !root.classList.contains('armed')) return;
+    var text = el.getAttribute('data-text'), started = false;
+    el.textContent = '';
+    el.classList.add('typed');
+    el.setAttribute('aria-label', text);
+    whenVisible(root, function () {
+      if (started) return; started = true;
+      var i = 0;
+      var t = setInterval(function () {
+        i += 2; el.textContent = text.slice(0, i);
+        if (i >= text.length) { clearInterval(t); el.textContent = text; el.classList.add('done'); }
+      }, 28);
+    }, null, 0.4);
+  })();
+})();
+</script>
+</body>
+</html>

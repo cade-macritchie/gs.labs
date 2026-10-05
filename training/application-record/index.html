@@ -1,0 +1,1349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Understanding the Application Record</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+
+@font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* Layout: full-bleed chapters alternating canvas, white, and the brand's dark
+   surfaces (black, teal), with content in a 1200px shell.
+   GS 2026 brand (see BRANDGUIDE.md at the repo root): the guide's 7 swatches only, plus the
+   neutral canvas/border/muted values already used on the other new-brand pages.
+   No invented tints — light states are outlined instead of filled. */
+:root {
+  --black: #0c0f14;
+  --darkgray: #2c343a;
+  --teal: #234048;
+  --rust: #c44329;
+  --gold: #d3a422;
+  --grayblue: #708aa2;
+  --white: #ffffff;
+  --ink: #2c343a;
+  --muted: #5c6670;
+  --border: #dcd8d0;
+  --canvas: #f4f2ee;
+
+  --radius: 4px;
+  --shadow: 0 4px 16px rgba(12, 15, 20, .08);
+  --shadow-lg: 0 24px 60px rgba(12, 15, 20, .22);
+
+  --font-heading: 'Tiempos Fine', Georgia, serif;
+  --font-subheading: Montserrat, 'Segoe UI', sans-serif;
+  --font-body: 'Open Sans', system-ui, sans-serif;
+
+  --ease: cubic-bezier(.2, .75, .2, 1);
+  --slam: cubic-bezier(.2, 1.6, .4, 1);
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 60px; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+[hidden] { display: none !important; }
+h1, h2, h3, h4 { margin: 0; font-family: var(--font-heading); font-weight: 600; text-wrap: balance; }
+p { margin: 0; }
+em { font-style: normal; }
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+svg { display: block; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }
+
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important;
+}
+.skip-link {
+  position: fixed; z-index: 1000; top: 12px; left: 12px;
+  padding: 10px 16px; color: var(--black); background: var(--gold);
+  border-radius: var(--radius); font: 700 .8rem var(--font-subheading);
+  transform: translateY(-160%);
+}
+.skip-link:focus { transform: none; }
+
+.shell { width: min(1200px, calc(100% - 32px)); margin-inline: auto; }
+
+/* ---------- Header ---------- */
+.site-header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px clamp(16px, 4vw, 48px);
+  color: var(--white);
+  background: linear-gradient(120deg, var(--black), var(--darkgray));
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+}
+.wordmark { display: flex; align-items: center; text-decoration: none; }
+.wordmark img { height: 24px; width: auto; }
+.header-divider { width: 1px; height: 30px; background: rgba(255, 255, 255, .28); }
+.page-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--gold); font: 700 .74rem var(--font-subheading);
+  letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
+}
+.page-title::before, .page-title::after { content: ''; width: 14px; height: 1px; background: var(--gold); }
+.home-link {
+  display: inline-flex; align-items: center; gap: 8px; margin-left: auto;
+  color: rgba(255, 255, 255, .78); font: 700 .74rem var(--font-subheading);
+  letter-spacing: .04em; text-decoration: none;
+}
+.home-link:hover { color: var(--gold); }
+.home-link svg { width: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Chapter bar ---------- */
+.chapter-bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 80;
+  color: var(--white); background: rgba(12, 15, 20, .94);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.chapter-links {
+  display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+  width: min(1200px, calc(100% - 32px)); margin-inline: auto;
+}
+.chapter-links::-webkit-scrollbar { display: none; }
+.chapter-links a {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: 13px 14px; color: rgba(255, 255, 255, .58);
+  font: 700 .7rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase;
+  text-decoration: none; transition: color .2s ease;
+}
+.chapter-links a span { color: rgba(255, 255, 255, .32); font: 600 .95rem var(--font-heading); letter-spacing: 0; transition: color .2s ease; }
+.chapter-links a:hover, .chapter-links a.active { color: var(--white); }
+.chapter-links a.active span { color: var(--gold); }
+.chapter-progress { height: 2px; background: rgba(255, 255, 255, .1); }
+.chapter-progress span { display: block; width: 0; height: 100%; background: var(--gold); }
+
+/* ---------- Shared type ---------- */
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px; margin: 0 0 14px;
+  color: var(--rust); font: 800 .72rem var(--font-subheading);
+  letter-spacing: .16em; line-height: 1.4; text-transform: uppercase;
+}
+.eyebrow::before, .eyebrow::after { content: ''; flex: 0 0 auto; width: 24px; height: 2px; background: currentColor; }
+.on-dark .eyebrow { color: var(--gold); }
+
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 46px; padding: 12px 20px;
+  border: 1px solid transparent; border-radius: var(--radius);
+  font: 800 .74rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase;
+  text-decoration: none; cursor: pointer;
+  transition: transform .18s ease, background-color .18s ease, color .18s ease, border-color .18s ease;
+}
+.button:hover { transform: translateY(-2px); }
+.button-gold { color: var(--black); background: var(--gold); }
+.button-gold:hover { color: var(--white); background: var(--black); }
+.on-dark .button-gold:hover { color: var(--black); background: var(--white); }
+.button-ghost { color: var(--white); border-color: rgba(255, 255, 255, .35); background: transparent; }
+.button-ghost:hover { border-color: var(--gold); color: var(--gold); }
+.button-outline { color: var(--darkgray); border-color: var(--darkgray); background: transparent; }
+.button-outline:hover { color: var(--white); background: var(--black); border-color: var(--black); }
+.button:disabled { opacity: .4; cursor: default; transform: none; }
+.button svg { width: 14px; height: 14px; fill: currentColor; }
+
+/* ---------- Hero ---------- */
+.hero {
+  position: relative; isolation: isolate; overflow: hidden;
+  color: var(--white);
+  background: linear-gradient(126deg, var(--black) 0%, var(--black) 45%, var(--darkgray) 100%);
+}
+.hero::after {
+  content: ''; position: absolute; z-index: 1; left: 0; right: 0; bottom: 0; height: 5px;
+  background: linear-gradient(90deg, var(--rust) 0 33.33%, var(--gold) 33.33% 66.66%, var(--grayblue) 66.66% 100%);
+}
+#constellation { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; }
+.hero-inner {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, .7fr);
+  gap: clamp(40px, 7vw, 96px); align-items: center;
+  padding-block: clamp(64px, 9vw, 116px);
+}
+.hero h1 {
+  font-size: clamp(2.7rem, 6.2vw, 5.4rem); font-weight: 600;
+  line-height: 1.04; letter-spacing: -.02em;
+}
+.hl { display: block; overflow: hidden; padding-bottom: .06em; }
+.hl > span { display: inline-block; animation: lineUp 1s var(--ease) both; animation-delay: calc(.15s + var(--i) * .16s); }
+.hero h1 em { position: relative; color: var(--gold); }
+.hero h1 em::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: .02em; height: .07em;
+  background: var(--gold); transform-origin: left;
+  animation: underline .8s var(--ease) both; animation-delay: calc(.8s + var(--i) * .2s);
+}
+.hero-rule { width: 40px; height: 3px; margin: 30px 0 0; background: var(--gold); }
+.hero-lede { max-width: 58ch; margin-top: 22px; color: rgba(255, 255, 255, .74); font-size: 1.06rem; line-height: 1.8; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+
+.lesson-card {
+  position: relative; padding: clamp(24px, 3vw, 34px);
+  color: var(--ink); background: var(--white);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  animation: cardIn 1s var(--ease) .5s both;
+}
+.lesson-card::before {
+  content: ''; position: absolute; top: -12px; right: 26px;
+  width: 46px; height: 24px; border: 2px solid var(--gold); border-bottom: 0;
+}
+.card-kicker { color: var(--rust); font: 800 .7rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.lesson-card h2 { margin-top: 6px; font-size: 1.6rem; line-height: 1.2; }
+.lesson-card h2::after { content: ''; display: block; width: 40px; height: 2px; margin-top: 14px; background: var(--rust); }
+.lesson-list { display: grid; margin: 18px 0 0; padding: 0; list-style: none; }
+.lesson-list a {
+  display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: center;
+  padding: 13px 0; border-top: 1px solid var(--border); text-decoration: none;
+  transition: padding .2s ease;
+}
+.lesson-list li:first-child a { border-top: 0; }
+.lesson-list a:hover { padding-left: 6px; }
+.lesson-list .idx { color: var(--rust); font: 600 1.25rem var(--font-heading); }
+.lesson-list strong { display: block; font: 700 .82rem var(--font-subheading); letter-spacing: .02em; }
+.lesson-list small { display: block; color: var(--muted); font-size: .84rem; line-height: 1.4; }
+.lesson-list .go { color: var(--border); font-weight: 700; transition: color .2s ease, transform .2s ease; }
+.lesson-list a:hover .go { color: var(--gold); transform: translateX(3px); }
+.card-foot {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px; padding-top: 16px;
+  border-top: 1px solid var(--border); color: var(--muted);
+  font: 600 .8rem var(--font-subheading);
+}
+.card-foot svg { width: 22px; height: 22px; flex: 0 0 auto; fill: none; stroke: var(--teal); stroke-width: 1.6; }
+
+/* ---------- Chapters ---------- */
+.chapter { padding-block: clamp(72px, 9vw, 128px); }
+.chapter.white { background: var(--white); }
+.chapter.teal { color: var(--white); background: var(--teal); }
+.chapter.black { color: var(--white); background: var(--black); }
+
+.chapter-head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: clamp(16px, 3vw, 28px); align-items: start; max-width: 900px; }
+.chapter-num { color: var(--rust); font: 600 clamp(3rem, 6vw, 4.8rem)/.85 var(--font-heading); font-variant-numeric: tabular-nums; }
+.on-dark .chapter-num { color: var(--gold); }
+.chapter-head .eyebrow { margin-bottom: 8px; }
+.chapter-head h2 { font-size: clamp(2.1rem, 4.4vw, 3.5rem); line-height: 1.08; letter-spacing: -.015em; }
+.chapter-head h2 em { color: var(--gold); }
+.chapter-head h2::after { content: ''; display: block; width: 40px; height: 3px; margin-top: 20px; background: var(--rust); }
+.on-dark .chapter-head h2::after { background: var(--gold); }
+.lede { max-width: 66ch; margin-top: 20px; color: var(--muted); font-size: 1.05rem; line-height: 1.8; }
+.on-dark .lede { color: rgba(255, 255, 255, .76); }
+
+.sub { margin-top: clamp(72px, 9vw, 112px); }
+.sub-head { max-width: 760px; }
+.sub-head.center { margin-inline: auto; text-align: center; }
+.sub-head h3 { font-size: clamp(1.75rem, 3.2vw, 2.5rem); line-height: 1.14; letter-spacing: -.01em; }
+.sub-head h3::after { content: ''; display: block; width: 40px; height: 2px; margin-top: 16px; background: var(--rust); }
+.sub-head.center h3::after { margin-inline: auto; }
+.on-dark .sub-head h3::after { background: var(--gold); }
+.sub-head p { margin-top: 16px; color: var(--muted); font-size: 1rem; line-height: 1.75; }
+.on-dark .sub-head p { color: rgba(255, 255, 255, .74); }
+
+/* Reveal: elements are fully visible by default. JS "arms" only those below
+   the fold, and the observer releases them into their resting state. */
+.reveal { transition: opacity .8s var(--ease), transform .8s var(--ease); }
+.armed:not(.is-in).reveal, .armed:not(.is-in) .reveal { opacity: 0; transform: translateY(26px); }
+.armed:not(.is-in), .armed:not(.is-in) *, .armed:not(.is-in) *::before, .armed:not(.is-in) *::after {
+  transition-duration: 0s !important; transition-delay: 0s !important;
+}
+
+/* ---------- Shared record pieces ---------- */
+.rec-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.avatar {
+  display: grid; place-items: center; flex: 0 0 auto; width: 42px; height: 42px;
+  color: var(--gold); background: var(--black); border-radius: 50%;
+  font: 700 .95rem var(--font-heading);
+}
+.rec-head h4 { font-size: 1.15rem; line-height: 1.2; }
+.rec-head p { color: var(--muted); font: 700 .62rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+.rec-label { display: flex; align-items: center; gap: 8px; padding: 12px 18px 4px; color: var(--rust); font: 800 .62rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.rec-label::after { content: ''; width: 24px; height: 2px; background: var(--rust); }
+.timeline { display: grid; margin: 0; padding: 0 18px 8px; list-style: none; }
+.timeline li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; align-items: center; padding: 9px 0; border-top: 1px solid var(--border); font-size: .84rem; line-height: 1.35; }
+.timeline li:first-child { border-top: 0; }
+.timeline li.new { animation: newEntry 1.2s var(--ease); }
+.tag {
+  padding: 3px 0; color: var(--teal); border: 1px solid var(--teal); border-radius: var(--radius);
+  font: 800 .58rem var(--font-subheading); letter-spacing: .08em; text-align: center; text-transform: uppercase;
+}
+.rec-foot { padding: 10px 18px 14px; color: var(--muted); border-top: 1px solid var(--border); font-size: .74rem; }
+
+/* ---------- Recap ---------- */
+.recap-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 48px; }
+.recap-tile { padding: 26px 24px; border: 1px solid rgba(255, 255, 255, .16); border-radius: var(--radius); }
+.recap-tile.reveal:nth-child(2) { transition-delay: .1s; }
+.recap-tile.reveal:nth-child(3) { transition-delay: .2s; }
+.recap-tile.reveal:nth-child(4) { transition-delay: .3s; }
+.recap-tile small { color: var(--gold); font: 800 .66rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.recap-tile small::after { content: ''; display: block; width: 24px; height: 2px; margin-top: 10px; background: var(--gold); }
+.recap-tile p { margin-top: 14px; font: 600 1.2rem/1.35 var(--font-heading); }
+.areas { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.areas li { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255, 255, 255, .12); font: 700 .78rem var(--font-subheading); }
+.areas li:last-child { border-bottom: 0; padding-bottom: 0; }
+.areas li span { color: rgba(255, 255, 255, .55); font: 400 .78rem var(--font-body); text-align: right; }
+.up-next {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 22px;
+  margin-top: 40px; padding: clamp(24px, 4vw, 36px); border: 1px solid var(--gold); border-radius: var(--radius);
+}
+.up-next h3 { font-size: clamp(1.5rem, 2.6vw, 2rem); }
+.up-next p { max-width: 60ch; margin-top: 8px; color: rgba(255, 255, 255, .72); }
+.up-next .eyebrow { margin-bottom: 6px; }
+
+.site-footer {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px;
+  padding: 26px clamp(16px, 4vw, 48px); color: rgba(255, 255, 255, .55);
+  background: var(--black); border-top: 1px solid rgba(255, 255, 255, .1); font-size: .78rem;
+}
+.site-footer img { height: 22px; width: auto; }
+.site-footer p { max-width: 520px; text-align: right; }
+.recap-grid.six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+
+/* ---------- Previously band ---------- */
+.review { background: var(--white); border-bottom: 1px solid var(--border); }
+.review-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 28px; padding-block: 22px; }
+.review-label { color: var(--rust); font: 800 .68rem var(--font-subheading); letter-spacing: .16em; text-transform: uppercase; }
+.review p { flex: 1 1 280px; color: var(--muted); font-size: .92rem; }
+.review p strong { color: var(--ink); }
+.review q { color: var(--ink); font: 600 1.05rem var(--font-heading); }
+.review a { color: var(--teal); font: 700 .76rem var(--font-subheading); text-decoration: none; border-bottom: 1px solid currentColor; white-space: nowrap; }
+
+.two-col { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(32px, 6vw, 72px); align-items: center; margin-top: 48px; }
+
+/* ---------- 01 Person -> applications ---------- */
+.formula { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 28px; }
+.formula span { padding: 10px 14px; border: 1.5px solid var(--darkgray); border-radius: var(--radius); font: 700 .8rem var(--font-subheading); transition: transform .5s var(--slam), opacity .4s ease; }
+.formula span.result { color: var(--black); background: var(--gold); border-color: var(--gold); }
+.formula i { color: var(--gold); font: 600 1.4rem var(--font-heading); font-style: normal; }
+.formula span:nth-child(3) { transition-delay: .2s; }
+.formula span:nth-child(5) { transition-delay: .5s; }
+.armed:not(.is-in) .formula span { opacity: 0; transform: translateY(14px) scale(.9); }
+.copy-points { display: grid; gap: 16px; margin-top: 22px; }
+.copy-points p { color: var(--muted); }
+.copy-points strong { color: var(--ink); }
+
+.family { display: grid; grid-template-columns: minmax(0, .8fr) 70px minmax(0, 1.2fr); align-items: center; }
+.person-card { overflow: hidden; background: var(--white); border: 1px solid var(--border); border-top: 4px solid var(--rust); border-radius: var(--radius); box-shadow: var(--shadow); }
+.person-card .rec-head { border-bottom: 0; }
+.person-card dl { margin: 0; padding: 0 18px 16px; }
+.person-card dl div { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid var(--border); font-size: .8rem; }
+.person-card dt { color: var(--muted); }
+.person-card dd { margin: 0; font-weight: 700; }
+.wires { position: relative; height: 230px; }
+.wires svg { width: 100%; height: 100%; overflow: visible; }
+.wires path { fill: none; stroke: var(--border); stroke-width: 2; transition: stroke .3s ease; }
+.wires path.on { stroke: var(--gold); stroke-width: 2.5; }
+.app-stack { display: grid; gap: 12px; }
+.app-sheet {
+  position: relative; display: grid; gap: 2px; width: 100%; padding: 14px 16px 14px 20px; text-align: left; cursor: pointer;
+  color: var(--ink); background: var(--white); border: 1px solid var(--border); border-left: 4px solid var(--grayblue); border-radius: var(--radius);
+  transition: border-color .3s ease, box-shadow .3s ease, transform .3s var(--ease);
+}
+.app-sheet:hover { transform: translateX(4px); }
+.app-sheet.on { border-color: var(--gold); border-left-color: var(--gold); box-shadow: var(--shadow); transform: translateX(6px); }
+.app-sheet small { color: var(--muted); font: 800 .6rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; }
+.app-sheet strong { font: 600 1.1rem var(--font-heading); }
+.app-sheet span { font-size: .82rem; }
+.app-sheet span b { font-weight: 700; }
+.app-detail { margin-top: 14px; padding: 12px 16px; color: var(--white); background: var(--black); border-radius: var(--radius); font-size: .88rem; }
+.app-detail strong { color: var(--gold); }
+
+/* ---------- 02 Anatomy (paper application) ---------- */
+.anatomy { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: clamp(20px, 3vw, 40px); align-items: start; margin-top: 48px; }
+.paper-wrap { position: relative; padding: 0 12px 12px 0; }
+.paper-wrap::before, .paper-wrap::after { content: ''; position: absolute; border: 1px solid var(--border); border-radius: 2px; background: var(--white); }
+.paper-wrap::before { inset: 12px 0 0 12px; transform: rotate(1.2deg); }
+.paper-wrap::after { inset: 6px 6px 6px 6px; transform: rotate(-.6deg); }
+.sheet {
+  position: relative; z-index: 1; padding: 26px 26px 22px 46px; background: var(--white);
+  border: 1px solid var(--border); border-radius: 2px; box-shadow: var(--shadow);
+  background-image: linear-gradient(90deg, transparent 30px, var(--rust) 30px, var(--rust) 31.5px, transparent 31.5px);
+}
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding-bottom: 14px; border-bottom: 2px solid var(--black); }
+.sheet-head small { color: var(--muted); font: 800 .6rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.sheet-head strong { display: block; font: 600 1.5rem/1.15 var(--font-heading); }
+.sheet-head .for { color: var(--muted); font-size: .82rem; }
+.f1 { padding: 3px 8px; color: var(--teal); border: 1.5px solid var(--teal); border-radius: var(--radius); font: 800 .6rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.frow {
+  position: relative; display: grid; grid-template-columns: 130px minmax(0, 1fr) 26px; gap: 12px; align-items: center; width: 100%;
+  padding: 11px 8px; margin: 0 -8px; text-align: left; color: var(--ink); background: transparent; border: 0;
+  border-bottom: 1px dashed var(--border); border-radius: 2px; cursor: pointer; transition: background-color .25s ease, box-shadow .25s ease;
+}
+.frow:hover { background: var(--canvas); }
+.frow.active { background: var(--canvas); box-shadow: inset 0 0 0 2px var(--gold); }
+.frow > small { color: var(--muted); font: 800 .6rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.frow > span { font-weight: 600; font-size: .9rem; }
+.frow .n { display: grid; place-items: center; width: 24px; height: 24px; color: var(--rust); border: 1.5px solid var(--rust); border-radius: 50%; font: 700 .74rem var(--font-heading); transition: background-color .25s ease, color .25s ease, border-color .25s ease; }
+.frow.active .n { color: var(--black); background: var(--gold); border-color: var(--gold); }
+.st-chip { display: inline-block; padding: 2px 8px; color: var(--grayblue); border: 1.5px solid var(--grayblue); border-radius: var(--radius); font: 800 .62rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+.mats { display: flex; flex-wrap: wrap; gap: 5px; }
+.mats em { padding: 1px 7px; border: 1px solid currentColor; border-radius: var(--radius); font: 700 .64rem var(--font-subheading); font-style: normal; }
+.mats .got { color: var(--teal); }
+.mats .miss { color: var(--rust); }
+
+.explain { position: sticky; top: 72px; padding: clamp(22px, 3vw, 30px); color: var(--white); background: var(--black); border-radius: var(--radius); }
+.explain-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.explain-idx { color: var(--gold); font: 600 1.05rem var(--font-heading); font-variant-numeric: tabular-nums; }
+.explain h3 { margin-top: 12px; font-size: 1.7rem; line-height: 1.15; }
+.explain h3::after { content: ''; display: block; width: 32px; height: 2px; margin-top: 14px; background: var(--gold); }
+.explain p { margin-top: 14px; color: rgba(255, 255, 255, .8); }
+.explain .ask { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--gold); border-radius: var(--radius); }
+.explain .ask small { display: block; color: var(--gold); font: 800 .62rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.explain .ask span { display: block; margin-top: 4px; font-family: var(--font-heading); font-size: 1.05rem; line-height: 1.4; }
+.explain-body { animation: swapIn .45s var(--ease); }
+.dots { display: flex; gap: 6px; }
+.dots button { width: 10px; height: 10px; padding: 0; border: 1.5px solid rgba(255, 255, 255, .45); border-radius: 50%; background: transparent; cursor: pointer; }
+.dots button.on { background: var(--gold); border-color: var(--gold); }
+.explain-nav { display: flex; gap: 8px; margin-top: 22px; }
+.ghost-sm {
+  padding: 8px 12px; color: var(--white); background: transparent; border: 1px solid rgba(255, 255, 255, .3); border-radius: var(--radius);
+  font: 800 .66rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+}
+.ghost-sm:hover { color: var(--black); background: var(--gold); border-color: var(--gold); }
+
+.fact-test { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-top: 28px; }
+.fact-test div { padding: 18px 20px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); }
+.fact-test small { font: 800 .62rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.fact-test .p small { color: var(--rust); }
+.fact-test .a small { color: var(--grayblue); }
+.fact-test p { margin-top: 6px; font: 600 1.1rem/1.4 var(--font-heading); }
+.fact-test span { display: block; margin-top: 6px; color: var(--muted); font-size: .86rem; }
+
+/* ---------- 03 Status journey ---------- */
+.track { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 56px; }
+.track::before { content: ''; position: absolute; top: 23px; left: 12.5%; right: 12.5%; height: 2px; background: rgba(255, 255, 255, .2); }
+.track-fill { position: absolute; top: 23px; left: 12.5%; height: 2px; width: 0; background: var(--gold); transition: width .8s var(--ease); }
+.track-token { position: absolute; z-index: 2; top: 4px; left: 12.5%; width: 40px; height: 40px; margin-left: -20px; display: grid; place-items: center; color: var(--black); background: var(--gold); border-radius: 4px; transition: left .8s var(--slam); box-shadow: 0 0 0 6px rgba(211, 164, 34, .25); }
+.track-token svg { width: 20px; height: 20px; fill: none; stroke: var(--black); stroke-width: 1.8; stroke-linejoin: round; }
+.stage-btn { position: relative; display: grid; justify-items: center; gap: 8px; padding: 0 8px; text-align: center; color: rgba(255, 255, 255, .62); background: none; border: 0; cursor: pointer; }
+.stage-btn::before { content: ''; width: 18px; height: 18px; margin-top: 15px; border: 2px solid rgba(255, 255, 255, .45); border-radius: 50%; background: var(--teal); transition: background-color .3s ease, border-color .3s ease; }
+.stage-btn b { font: 600 1.1rem var(--font-heading); color: var(--white); }
+.stage-btn small { font: 700 .62rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.stage-btn.done::before { background: var(--gold); border-color: var(--gold); }
+.stage-btn.on::before { opacity: 0; }
+.stage-btn.on small { color: var(--gold); }
+.flag { display: inline-block; padding: 2px 7px; color: var(--white); border: 1.5px solid var(--rust); border-radius: var(--radius); font: 800 .56rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.stage-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 34px; }
+.stage-panel > div { padding: 22px 24px; border: 1px solid rgba(255, 255, 255, .2); border-radius: var(--radius); animation: swapIn .45s var(--ease); }
+.stage-panel small { color: var(--gold); font: 800 .62rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.stage-panel p { margin-top: 8px; color: rgba(255, 255, 255, .85); }
+.stage-panel .do { border-color: var(--rust); }
+.stage-panel .do small { color: var(--white); }
+.track-controls { display: flex; gap: 10px; margin-top: 18px; }
+
+.checklist { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(24px, 4vw, 48px); align-items: center; margin-top: 64px; }
+.check-card { overflow: hidden; color: var(--ink); background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+.check-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.check-head strong { font: 600 1.15rem var(--font-heading); }
+.check-head small { display: block; color: var(--muted); font: 700 .62rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+.st-live { padding: 3px 9px; color: var(--grayblue); border: 1.5px solid var(--grayblue); border-radius: var(--radius); font: 800 .62rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; transition: color .3s ease, background-color .3s ease, border-color .3s ease; }
+.st-live.ready { color: var(--black); background: var(--gold); border-color: var(--gold); }
+.check-bar { height: 4px; background: var(--canvas); }
+.check-bar span { display: block; height: 100%; width: 0; background: var(--teal); transition: width .5s var(--ease); }
+.check-list { display: grid; margin: 0; padding: 6px 20px 12px; list-style: none; }
+.check-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 0; text-align: left; color: var(--ink); background: none; border: 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: .92rem; }
+.check-list li:last-child .check-item { border-bottom: 0; }
+.check-box { display: grid; place-items: center; flex: 0 0 auto; width: 22px; height: 22px; border: 2px solid var(--rust); border-radius: 3px; transition: background-color .2s ease, border-color .2s ease; }
+.check-box svg { width: 14px; height: 14px; fill: none; stroke: var(--white); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(.4); transition: opacity .2s ease, transform .3s var(--slam); }
+.check-item[aria-pressed="true"] .check-box { background: var(--teal); border-color: var(--teal); }
+.check-item[aria-pressed="true"] .check-box svg { opacity: 1; transform: none; }
+.check-item .state { margin-left: auto; font: 800 .6rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; color: var(--rust); }
+.check-item[aria-pressed="true"] .state { color: var(--teal); }
+.check-foot { padding: 12px 20px; color: var(--muted); border-top: 1px solid var(--border); font-size: .8rem; }
+
+/* ---------- 04 Decisions ---------- */
+.decide { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(24px, 4vw, 56px); align-items: start; margin-top: 48px; }
+.dsheet { position: relative; overflow: hidden; padding: 26px 26px 26px 46px; background: var(--white); border: 1px solid var(--border); border-radius: 2px; box-shadow: var(--shadow);
+  background-image: linear-gradient(90deg, transparent 30px, var(--rust) 30px, var(--rust) 31.5px, transparent 31.5px); min-height: 370px; }
+.dsheet .kv-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); font-size: .9rem; }
+.dsheet .kv-row small { color: var(--muted); font: 800 .6rem/2 var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.dsheet .kv-row b { font-weight: 700; }
+.dsheet .q-mark { color: var(--rust); font: 700 1.2rem var(--font-heading); }
+.stamp {
+  position: absolute; right: 22px; bottom: 22px; padding: 10px 16px; text-align: center;
+  border: 3px solid currentColor; border-radius: var(--radius); transform: rotate(-10deg);
+  font: 800 .8rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; pointer-events: none;
+}
+.stamp b { display: block; font: 700 2rem/1 var(--font-heading); letter-spacing: 0; }
+.stamp.slam { animation: slam .5s var(--slam); }
+.stamp.c-at { color: var(--teal); }
+.stamp.c-atp { color: var(--gold); }
+.stamp.c-df { color: var(--grayblue); }
+.stamp.c-dn { color: var(--rust); }
+.codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.code {
+  display: grid; gap: 4px; padding: 18px; text-align: left; color: var(--ink); background: var(--white);
+  border: 1px solid var(--border); border-top: 4px solid var(--c); border-radius: var(--radius); cursor: pointer;
+  transition: transform .25s var(--ease), box-shadow .25s ease, border-color .25s ease;
+}
+.code:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.code[aria-pressed="true"] { border-color: var(--c); box-shadow: inset 0 0 0 1px var(--c), var(--shadow); }
+.code b { color: var(--c); font: 700 1.6rem/1 var(--font-heading); }
+.code strong { font: 700 .8rem var(--font-subheading); letter-spacing: .02em; }
+.code span { color: var(--muted); font-size: .84rem; line-height: 1.5; }
+.effect { margin-top: 14px; padding: 16px 18px; color: var(--white); background: var(--black); border-radius: var(--radius); font-size: .9rem; }
+.effect strong { color: var(--gold); }
+.mini-ladder { display: flex; gap: 4px; margin-top: 10px; }
+.mini-ladder span { flex: 1; padding: 5px 4px; text-align: center; color: rgba(255, 255, 255, .5); border: 1px solid rgba(255, 255, 255, .2); border-radius: 2px; font: 700 .6rem var(--font-subheading); letter-spacing: .04em; text-transform: uppercase; transition: color .3s ease, background-color .3s ease, border-color .3s ease; }
+.mini-ladder span.reached { color: var(--white); border-color: var(--gold); }
+.mini-ladder span.cur { color: var(--black); background: var(--gold); border-color: var(--gold); }
+.rule-strip { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; margin-top: 40px; padding: 22px 26px; border: 1px solid var(--border); border-left: 4px solid var(--rust); border-radius: var(--radius); background: var(--white); }
+.rule-strip h4 { font-size: 1.25rem; }
+.rule-strip p { margin-top: 4px; color: var(--muted); font-size: .92rem; }
+.rule-mini { display: flex; gap: 8px; flex-wrap: wrap; }
+.rule-mini span { padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius); font: 700 .72rem var(--font-subheading); }
+.rule-mini em { margin-left: 6px; font-style: normal; }
+.rule-mini .at em { color: var(--teal); }
+.rule-mini .dn em { color: var(--rust); }
+
+/* ---------- 05 Counting ---------- */
+.counting { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: clamp(24px, 4vw, 48px); align-items: start; margin-top: 44px; }
+.count-card { overflow: hidden; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.count-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.count-top strong { font: 600 1.1rem var(--font-heading); }
+.seg { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--darkgray); border-radius: var(--radius); }
+.seg button { padding: 8px 12px; border: 0; border-radius: 2px; background: transparent; cursor: pointer; color: var(--darkgray); font: 800 .66rem var(--font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+.seg button[aria-pressed="true"] { color: var(--white); background: var(--black); }
+.rows { margin: 0; padding: 0; list-style: none; }
+.rows li { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 20px; border-bottom: 1px solid var(--border); font-size: .88rem; max-height: 80px; overflow: hidden; transition: max-height .5s var(--ease), padding .5s var(--ease), opacity .4s ease, background-color .3s ease; }
+.rows li .av { display: grid; place-items: center; width: 30px; height: 30px; color: var(--gold); background: var(--black); border-radius: 50%; font: 700 .7rem var(--font-heading); }
+.rows li strong { display: block; font-weight: 700; }
+.rows li em { color: var(--muted); font-style: normal; font-size: .8rem; }
+.rows li .badge { padding: 2px 7px; color: var(--teal); border: 1.5px solid var(--teal); border-radius: var(--radius); font: 800 .58rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.rows li.dupe { box-shadow: inset 3px 0 0 var(--gold); }
+.count-card.people li.twin { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; border-bottom-width: 0; }
+.count-card .badge { display: none; }
+.count-card.people .badge { display: inline-block; }
+.count-card.people .app-only { display: none; }
+.count-big { padding: clamp(24px, 3vw, 32px); color: var(--white); background: var(--black); border-radius: var(--radius); }
+.count-big small { color: var(--gold); font: 800 .64rem var(--font-subheading); letter-spacing: .14em; text-transform: uppercase; }
+.count-big strong { display: block; margin-top: 8px; font: 700 clamp(4rem, 9vw, 6rem)/1 var(--font-heading); font-variant-numeric: tabular-nums; }
+.count-big p { margin-top: 10px; color: rgba(255, 255, 255, .78); }
+.count-big .pair { display: flex; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, .15); font-size: .86rem; }
+.count-big .pair span { flex: 1; }
+.count-big .pair b { display: block; color: var(--white); font: 600 1.6rem var(--font-heading); }
+
+.sorter { margin-top: clamp(64px, 8vw, 96px); }
+.sort-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 32px; }
+.fact { display: grid; gap: 12px; padding: 18px; background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); transition: border-color .3s ease; }
+.fact strong { font: 600 1.15rem var(--font-heading); }
+.fact .pick { display: flex; gap: 6px; }
+.fact .pick button { flex: 1; padding: 7px 6px; color: var(--darkgray); background: transparent; border: 1px solid var(--darkgray); border-radius: var(--radius); font: 800 .6rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.fact .pick button:hover { color: var(--white); background: var(--black); border-color: var(--black); }
+.fact.right { border-color: var(--teal); }
+.fact.wrong { border-color: var(--rust); }
+.fact .fb { min-height: 1.3em; font: 700 .72rem var(--font-subheading); }
+.fact.right .fb { color: var(--teal); }
+.fact.wrong .fb { color: var(--rust); }
+.fact.right .pick button.chosen { color: var(--white); background: var(--teal); border-color: var(--teal); }
+.fact.wrong .pick button.chosen { color: var(--white); background: var(--rust); border-color: var(--rust); }
+.score { display: flex; align-items: center; gap: 16px; margin-top: 18px; }
+.score strong { font: 600 1.4rem var(--font-heading); font-variant-numeric: tabular-nums; }
+.score button { padding: 6px 2px; color: var(--rust); background: none; border: 0; border-bottom: 1px solid currentColor; font: 800 .66rem var(--font-subheading); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+
+/* ---------- Keyframes ---------- */
+@keyframes lineUp { from { transform: translateY(108%); } to { transform: none; } }
+@keyframes underline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes cardIn { from { opacity: 0; transform: translateX(40px) rotate(1.5deg); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(1.35, 1.9); opacity: 0; } }
+@keyframes bob { 50% { transform: translateY(-4px); } }
+@keyframes ripple { 0% { transform: scale(.3); opacity: .9; } 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes turn { 0%, 15% { transform: scaleX(1); } 45%, 70% { transform: scaleX(-1); } 100% { transform: scaleX(1); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes hop { 0% { translate: 0 0; } 35% { translate: 0 -38px; } 70% { translate: 0 4px; } 100% { translate: 0 0; } }
+@keyframes shadowHop { 35% { transform: scale(.6); opacity: .5; } }
+@keyframes bang { 0% { transform: scale(.2) rotate(-30deg); opacity: 0; } 60% { transform: scale(1.25) rotate(8deg); opacity: 1; } 100% { transform: none; } }
+@keyframes crowd { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes dash { to { stroke-dashoffset: -22; } }
+@keyframes cardGlow { 0% { box-shadow: var(--shadow-lg), 0 0 0 0 rgba(211, 164, 34, .5); } 100% { box-shadow: var(--shadow-lg), 0 0 0 14px rgba(211, 164, 34, 0); } }
+@keyframes newEntry { 0% { opacity: 0; transform: translateY(-10px); box-shadow: inset 3px 0 0 var(--gold); } 30% { opacity: 1; transform: none; } 100% { box-shadow: inset 0 0 0 var(--gold); } }
+@keyframes run { 0% { left: 12.5%; opacity: 0; } 6% { opacity: 1; } 75% { left: 87.5%; opacity: 1; } 90%, 100% { left: 87.5%; opacity: 0; } }
+@keyframes lit { 0%, 4% { border-color: rgba(255, 255, 255, .45); background: var(--teal); } 8%, 22% { border-color: var(--gold); background: var(--gold); } 34%, 100% { border-color: rgba(255, 255, 255, .45); background: var(--teal); } }
+@keyframes runner { 0% { transform: translateX(0); opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { transform: translateX(96px); opacity: 0; } }
+@keyframes confetti {
+  0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+  40% { transform: translate(calc(var(--x) * .6), var(--y)) rotate(calc(var(--r) * .5)); opacity: 1; }
+  100% { transform: translate(var(--x), calc(var(--y) * -.4)) rotate(var(--r)); opacity: 0; }
+}
+@keyframes swapIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes slam { 0% { transform: rotate(-10deg) scale(2.4); opacity: 0; } 60% { transform: rotate(-10deg) scale(.92); opacity: 1; } 100% { transform: rotate(-10deg) scale(1); } }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1000px) {
+  .hero-inner { grid-template-columns: minmax(0, 1fr); }
+  .lesson-card { max-width: 560px; }
+  .sort-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recap-grid, .recap-grid.six { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+  .two-col, .anatomy, .checklist, .decide, .counting { grid-template-columns: minmax(0, 1fr); }
+  .explain { position: relative; top: 0; }
+  .family { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .wires { display: none; }
+  .stage-panel, .fact-test { grid-template-columns: minmax(0, 1fr); }
+  .rule-strip { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 620px) {
+  .header-divider, .home-link span { display: none; }
+  .chapter-head { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .recap-grid, .recap-grid.six, .sort-grid, .codes { grid-template-columns: minmax(0, 1fr); }
+  .frow { grid-template-columns: 96px minmax(0, 1fr) 24px; }
+  .stage-btn small { font-size: .56rem; letter-spacing: .04em; }
+  .site-footer p { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; transition-delay: 0s !important; }
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<header class="site-header">
+  <a class="wordmark" href="../../" aria-label="Gateway Seminary Enrollment Tools home">
+    <img src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary">
+  </a>
+  <span class="header-divider" aria-hidden="true"></span>
+  <span class="page-title">The Application Record</span>
+  <a class="home-link" href="../../">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5M6.5 10v9h11v-9M10 19v-5h4v5"/></svg>
+    <span>Tools home</span>
+  </a>
+</header>
+
+<nav class="chapter-bar" aria-label="Lesson chapters">
+  <div class="chapter-links">
+    <a href="#what" data-ch="what"><span>01</span>What it is</a>
+    <a href="#anatomy" data-ch="anatomy"><span>02</span>Anatomy</a>
+    <a href="#status" data-ch="status"><span>03</span>Status</a>
+    <a href="#decisions" data-ch="decisions"><span>04</span>Decisions</a>
+    <a href="#counting" data-ch="counting"><span>05</span>Counting</a>
+    <a href="#recap" data-ch="recap"><span>&#10003;</span>Recap</a>
+  </div>
+  <div class="chapter-progress" aria-hidden="true"><span id="progress-fill"></span></div>
+</nav>
+
+<main id="main-content">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero on-dark" aria-labelledby="page-title">
+    <canvas id="constellation" aria-hidden="true"></canvas>
+    <div class="hero-inner shell">
+      <div class="hero-copy">
+        <p class="eyebrow">Slate training &middot; Part three</p>
+        <h1 id="page-title">
+          <span class="hl" style="--i:0"><span>One program.</span></span>
+          <span class="hl" style="--i:1"><span>One term.</span></span>
+          <span class="hl" style="--i:2"><span>One <em>application</em>.</span></span>
+        </h1>
+        <div class="hero-rule" aria-hidden="true"></div>
+        <p class="hero-lede">Underneath every person record sit their applications. This lesson covers what an application record is, what lives on it, how it moves from started to decided, and how to count people and applications without mixing them up.</p>
+        <div class="hero-actions">
+          <a class="button button-gold" href="#what">Start the lesson</a>
+          <a class="button button-ghost" href="#decisions">Jump to decisions</a>
+        </div>
+      </div>
+
+      <aside class="lesson-card" aria-labelledby="lesson-card-title">
+        <p class="card-kicker">In this lesson</p>
+        <h2 id="lesson-card-title">One attempt at a time</h2>
+        <ol class="lesson-list">
+          <li><a href="#what"><span class="idx">01</span><span><strong>What it is</strong><small>One program, one term</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#anatomy"><span class="idx">02</span><span><strong>Anatomy</strong><small>What lives on an application</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#status"><span class="idx">03</span><span><strong>Status</strong><small>From started to decided</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#decisions"><span class="idx">04</span><span><strong>Decisions</strong><small>Decided is not a decision</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+          <li><a href="#counting"><span class="idx">05</span><span><strong>Counting right</strong><small>People vs. applications</small></span><span class="go" aria-hidden="true">&rarr;</span></a></li>
+        </ol>
+        <p class="card-foot">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M10 8.5v7l5.5-3.5z"/></svg>
+          Followed by a live demo in Slate
+        </p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="review" aria-label="Previously">
+    <div class="shell review-inner">
+      <span class="review-label">Previously</span>
+      <p><strong>The person record:</strong> one person, one record, for life. Today, keep asking: <q>Am I talking about the person, or one of their applications?</q></p>
+      <a href="https://claude.ai/artifact/8tCNywob3DzJubrvE7taiK" target="_blank" rel="noopener">Part two: The Person Record &#8599;</a>
+    </div>
+  </section>
+
+  <!-- ============ 01 WHAT IT IS ============ -->
+  <section id="what" class="chapter" data-chapter="what" aria-labelledby="what-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">01</span>
+        <div>
+          <p class="eyebrow">What it is</p>
+          <h2 id="what-title">One attempt to enter one program for one term</h2>
+        </div>
+      </header>
+
+      <div class="two-col">
+        <div data-anim>
+          <div class="copy-points reveal">
+            <p><strong>An application belongs to a person record.</strong> It can't exist on its own.</p>
+            <p><strong>A person can have many applications</strong> over the years, and each one is its own record with its own status and its own decision.</p>
+            <p>If the person record is a file folder with their name on it, each application is a separate form inside that folder, filled out for one program and one term.</p>
+          </div>
+          <div class="formula" aria-label="One program plus one term equals one application">
+            <span>1 program</span><i aria-hidden="true">+</i><span>1 term</span><i aria-hidden="true">=</i><span class="result">1 application</span>
+          </div>
+        </div>
+
+        <div id="family-ui">
+          <div class="family">
+            <article class="person-card">
+              <p class="rec-label">Person record</p>
+              <div class="rec-head"><span class="avatar" aria-hidden="true">JL</span><div><h4>Jordan Lee</h4><p>Person status &middot; Graduate</p></div></div>
+              <dl>
+                <div><dt>Email</dt><dd>jordan.lee@example.com</dd></div>
+                <div><dt>Campus</dt><dd>Ontario Campus</dd></div>
+              </dl>
+            </article>
+            <div class="wires" aria-hidden="true">
+              <svg viewBox="0 0 70 230" preserveAspectRatio="none">
+                <path d="M0 115C35 115 35 38 70 38"/>
+                <path d="M0 115C35 115 35 115 70 115"/>
+                <path d="M0 115C35 115 35 192 70 192"/>
+              </svg>
+            </div>
+            <div class="app-stack" role="group" aria-label="Jordan's applications">
+              <button class="app-sheet" type="button"><small>Application</small><strong>M.Div. &middot; Fall 2021</strong><span><b>Decided</b> &middot; Admit</span></button>
+              <button class="app-sheet" type="button"><small>Application</small><strong>Certificate &middot; Spring 2024</strong><span><b>Decided</b> &middot; Admit</span></button>
+              <button class="app-sheet" type="button"><small>Application</small><strong>D.Min. &middot; Fall 2027</strong><span><b>Awaiting Materials</b></span></button>
+            </div>
+          </div>
+          <p class="app-detail" id="app-detail" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 ANATOMY ============ -->
+  <section id="anatomy" class="chapter white" data-chapter="anatomy" aria-labelledby="anatomy-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">02</span>
+        <div>
+          <p class="eyebrow">Anatomy</p>
+          <h2 id="anatomy-title">What lives on an application</h2>
+          <p class="lede">Application fields are facts about this one attempt. Tap any line on Jordan's D.Min. application to see what it means.</p>
+        </div>
+      </header>
+
+      <div class="anatomy" id="anatomy-ui">
+        <div class="paper-wrap">
+          <div class="sheet" role="group" aria-label="Example application for Jordan Lee (fictional)">
+            <div class="sheet-head">
+              <div><small>Application record</small><strong>Doctor of Ministry</strong><span class="for">for Jordan Lee</span></div>
+              <span class="f1">F-1: No</span>
+            </div>
+            <button class="frow" type="button"><small>Degree / Program</small><span>Doctor of Ministry</span><span class="n">1</span></button>
+            <button class="frow" type="button"><small>Entry term</small><span>Fall 2027</span><span class="n">2</span></button>
+            <button class="frow" type="button"><small>Round</small><span>Fall 2027 &middot; Round 1</span><span class="n">3</span></button>
+            <button class="frow" type="button"><small>Status</small><span><span class="st-chip">Awaiting Materials</span></span><span class="n">4</span></button>
+            <button class="frow" type="button"><small>Created</small><span>09/18/2026</span><span class="n">5</span></button>
+            <button class="frow" type="button"><small>Decision</small><span>None yet</span><span class="n">6</span></button>
+            <button class="frow" type="button"><small>Materials</small><span class="mats"><em class="got">Transcripts</em><em class="miss">Reference</em><em class="miss">Statement</em></span><span class="n">7</span></button>
+            <button class="frow" type="button"><small>International</small><span>F-1 student visa: No</span><span class="n">8</span></button>
+          </div>
+        </div>
+
+        <aside class="explain" aria-live="polite">
+          <div class="explain-top">
+            <span class="explain-idx" id="ex-idx">01 / 08</span>
+            <div class="dots" id="ex-dots"></div>
+          </div>
+          <div id="ex-body"></div>
+          <div class="explain-nav">
+            <button class="ghost-sm" type="button" id="ex-prev">Previous</button>
+            <button class="ghost-sm" type="button" id="ex-next">Next</button>
+          </div>
+        </aside>
+      </div>
+
+      <div class="fact-test" data-anim>
+        <div class="p reveal"><small>Person fact</small><p>Would it be the same no matter which program they applied to?</p><span>Email, birthdate, preferred name.</span></div>
+        <div class="a reveal"><small>Application fact</small><p>Could it be different for each application?</p><span>Program, term, status, decision.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 03 STATUS ============ -->
+  <section id="status" class="chapter teal on-dark" data-chapter="status" aria-labelledby="status-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">03</span>
+        <div>
+          <p class="eyebrow">Status</p>
+          <h2 id="status-title">From started to <em>decided</em></h2>
+          <p class="lede">Application status tracks where this one application is in the process right now. There are four, in order.</p>
+        </div>
+      </header>
+
+      <div id="track-ui">
+        <div class="track" id="track">
+          <span class="track-fill" id="track-fill" aria-hidden="true"></span>
+          <span class="track-token" id="track-token" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/></svg></span>
+          <button class="stage-btn" type="button"><small>Awaiting Submission</small><span class="flag">Follow-up</span></button>
+          <button class="stage-btn" type="button"><small>Awaiting Payment</small></button>
+          <button class="stage-btn" type="button"><small>Awaiting Materials</small><span class="flag">Follow-up</span></button>
+          <button class="stage-btn" type="button"><small>Decided</small></button>
+        </div>
+        <div class="stage-panel" id="stage-panel" aria-live="polite"></div>
+        <div class="track-controls">
+          <button class="button button-gold" type="button" id="track-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Play</span></button>
+        </div>
+      </div>
+
+      <div class="checklist" data-anim>
+        <div class="sub-head reveal">
+          <p class="eyebrow">The materials checklist</p>
+          <h3>Every application has its own checklist</h3>
+          <p>Each required item is marked received or missing. &ldquo;Who still owes materials?&rdquo; is one of the most common lists anyone asks for, and it's a list of <strong>applications</strong>, because the checklist belongs to the application. Tap the items to mark them received.</p>
+        </div>
+        <div class="check-card reveal" id="check-card">
+          <div class="check-head">
+            <div><small>Jordan Lee &middot; D.Min. &middot; Fall 2027</small><strong>Materials checklist</strong></div>
+            <span class="st-live" id="st-live">Awaiting Materials</span>
+          </div>
+          <div class="check-bar"><span id="check-bar"></span></div>
+          <ul class="check-list">
+            <li><button class="check-item" type="button" aria-pressed="true"><span class="check-box"><svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></span>Official transcripts<span class="state">Received</span></button></li>
+            <li><button class="check-item" type="button" aria-pressed="false"><span class="check-box"><svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></span>Pastoral reference<span class="state">Missing</span></button></li>
+            <li><button class="check-item" type="button" aria-pressed="false"><span class="check-box"><svg viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></svg></span>Ministry statement<span class="state">Missing</span></button></li>
+          </ul>
+          <p class="check-foot" id="check-foot">Example checklist. Real requirements vary by program.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 DECISIONS ============ -->
+  <section id="decisions" class="chapter white" data-chapter="decisions" aria-labelledby="decisions-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">04</span>
+        <div>
+          <p class="eyebrow">Decisions</p>
+          <h2 id="decisions-title">&ldquo;Decided&rdquo; is a status, not a decision</h2>
+          <p class="lede">Knowing an application is Decided tells you a decision was made. It doesn't tell you what the decision was. For that, look at the decision code. Pick one to stamp Jordan's application.</p>
+        </div>
+      </header>
+
+      <div class="decide" id="decide-ui">
+        <div>
+          <div class="dsheet">
+            <div class="sheet-head"><div><small>Application record</small><strong>Doctor of Ministry</strong><span class="for">for Jordan Lee &middot; Fall 2027</span></div></div>
+            <div class="kv-row"><small>Status</small><b>Decided</b></div>
+            <div class="kv-row"><small>Decision code</small><b id="d-code"><span class="q-mark">?</span></b></div>
+            <div class="kv-row"><small>Decision date</small><b id="d-date">&mdash;</b></div>
+            <div class="stamp" id="stamp" hidden><b id="stamp-code"></b><span id="stamp-word"></span></div>
+          </div>
+          <div class="effect" id="effect" aria-live="polite">
+            <span id="effect-text">Pick a decision code to see what happens to Jordan's person status.</span>
+            <div class="mini-ladder" id="mini-ladder">
+              <span>Inquiry</span><span>Prospect</span><span>Applicant</span><span>Student</span><span>Graduate</span>
+            </div>
+          </div>
+        </div>
+        <div class="codes" role="group" aria-label="Decision codes">
+          <button class="code" type="button" aria-pressed="false" data-code="AT" style="--c:var(--teal)"><b>AT</b><strong>Admit</strong><span>Admitted to this program and term.</span></button>
+          <button class="code" type="button" aria-pressed="false" data-code="ATP" style="--c:var(--gold)"><b>ATP</b><strong>Admitted Provisional</strong><span>Admitted, with a condition still to meet (like a final transcript) before enrollment is confirmed.</span></button>
+          <button class="code" type="button" aria-pressed="false" data-code="DF" style="--c:var(--grayblue)"><b>DF</b><strong>Defer</strong><span>The decision is pushed to a later time.</span></button>
+          <button class="code" type="button" aria-pressed="false" data-code="DN" style="--c:var(--rust)"><b>DN</b><strong>Deny</strong><span>Not admitted for this program and term. They can still apply to a different program or a later term.</span></button>
+        </div>
+      </div>
+
+      <div class="rule-strip reveal" data-anim>
+        <div><h4>Decisions live on the application, never on the person</h4><p>Jordan can be admitted to one program and denied for another. Each application keeps its own decision.</p></div>
+        <div class="rule-mini"><span class="at">Certificate<em>AT</em></span><span class="dn">Ph.D.<em>DN</em></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 05 COUNTING ============ -->
+  <section id="counting" class="chapter" data-chapter="counting" aria-labelledby="counting-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">05</span>
+        <div>
+          <p class="eyebrow">Counting right</p>
+          <h2 id="counting-title">Applications are not people</h2>
+          <p class="lede">Jordan applied to two programs for Fall 2027, so a list of Fall 2027 applications shows Jordan twice. Switch between counting applications and counting people.</p>
+        </div>
+      </header>
+
+      <div class="counting">
+        <div class="count-card" id="count-card">
+          <div class="count-top">
+            <strong>Fall 2027 applications</strong>
+            <div class="seg" role="group" aria-label="Count by">
+              <button type="button" data-mode="apps" aria-pressed="true">Applications</button>
+              <button type="button" data-mode="people" aria-pressed="false">People</button>
+            </div>
+          </div>
+          <ul class="rows">
+            <li class="dupe"><span class="av">JL</span><span><strong>Jordan Lee</strong><em class="app-only">Doctor of Ministry</em></span><span class="badge">2 applications</span></li>
+            <li class="dupe twin"><span class="av">JL</span><span><strong>Jordan Lee</strong><em>Biblical Counseling Certificate</em></span></li>
+            <li><span class="av">MO</span><span><strong>Maya Ortiz</strong><em class="app-only">Master of Divinity</em></span></li>
+            <li><span class="av">SC</span><span><strong>Samuel Cho</strong><em class="app-only">Diploma in Theological Studies</em></span></li>
+            <li><span class="av">GK</span><span><strong>Grace Kim</strong><em class="app-only">Global Engagement Certificate</em></span></li>
+            <li><span class="av">DN</span><span><strong>David Nguyen</strong><em class="app-only">Master of Divinity</em></span></li>
+          </ul>
+        </div>
+        <div class="count-big" aria-live="polite">
+          <small id="count-label">Applications</small>
+          <strong id="count-num">6</strong>
+          <p id="count-text">Six application rows. Jordan counts twice because he has two applications.</p>
+          <div class="pair"><span>How many applications?<b>6</b></span><span>How many people applied?<b>5</b></span></div>
+        </div>
+      </div>
+
+      <div class="sorter">
+        <div class="sub-head reveal" data-anim>
+          <p class="eyebrow">Check your thinking</p>
+          <h3>Person fact or application fact?</h3>
+          <p>Before you ask for (or share) a number, decide which record you mean. Sort these eight facts.</p>
+        </div>
+        <div class="sort-grid" id="sort-grid"></div>
+        <div class="score"><span>Score <strong id="score">0 / 8</strong></span><button type="button" id="score-reset">Start over</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RECAP ============ -->
+  <section id="recap" class="chapter black on-dark" data-chapter="recap" aria-labelledby="recap-title">
+    <div class="shell">
+      <header class="chapter-head reveal" data-anim>
+        <span class="chapter-num" aria-hidden="true">&#10003;</span>
+        <div>
+          <p class="eyebrow">Recap</p>
+          <h2 id="recap-title">What to remember</h2>
+        </div>
+      </header>
+      <div class="recap-grid six" data-anim>
+        <article class="recap-tile reveal"><small>One attempt</small><p>One application is one attempt to enter one program for one term. One person can have many.</p></article>
+        <article class="recap-tile reveal"><small>Application fields</small><p>Facts about that one attempt: program, term, round, status, decision, materials.</p></article>
+        <article class="recap-tile reveal"><small>Status</small><p>Awaiting Submission, Awaiting Payment, Awaiting Materials, Decided.</p></article>
+        <article class="recap-tile reveal"><small>Decided is not a decision</small><p>The decision code tells you the outcome: AT, ATP, DF, DN.</p></article>
+        <article class="recap-tile reveal"><small>Where decisions live</small><p>On the application, never on the person. Admission moves the person to Student.</p></article>
+        <article class="recap-tile reveal"><small>Count carefully</small><p>Applications and people are different numbers. Say which one you mean.</p></article>
+      </div>
+      <div class="up-next reveal" data-anim>
+        <div>
+          <p class="eyebrow">Up next</p>
+          <h3>Live demo in Slate</h3>
+          <p>Next, we open a test person in Slate, find their applications, and walk through status, materials, and decisions on real screens.</p>
+        </div>
+        <a class="button button-gold" href="#main-content">Back to top</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <img src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary">
+  <p>Enrollment Tools &middot; Understanding the Application Record. People and numbers shown are fictional examples.</p>
+</footer>
+
+<script>
+
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var hasIO = 'IntersectionObserver' in window;
+
+  function whenVisible(el, onIn, onOut, threshold) {
+    if (!el) return;
+    if (!hasIO) { onIn(); return; }
+    new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) onIn(); else if (onOut) onOut(); });
+    }, { threshold: threshold || 0 }).observe(el);
+  }
+
+  /* ---------- Reveal ---------- */
+  (function reveal() {
+    if (!hasIO || reduce) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.18, rootMargin: '0px 0px -6% 0px' });
+    var vh = window.innerHeight;
+    $$('[data-anim]').forEach(function (el) {
+      if (el.getBoundingClientRect().top > vh * 0.92) { el.classList.add('armed'); io.observe(el); }
+    });
+  })();
+
+  /* ---------- Chapter bar ---------- */
+  (function chapterBar() {
+    var fill = $('#progress-fill');
+    var links = $$('.chapter-links a');
+    var secs = $$('[data-chapter]');
+    var ticking = false;
+    function update() {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      fill.style.width = (max > 0 ? Math.min(100, window.scrollY / max * 100) : 0) + '%';
+      var cur = null;
+      secs.forEach(function (s) { if (s.getBoundingClientRect().top <= 140) cur = s.dataset.chapter; });
+      links.forEach(function (a) {
+        var on = a.dataset.ch === cur;
+        a.classList.toggle('active', on);
+        if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+      });
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  })();
+
+  /* ---------- Hero constellation ---------- */
+  (function constellation() {
+    var cv = $('#constellation');
+    var hero = $('.hero');
+    if (!cv || !cv.getContext) return;
+    var ctx = cv.getContext('2d');
+    var w = 0, h = 0, pts = [], mouse = null, running = false, raf = 0;
+    function size() {
+      var d = Math.min(window.devicePixelRatio || 1, 2);
+      w = hero.clientWidth; h = hero.clientHeight;
+      cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+      ctx.setTransform(d, 0, 0, d, 0, 0);
+      var n = Math.round(Math.min(95, Math.max(30, w * h / 13000)));
+      pts = [];
+      for (var i = 0; i < n; i++) {
+        pts.push({
+          x: Math.random() * w, y: Math.random() * h,
+          vx: (Math.random() - 0.5) * 0.22, vy: (Math.random() - 0.5) * 0.22,
+          r: Math.random() * 1.5 + 0.8, g: Math.random() < 0.14, ph: Math.random() * 6.28
+        });
+      }
+    }
+    function frame(t) {
+      ctx.clearRect(0, 0, w, h);
+      var i, j, p, q, dx, dy, d, a;
+      for (i = 0; i < pts.length; i++) {
+        p = pts[i];
+        if (!reduce) { p.x += p.vx; p.y += p.vy; }
+        if (p.x < -10) p.x = w + 10; if (p.x > w + 10) p.x = -10;
+        if (p.y < -10) p.y = h + 10; if (p.y > h + 10) p.y = -10;
+      }
+      ctx.lineWidth = 1;
+      for (i = 0; i < pts.length; i++) {
+        p = pts[i];
+        for (j = i + 1; j < pts.length; j++) {
+          q = pts[j]; dx = p.x - q.x; dy = p.y - q.y; d = dx * dx + dy * dy;
+          if (d < 15000) {
+            a = (1 - Math.sqrt(d) / 122) * 0.22;
+            ctx.strokeStyle = (p.g || q.g) ? 'rgba(211,164,34,' + a + ')' : 'rgba(255,255,255,' + (a * 0.6) + ')';
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+          }
+        }
+        if (mouse) {
+          dx = p.x - mouse.x; dy = p.y - mouse.y; d = Math.sqrt(dx * dx + dy * dy);
+          if (d < 170) {
+            ctx.strokeStyle = 'rgba(211,164,34,' + ((1 - d / 170) * 0.5) + ')';
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
+          }
+        }
+      }
+      for (i = 0; i < pts.length; i++) {
+        p = pts[i];
+        if (p.g) {
+          var pr = p.r + 1.2 + Math.sin(t / 700 + p.ph) * 0.9;
+          ctx.fillStyle = 'rgba(211,164,34,.18)';
+          ctx.beginPath(); ctx.arc(p.x, p.y, pr * 3, 0, 6.283); ctx.fill();
+          ctx.fillStyle = '#d3a422';
+          ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, 6.283); ctx.fill();
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,.55)';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+        }
+      }
+      if (running) raf = requestAnimationFrame(frame);
+    }
+    size();
+    hero.addEventListener('pointermove', function (e) {
+      var r = hero.getBoundingClientRect(); mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+    });
+    hero.addEventListener('pointerleave', function () { mouse = null; });
+    window.addEventListener('resize', function () { size(); if (!running) frame(0); });
+    if (reduce) { frame(0); return; }
+    whenVisible(hero, function () {
+      if (!running) { running = true; raf = requestAnimationFrame(frame); }
+    }, function () { running = false; cancelAnimationFrame(raf); });
+  })();
+  function explorer(rootSel, itemSel, info, period) {
+    var root = $(rootSel);
+    if (!root) return;
+    var items = $$(itemSel, root), body = $('#ex-body'), idx = $('#ex-idx'), dotsEl = $('#ex-dots');
+    var cur = 0, timer = null, total = info.length;
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    dotsEl.innerHTML = info.map(function (_, i) { return '<button type="button" aria-label="Show part ' + (i + 1) + '"></button>'; }).join('');
+    var dots = $$('button', dotsEl);
+    function select(i) {
+      cur = (i + total) % total;
+      items.forEach(function (z, k) { z.classList.toggle('active', k === cur); z.setAttribute('aria-pressed', String(k === cur)); });
+      dots.forEach(function (d, k) { d.classList.toggle('on', k === cur); });
+      idx.textContent = pad(cur + 1) + ' / ' + pad(total);
+      body.innerHTML = '';
+      var wrap = document.createElement('div'); wrap.className = 'explain-body';
+      var h = document.createElement('h3'); h.textContent = info[cur].t;
+      var p = document.createElement('p'); p.textContent = info[cur].d;
+      var ask = document.createElement('div'); ask.className = 'ask';
+      var s = document.createElement('small'); s.textContent = 'Ask yourself';
+      var sp = document.createElement('span'); sp.textContent = info[cur].a;
+      ask.appendChild(s); ask.appendChild(sp);
+      wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(ask);
+      body.appendChild(wrap);
+    }
+    function stopAuto() { clearInterval(timer); timer = -1; }
+    items.forEach(function (z, k) { z.addEventListener('click', function () { stopAuto(); select(k); }); });
+    dots.forEach(function (d, k) { d.addEventListener('click', function () { stopAuto(); select(k); }); });
+    $('#ex-prev').addEventListener('click', function () { stopAuto(); select(cur - 1); });
+    $('#ex-next').addEventListener('click', function () { stopAuto(); select(cur + 1); });
+    select(0);
+    if (reduce) return;
+    whenVisible(root, function () {
+      if (timer === null) timer = setInterval(function () { select(cur + 1); }, period);
+    }, function () { if (timer && timer !== -1) { clearInterval(timer); timer = null; } }, 0.35);
+  }
+
+  /* ---------- Person -> applications ---------- */
+  (function family() {
+    var root = $('#family-ui');
+    if (!root) return;
+    var sheets = $$('.app-sheet', root), wires = $$('.wires path', root), detail = $('#app-detail');
+    var details = [
+      ['M.Div. · Fall 2021', 'Decided, with an Admit decision. Jordan enrolled, which moved his person status to Student.'],
+      ['Certificate · Spring 2024', 'A second application, years later. Its own status and its own decision: Admit.'],
+      ['D.Min. · Fall 2027', 'Still in progress: Awaiting Materials. Same person, a brand new story.']
+    ];
+    var cur = 0, timer = null;
+    function select(i) {
+      cur = i;
+      sheets.forEach(function (s, k) { s.classList.toggle('on', k === i); s.setAttribute('aria-pressed', String(k === i)); });
+      wires.forEach(function (w, k) { w.classList.toggle('on', k === i); });
+      detail.innerHTML = '';
+      var st = document.createElement('strong'); st.textContent = details[i][0] + ': ';
+      detail.appendChild(st); detail.appendChild(document.createTextNode(details[i][1]));
+    }
+    sheets.forEach(function (s, k) { s.addEventListener('click', function () { clearInterval(timer); timer = -1; select(k); }); });
+    select(2);
+    if (reduce) return;
+    whenVisible(root, function () {
+      if (timer === null) timer = setInterval(function () { select((cur + 1) % sheets.length); }, 3000);
+    }, function () { if (timer && timer !== -1) { clearInterval(timer); timer = null; } }, 0.4);
+  })();
+
+  /* ---------- Anatomy explorer ---------- */
+  explorer('#anatomy-ui', '.frow', [
+    { t: 'Degree / Program', d: 'What they’re applying to: the M.Div., the Doctor of Ministry, a Biblical Counseling Certificate, and so on. Every application is for exactly one program.', a: 'Which program is this application for?' },
+    { t: 'Entry term', d: 'When they want to start: Fall, Spring, or Summer, plus the year. One application covers one term. Starting in a different term usually means a different application.', a: 'When does this person want to start?' },
+    { t: 'Application round', d: 'Which application cycle this application belongs to. Rounds group applications so they can be reviewed and reported on together.', a: 'Which cycle will this be reviewed in?' },
+    { t: 'Application status', d: 'Where this application is in the process right now: Awaiting Submission, Awaiting Payment, Awaiting Materials, or Decided. More on these in chapter 03.', a: 'What is this application waiting on?' },
+    { t: 'Created date', d: 'When the application was started. Useful for questions like “how many applications were started this month?”', a: 'How long has this been in progress?' },
+    { t: 'Decision', d: 'The decision code and decision date, once there is one. Until then, it’s empty. Decisions get their own chapter.', a: 'Has a decision actually been made?' },
+    { t: 'Materials checklist', d: 'Each application has its own list of required items, marked received or missing. This is where most follow-up conversations start.', a: 'What is still missing, and can I help?' },
+    { t: 'International (F-1)', d: 'Whether this applicant will need an F-1 student visa. It’s tracked on the application because it affects what this application needs.', a: 'Does this application need international steps?' }
+  ], 3800);
+
+  /* ---------- Status track ---------- */
+  (function track() {
+    var root = $('#track-ui');
+    if (!root) return;
+    var btns = $$('.stage-btn', root), fill = $('#track-fill'), token = $('#track-token'), panel = $('#stage-panel'), play = $('#track-play');
+    var data = [
+      { t: 'Awaiting Submission', m: 'They’ve started the application but haven’t submitted it yet.', d: 'This is a person who said “yes, I want this” and got stuck. A friendly nudge can be the difference.' },
+      { t: 'Awaiting Payment', m: 'They’ve submitted it, but the application fee hasn’t been paid.', d: 'Make sure they know how to pay, or who to talk to if cost is a question.' },
+      { t: 'Awaiting Materials', m: 'Submitted and paid. We’re waiting on items from the checklist, like transcripts or references.', d: 'Check the materials checklist and help them track down what’s missing.' },
+      { t: 'Decided', m: 'A decision has been made on this application.', d: 'Look at the decision code to find out what the decision was.' }
+    ];
+    var cur = 0, timer = null;
+    var playHtml = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><span>Play</span>';
+    var pauseHtml = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg><span>Pause</span>';
+    function render(i) {
+      cur = i;
+      btns.forEach(function (b, k) { b.classList.toggle('done', k < i); b.classList.toggle('on', k === i); b.setAttribute('aria-pressed', String(k === i)); });
+      var pos = 12.5 + i * 25;
+      token.style.left = pos + '%';
+      fill.style.width = (i * 25) + '%';
+      panel.innerHTML = '';
+      var a = document.createElement('div');
+      var s1 = document.createElement('small'); s1.textContent = '0' + (i + 1) + ' · ' + data[i].t;
+      var p1 = document.createElement('p'); p1.textContent = data[i].m;
+      a.appendChild(s1); a.appendChild(p1);
+      var b = document.createElement('div'); b.className = (i === 0 || i === 2) ? 'do' : '';
+      var s2 = document.createElement('small'); s2.textContent = (i === 0 || i === 2) ? 'Follow-up opportunity' : 'What you can do';
+      var p2 = document.createElement('p'); p2.textContent = data[i].d;
+      b.appendChild(s2); b.appendChild(p2);
+      panel.appendChild(a); panel.appendChild(b);
+    }
+    function stop() { clearInterval(timer); timer = null; play.innerHTML = playHtml; }
+    function start() {
+      stop();
+      if (cur >= data.length - 1) render(0);
+      play.innerHTML = pauseHtml;
+      timer = setInterval(function () {
+        if (cur >= data.length - 1) { stop(); return; }
+        render(cur + 1);
+        if (cur >= data.length - 1) stop();
+      }, 2800);
+    }
+    btns.forEach(function (b, k) { b.addEventListener('click', function () { stop(); render(k); }); });
+    play.addEventListener('click', function () { if (timer) stop(); else start(); });
+    render(0);
+    if (reduce) return;
+    var started = false;
+    whenVisible(root, function () { if (!started) { started = true; start(); } }, null, 0.4);
+  })();
+
+  /* ---------- Materials checklist ---------- */
+  (function checklist() {
+    var card = $('#check-card');
+    if (!card) return;
+    var items = $$('.check-item', card), bar = $('#check-bar'), live = $('#st-live'), foot = $('#check-foot');
+    function update() {
+      var got = items.filter(function (b) { return b.getAttribute('aria-pressed') === 'true'; }).length;
+      bar.style.width = (got / items.length * 100) + '%';
+      var done = got === items.length;
+      live.textContent = done ? 'Complete' : 'Awaiting Materials';
+      live.classList.toggle('ready', done);
+      foot.textContent = done
+        ? 'Everything is in. The application can move toward a decision.'
+        : got + ' of ' + items.length + ' received. Example checklist; real requirements vary by program.';
+    }
+    items.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var on = b.getAttribute('aria-pressed') !== 'true';
+        b.setAttribute('aria-pressed', String(on));
+        b.querySelector('.state').textContent = on ? 'Received' : 'Missing';
+        update();
+      });
+    });
+    update();
+  })();
+
+  /* ---------- Decisions ---------- */
+  (function decisions() {
+    var root = $('#decide-ui');
+    if (!root) return;
+    var codes = $$('.code', root), stamp = $('#stamp'), sCode = $('#stamp-code'), sWord = $('#stamp-word');
+    var dCode = $('#d-code'), dDate = $('#d-date'), eff = $('#effect-text'), rungs = $$('#mini-ladder span');
+    var map = {
+      AT: { w: 'Admit', c: 'c-at', s: 3, e: 'Admitted. Jordan’s person status moves forward to Student.' },
+      ATP: { w: 'Admitted Provisional', c: 'c-atp', s: 3, e: 'Admitted, with a condition to meet. Person status moves forward to Student.' },
+      DF: { w: 'Defer', c: 'c-df', s: 2, e: 'The decision is pushed to later. Person status stays Applicant.' },
+      DN: { w: 'Deny', c: 'c-dn', s: 2, e: 'Not admitted for this program and term. Person status stays Applicant. They can still apply to a different program or a later term.' }
+    };
+    function ladder(s) { rungs.forEach(function (r, k) { r.classList.toggle('reached', k < s); r.classList.toggle('cur', k === s); }); }
+    ladder(2);
+    codes.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.dataset.code, m = map[k];
+        codes.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+        stamp.hidden = false;
+        stamp.className = 'stamp ' + m.c;
+        sCode.textContent = k; sWord.textContent = m.w;
+        if (!reduce) { void stamp.offsetWidth; stamp.classList.add('slam'); }
+        dCode.textContent = k + ' · ' + m.w;
+        dDate.textContent = '03/02/2027';
+        eff.textContent = m.e;
+        ladder(m.s);
+      });
+    });
+  })();
+
+  /* ---------- Counting ---------- */
+  (function counting() {
+    var card = $('#count-card');
+    if (!card) return;
+    var btns = $$('.seg button', card), num = $('#count-num'), label = $('#count-label'), text = $('#count-text');
+    var anim = null;
+    function tween(from, to) {
+      if (reduce) { num.textContent = to; return; }
+      cancelAnimationFrame(anim);
+      var t0 = performance.now();
+      (function f(t) {
+        var k = Math.min(1, (t - t0) / 500);
+        num.textContent = Math.round(from + (to - from) * k);
+        if (k < 1) anim = requestAnimationFrame(f);
+      })(t0);
+    }
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var people = b.dataset.mode === 'people';
+        btns.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+        card.classList.toggle('people', people);
+        label.textContent = people ? 'People' : 'Applications';
+        text.textContent = people ? 'Five people. Jordan is one person, even though he has two applications.' : 'Six application rows. Jordan counts twice because he has two applications.';
+        tween(parseInt(num.textContent, 10), people ? 5 : 6);
+      });
+    });
+  })();
+
+  /* ---------- Sorter quiz ---------- */
+  (function sorter() {
+    var grid = $('#sort-grid');
+    if (!grid) return;
+    var facts = [
+      ['Email address', 'p', 'Same no matter which program they apply to.'],
+      ['Entry term', 'a', 'Each application is for one term.'],
+      ['Birthdate', 'p', 'It belongs to the human, not the attempt.'],
+      ['Decision code', 'a', 'Decisions live on the application, never on the person.'],
+      ['Preferred name', 'p', 'One per person.'],
+      ['Materials checklist', 'a', 'Each application has its own checklist.'],
+      ['Person status', 'p', 'The furthest stage the person has ever reached.'],
+      ['Application round', 'a', 'Which cycle this one application belongs to.']
+    ];
+    var score = 0, answered = 0, scoreEl = $('#score');
+    function build() {
+      grid.innerHTML = ''; score = 0; answered = 0; scoreEl.textContent = '0 / ' + facts.length;
+      facts.forEach(function (f) {
+        var card = document.createElement('div'); card.className = 'fact';
+        var st = document.createElement('strong'); st.textContent = f[0];
+        var pick = document.createElement('div'); pick.className = 'pick';
+        var fb = document.createElement('span'); fb.className = 'fb'; fb.setAttribute('aria-live', 'polite');
+        [['p', 'Person'], ['a', 'Application']].forEach(function (o) {
+          var b = document.createElement('button'); b.type = 'button'; b.textContent = o[1];
+          b.addEventListener('click', function () {
+            if (card.dataset.done) return;
+            card.dataset.done = '1'; answered++;
+            b.classList.add('chosen');
+            var ok = o[0] === f[1];
+            if (ok) score++;
+            card.classList.add(ok ? 'right' : 'wrong');
+            fb.textContent = (ok ? 'Right. ' : 'Not quite. ') + f[2];
+            scoreEl.textContent = score + ' / ' + facts.length;
+          });
+          pick.appendChild(b);
+        });
+        card.appendChild(st); card.appendChild(pick); card.appendChild(fb);
+        grid.appendChild(card);
+      });
+    }
+    $('#score-reset').addEventListener('click', build);
+    build();
+  })();
+})();
+</script>
+</body>
+</html>
