@@ -173,6 +173,64 @@
     .tool-open span { transition: transform .2s ease; }
     .tool-card:hover .tool-open span { transform: translateX(4px); }
 
+    /* ---- Training folder ----
+       A folder is a card that opens into its own view inside the tab, with a
+       breadcrumb back. Same card treatment as every other card; the stacked
+       sheets behind it (white sheets with a hairline border, offset up-right,
+       drawn as box-shadows so the card's overflow clip leaves them alone)
+       are what read as "a folder of documents". */
+    .folder-card {
+      width: 100%;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      margin-top: 10px;
+      box-shadow: 5px -5px 0 -1px var(--white), 5px -5px 0 0 var(--nb-border), 10px -10px 0 -1px var(--white), 10px -10px 0 0 var(--nb-border);
+    }
+    .folder-card:hover, .folder-card:focus-visible {
+      box-shadow: 5px -5px 0 -1px var(--white), 5px -5px 0 0 var(--nb-rust), 10px -10px 0 -1px var(--white), 10px -10px 0 0 var(--nb-border), 0 10px 24px rgba(12,15,20,.1);
+    }
+    .folder-count {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      padding: 3px 8px;
+      border: 1px solid var(--nb-teal);
+      border-radius: var(--nb-radius);
+      color: var(--nb-teal);
+      font: 700 .68rem/1.4 var(--nb-font-subheading);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .folder-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      font-family: var(--nb-font-subheading);
+      font-size: .8rem;
+    }
+    .folder-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 12px;
+      border: 1px solid var(--nb-darkgray);
+      border-radius: var(--nb-radius);
+      color: var(--nb-darkgray);
+      background: transparent;
+      font: 700 .74rem var(--nb-font-subheading);
+      letter-spacing: .04em;
+      cursor: pointer;
+      transition: color .18s ease, background-color .18s ease;
+    }
+    .folder-back:hover { color: var(--white); background: var(--nb-black); }
+    .folder-back:focus-visible { outline: 3px solid rgba(35,64,72,.35); outline-offset: 2px; }
+    .folder-crumb { color: var(--nb-muted); }
+    .folder-crumb strong { color: var(--nb-black); font-weight: 700; }
+    .folder-crumb svg { display: inline-block; width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; fill: var(--nb-gold); }
+
     .hub .reports-notice {
       display: flex;
       align-items: flex-start;
@@ -283,14 +341,38 @@
     </section>
 
     <section id="training-panel" class="tab-panel" role="tabpanel" aria-labelledby="training-tab" hidden>
-      <div class="tool-grid">
-        <a class="tool-card" href="https://claude.ai/code/artifact/0810df6f-bc13-4c9c-a776-fbdbd229d2f3" target="_blank" rel="noopener">
-          <svg class="tool-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.6 5.4c3.2 0 6.4.7 8.6 2v13.2c-2.2-1.3-5.4-2-8.6-2zM21.4 5.4c-3.2 0-6.4.7-8.6 2v13.2c2.2-1.3 5.4-2 8.6-2z"/></svg>
+      <div class="tool-grid" id="training-root">
+        <button class="tool-card folder-card" type="button" aria-expanded="false" aria-controls="slate-video-folder">
+          <svg class="tool-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 4.6h7.4l2.2 2.4H20v2.8H6.2L3.4 19.4H2zM7.2 11.4H23l-3 9H4.2z"/></svg>
+          <span class="folder-count">2 lessons</span>
           <span class="tool-index" aria-hidden="true">01</span>
-          <h2 class="tool-title">Slate Concepts</h2>
-          <p class="tool-copy">Learn the record, audience, and reporting concepts that make Slate requests clearer and results easier to interpret.</p>
-          <span class="tool-open">Start lesson <span aria-hidden="true">&rarr;</span></span>
-        </a>
+          <span class="tool-title">Slate Video Training Documents</span>
+          <span class="tool-copy">The companion lessons for the Slate training videos. Start with Introduction to Slate, then move on to Slate Concepts.</span>
+          <span class="tool-open">Open folder <span aria-hidden="true">&rarr;</span></span>
+        </button>
+      </div>
+
+      <div id="slate-video-folder" class="folder-view" hidden>
+        <div class="folder-bar">
+          <button class="folder-back" type="button"><span aria-hidden="true">&larr;</span> Training Materials</button>
+          <span class="folder-crumb"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 4.6h7.4l2.2 2.4H20v2.8H6.2L3.4 19.4H2zM7.2 11.4H23l-3 9H4.2z"/></svg><strong>Slate Video Training Documents</strong></span>
+        </div>
+        <div class="tool-grid">
+          <a class="tool-card" href="https://claude.ai/artifact/5oYfQzCJr7o29RNx5ceFYG" target="_blank" rel="noopener">
+            <svg class="tool-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.4a8.6 8.6 0 100 17.2 8.6 8.6 0 000-17.2zM9.6 7.8v8.4l6.8-4.2z"/></svg>
+            <span class="tool-index" aria-hidden="true">01</span>
+            <h2 class="tool-title">Introduction to Slate</h2>
+            <p class="tool-copy">Start with why: Gateway's mission, the obstacle every enrollment team runs into, and how Slate gives the whole team a shared memory.</p>
+            <span class="tool-open">Start lesson <span aria-hidden="true">&rarr;</span></span>
+          </a>
+          <a class="tool-card" href="https://claude.ai/code/artifact/0810df6f-bc13-4c9c-a776-fbdbd229d2f3" target="_blank" rel="noopener">
+            <svg class="tool-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.6 5.4c3.2 0 6.4.7 8.6 2v13.2c-2.2-1.3-5.4-2-8.6-2zM21.4 5.4c-3.2 0-6.4.7-8.6 2v13.2c2.2-1.3 5.4-2 8.6-2z"/></svg>
+            <span class="tool-index" aria-hidden="true">02</span>
+            <h2 class="tool-title">Slate Concepts</h2>
+            <p class="tool-copy">Learn the record, audience, and reporting concepts that make Slate requests clearer and results easier to interpret.</p>
+            <span class="tool-open">Start lesson <span aria-hidden="true">&rarr;</span></span>
+          </a>
+        </div>
       </div>
     </section>
   </main>
@@ -323,6 +405,25 @@
         if (event.key === 'Home') next = 0;
         if (event.key === 'End') next = tabs.length - 1;
         selectTab(tabs[next], true);
+      });
+    });
+
+    // Folders in the Training Materials tab open into their own view in place.
+    document.querySelectorAll('.folder-card').forEach(function (card) {
+      const root = card.parentElement;
+      const folder = document.getElementById(card.getAttribute('aria-controls'));
+      const back = folder.querySelector('.folder-back');
+      card.addEventListener('click', function () {
+        card.setAttribute('aria-expanded', 'true');
+        root.hidden = true;
+        folder.hidden = false;
+        back.focus();
+      });
+      back.addEventListener('click', function () {
+        card.setAttribute('aria-expanded', 'false');
+        folder.hidden = true;
+        root.hidden = false;
+        card.focus();
       });
     });
   }());

@@ -14,7 +14,7 @@ paths" below).
 | `index.html` (homepage) — header, hero, tab bar | New brand, permanent |
 | `index.html` — Reports tab (Funnel Overview, Teaching Sites, Regional Campus Portal, Enrollment Events, Advancement and Student Life Events) | New brand |
 | `index.html` — Tools tab (BetterQuery, Record Lookup) | New brand |
-| `index.html` — Training Materials tab (Slate Concepts) | New brand |
+| `index.html` — Training Materials tab (Slate Video Training Documents folder: Introduction to Slate, Slate Concepts) | New brand |
 | `tools/queryomatic/index.html` (BetterQuery) | New brand |
 | `tools/student-lookup/index.html` (Record Lookup) | New brand |
 | `tools/checkin/index.html` (Check-In) | New brand, permanent (no toggle); built tablet/mobile-first |
