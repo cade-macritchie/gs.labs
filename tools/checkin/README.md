@@ -133,7 +133,7 @@ checking for exactly this (a literal `"</DYMOLabel>"` in the label's XML).
 
 The object shapes (`QRCodeObject`, `TextObject`, brushes) come from a label
 Cade created and saved in the DYMO Connect app itself
-(`local-files/BTC/test.dymo`), checked with DYMO Connect's `RenderLabel`
+(`../local.files.misc/BTC/test.dymo`, outside the repo), checked with DYMO Connect's `RenderLabel`
 endpoint. Two traps it found: a `QRCodeObject` needs an opaque white
 `BackgroundBrush` and opaque `FillBrush`, or it renders as an empty box while
 the print call still reports success. And the SDK's `setObjectText` for a QR

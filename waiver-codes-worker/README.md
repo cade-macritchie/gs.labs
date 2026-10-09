@@ -38,7 +38,7 @@ Edit `wrangler.toml` first:
 
 `wrangler deploy` prints your Worker URL, e.g.
 `https://slate-waiver-codes.yoursubdomain.workers.dev`. Point the Slate
-form's script at that URL — see `local-files/Other/waiver-code-api.md` for
+form's script at that URL — see `../local.files.misc/Other/waiver-code-api.md` (outside the repo) for
 call examples covering all four operations.
 
 ## API

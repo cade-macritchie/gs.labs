@@ -60,7 +60,7 @@ gs.labs/
 ├── .github/workflows/                      [repo]       Pages deploy + Telegram automation
 ├── .claude/   CLAUDE.md                    [repo]       Claude Code settings & working agreements
 ├── docs/                                   [repo]       Setup docs
-└── local-files/                            (untracked)  One-off exports and reports
+└── local-files/                            (untracked)  Portal-related local files (gateway key snippets, homepage copy)
 ```
 
 ## Structure
