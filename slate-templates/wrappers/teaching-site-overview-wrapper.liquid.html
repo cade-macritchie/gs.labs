@@ -48,6 +48,12 @@
 <script>
 (function () {
   'use strict';
+  // Shared gateway key. It comes from the one-line key snippet pasted ABOVE
+  // this wrapper in the Slate portal view and is never committed to this repo.
+  // See the PORTAL_KEY notes in tools/queryomatic/worker.js.
+  const gatewayHeaders = window.GS_GATEWAY_KEY
+    ? { Accept:'application/json', 'X-GS-Key':String(window.GS_GATEWAY_KEY) }
+    : { Accept:'application/json' };
   const dashboard = 'teaching-site-overview';
   const frameOrigin = 'https://cade-macritchie.github.io';
   // The gateway injects the Slate query id/token server-side — see
@@ -191,7 +197,7 @@
     if (payload.filters.term) url.searchParams.set('term', payload.filters.term);
     if (payload.filters.year) url.searchParams.set('year', payload.filters.year);
     if (payload.filters.site) url.searchParams.set('site', payload.filters.site);
-    const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+    const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:gatewayHeaders });
     if (!response.ok) throw new Error('Teaching site query returned ' + response.status);
     return await response.json();
   }
@@ -236,7 +242,7 @@
 
   async function fetchTrend() {
     try {
-      const response = await fetch(trendService, { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+      const response = await fetch(trendService, { credentials:'same-origin', cache:'no-store', headers:gatewayHeaders });
       if (!response.ok) throw new Error('Teaching site trend returned ' + response.status);
       const body = await response.json();
       const failed = Array.isArray(body && body.failedPeriods) ? body.failedPeriods : [];

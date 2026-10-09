@@ -294,6 +294,22 @@
   // Point this at your deployed Cloudflare Worker URL.
   const WORKER_URL = "https://gs-labs-slate-gateway.gs-labs.workers.dev";
 
+  // Shared gateway key (PORTAL_KEY in worker.js). The BetterQuery Slate wrapper
+  // posts it in from the portal view; it's accepted only from the Slate portal
+  // origin and kept in memory, never stored. Opened outside Slate, the page has
+  // no key and the Worker refuses its requests.
+  const PORTAL_ORIGIN = "https://enroll.gs.edu";
+  let gatewayKey = "";
+  window.addEventListener("message", (event) => {
+    if (event.origin !== PORTAL_ORIGIN || event.source !== window.parent) return;
+    if (event.data && event.data.type === "gs-gateway-key" && typeof event.data.key === "string") {
+      gatewayKey = event.data.key;
+    }
+  });
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: "gs-gateway-key-request" }, PORTAL_ORIGIN);
+  }
+
   const PARAMS = [
     ["first", "First Name"],
     ["last", "Last Name"],
@@ -370,7 +386,7 @@
   async function apiFetch(path, options = {}) {
     return fetch(`${WORKER_URL}${path}`, {
       ...options,
-      headers: { ...(options.headers || {}) },
+      headers: { ...(options.headers || {}), ...(gatewayKey ? { "X-GS-Key": gatewayKey } : {}) },
     });
   }
 

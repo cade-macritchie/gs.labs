@@ -44,6 +44,12 @@
 <script>
 (function () {
   'use strict';
+  // Shared gateway key. It comes from the one-line key snippet pasted ABOVE
+  // this wrapper in the Slate portal view and is never committed to this repo.
+  // See the PORTAL_KEY notes in tools/queryomatic/worker.js.
+  const gatewayHeaders = window.GS_GATEWAY_KEY
+    ? { Accept:'application/json', 'X-GS-Key':String(window.GS_GATEWAY_KEY) }
+    : { Accept:'application/json' };
   const dashboard = 'regional-campus';
   const frameOrigin = 'https://cade-macritchie.github.io';
   // The gateway injects the Slate query id/token server-side — see
@@ -150,7 +156,7 @@
         credentials: 'same-origin',
         cache: 'no-store',
         signal: controller.signal,
-        headers: { Accept:'application/json' }
+        headers:gatewayHeaders
       });
       if (!response.ok) throw new Error('Regional campus query returned ' + response.status);
       return await response.json();

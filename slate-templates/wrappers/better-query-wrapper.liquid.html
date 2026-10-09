@@ -1,9 +1,15 @@
 <!--
   BetterQuery Slate wrapper (portal page: enroll.gs.edu/portal/better_query).
 
-  Just an iframe embed — BetterQuery (tools/queryomatic/) talks to the
-  gs-labs-slate-gateway Worker on its own, so no Slate query export or
-  postMessage handoff is needed. The embed previously pointed at the retired
+  BetterQuery (tools/queryomatic/) talks to the gs-labs-slate-gateway Worker
+  on its own, so no Slate query export is needed. The one thing this wrapper
+  hands the page is the shared gateway key: paste the one-line key snippet
+  ABOVE this wrapper in the portal view (it sets window.GS_GATEWAY_KEY and is
+  never committed to this repo). The script below posts the key to the
+  GitHub Pages origin only, and the page accepts it only from enroll.gs.edu.
+  See PORTAL_KEY in tools/queryomatic/worker.js.
+
+  The embed previously pointed at the retired
   enrollmentgateway-lab.github.io/enrollmentgatewaytools/ site, which 404s;
   paste this over the portal page's HTML to repoint it.
 
@@ -11,3 +17,20 @@
   plain user view.
 -->
 <iframe id="betterQueryFrame" src="https://cade-macritchie.github.io/gs.labs/tools/queryomatic/?mode=admin" title="BetterQuery" referrerpolicy="origin" style="width:100%;height:100vh;min-height:700px;border:0;display:block"></iframe>
+<script>
+(function () {
+  'use strict';
+  const frameOrigin = 'https://cade-macritchie.github.io';
+  const frame = document.getElementById('betterQueryFrame');
+  function sendKey() {
+    if (window.GS_GATEWAY_KEY && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type:'gs-gateway-key', key:String(window.GS_GATEWAY_KEY) }, frameOrigin);
+    }
+  }
+  window.addEventListener('message', function (event) {
+    if (event.origin !== frameOrigin || event.source !== frame.contentWindow || !event.data) return;
+    if (event.data.type === 'gs-gateway-key-request') sendKey();
+  });
+  frame.addEventListener('load', sendKey);
+}());
+</script>

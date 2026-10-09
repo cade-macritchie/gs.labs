@@ -12,6 +12,12 @@
 <script>
 (function () {
   'use strict';
+  // Shared gateway key. It comes from the one-line key snippet pasted ABOVE
+  // this wrapper in the Slate portal view and is never committed to this repo.
+  // See the PORTAL_KEY notes in tools/queryomatic/worker.js.
+  const gatewayHeaders = window.GS_GATEWAY_KEY
+    ? { Accept:'application/json', 'X-GS-Key':String(window.GS_GATEWAY_KEY) }
+    : { Accept:'application/json' };
   const dashboard = 'event-tracker';
   const frameOrigin = 'https://cade-macritchie.github.io';
   // Proxied through the GS Labs Slate Gateway Cloudflare Worker, which
@@ -109,7 +115,7 @@
     try {
       const url = new URL(recordsService);
       url.searchParams.set('alt_form_type', 'Event');
-      const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+      const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:gatewayHeaders });
       if (!response.ok) throw new Error('Event people query returned ' + response.status);
       const records = rowsFrom(await response.json()).map(normalizeRecord);
       const recordsByIdentity = new Map();

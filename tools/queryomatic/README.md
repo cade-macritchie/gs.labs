@@ -37,6 +37,10 @@ wrangler secret put GITHUB_TOKEN
 wrangler secret put SLATE_OPTIONS_URL
 wrangler secret put SLATE_QUERY_URL
 
+# Shared gateway key — see "Gateway key" below. Set it only AFTER every
+# portal view in Slate has its key snippet, or those portals stop loading.
+wrangler secret put PORTAL_KEY
+
 wrangler deploy
 ```
 
@@ -222,10 +226,25 @@ single-page app.
 
 ## Notes
 
-- There is no staff sign-in: the page loads straight into the tool, and the
-  Worker has no `/api/login`, session cookie or `APP_PASSWORD`/`SESSION_SECRET`
-  secret. `/api/generate`, `/api/run` and `/api/options/refresh` are
-  unauthenticated, so treat the Worker URL as sensitive.
+- **Gateway key.** The Worker URL is public (it's in every wrapper), and an
+  Origin/Referer check only stops other websites in a browser — a script can
+  send any Origin. So every `/api/slate/*` portal route and Queryomatic's
+  `/api/generate`, `/api/run` and `/api/options/refresh` also require the
+  `X-GS-Key` header to match the `PORTAL_KEY` secret. The key is never in this
+  repo: each Slate portal view has a one-line snippet pasted above its wrapper
+  that sets `window.GS_GATEWAY_KEY`, so only signed-in Slate users ever see
+  it. The fetch wrappers send it as a header; the BetterQuery wrapper posts it
+  into the iframe. While `PORTAL_KEY` is unset nothing is enforced, which is
+  what lets the Worker deploy ahead of the Slate changes. Left open on
+  purpose: `GET /api/options` (options.md is public anyway),
+  `/api/slate/teaching-site-trend` (aggregate counts only), the analytics
+  routes, and the Check-In QR image and print-queue routes.
+  To rotate: paste a new snippet into every portal view first, then
+  `wrangler secret put PORTAL_KEY` with the new value.
+- **No filters, no data.** `/api/run`, `/api/slate/records`,
+  `/api/slate/checkin-search` and `/api/slate/additional-applications` refuse
+  a request whose filters are all blank, since every maindb filter is optional
+  and a blank request would return the whole population.
 
 - Your Slate tokens (Queryomatic's two, plus the six behind `/api/slate/*`)
   and Anthropic key live only in the Worker (via `wrangler secret`) — never

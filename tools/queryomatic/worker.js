@@ -85,6 +85,9 @@
  * - GITHUB_TOKEN                               (Queryomatic options.md commits)
  * - SLATE_OPTIONS_URL                          (prompts query URL)
  * - SLATE_QUERY_URL                            (maindb query URL)
+ * - PORTAL_KEY                                 (shared gateway key the Slate portal views send
+ *                                               as X-GS-Key — see gatewayKeyAllowed. Unset = not
+ *                                               enforced, so code can deploy before Slate is ready.)
  *
  * Vars:
  * - ALLOWED_ORIGIN   (GitHub Pages origin — Queryomatic + analytics routes)
@@ -227,7 +230,7 @@ function corsHeaders(env, origin) {
       "GET,POST,OPTIONS",
 
     "Access-Control-Allow-Headers":
-      "Content-Type",
+      "Content-Type, X-GS-Key",
   };
 }
 
@@ -258,6 +261,72 @@ function originAllowed(request, allowedOrigin) {
 
   const referer = request.headers.get("Referer") || "";
   return referer === allowedOrigin || referer.startsWith(allowedOrigin + "/");
+}
+
+
+// originAllowed only stops OTHER WEBSITES running in a browser: a script can
+// send any Origin/Referer it likes, and this Worker's URL is in the public
+// repo. The shared key is what stops a caller who just knows the URL. It lives
+// as the PORTAL_KEY secret here and in each Slate portal view (as
+// window.GS_GATEWAY_KEY), never in this repo, so only signed-in Slate users
+// ever see it. While PORTAL_KEY is unset this passes, so the Worker can be
+// deployed before the portal views send the key.
+function gatewayKeyAllowed(request, env) {
+  if (!env.PORTAL_KEY) return true;
+
+  const sent = request.headers.get("X-GS-Key") || "";
+  const expected = String(env.PORTAL_KEY);
+  if (sent.length !== expected.length) return false;
+
+  // Constant-time compare, written out so it also runs under the Node demo.
+  let diff = 0;
+  for (let i = 0; i < expected.length; i += 1) {
+    diff |= sent.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+
+// Origin, key and rate limit, in that order. Returns the error Response to
+// send, or null when the request may proceed.
+async function guardRoute(request, env, id, bucket, allowedOrigin) {
+  if (!originAllowed(request, allowedOrigin)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, allowedOrigin);
+  }
+
+  if (!gatewayKeyAllowed(request, env)) {
+    return json({ error: "Missing or invalid gateway key", requestId: id }, env, 401, allowedOrigin);
+  }
+
+  if (!(await checkRateLimit(env, request, bucket))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, allowedOrigin);
+  }
+
+  return null;
+}
+
+
+// Person-level routes whose every filter is optional would otherwise return
+// the whole maindb population when called with no parameters. These must be
+// given at least one non-blank filter.
+const ROUTES_REQUIRING_A_FILTER = new Set([
+  "records",
+  "checkin-search",
+  "additional-applications",
+]);
+
+function hasAnyFilter(searchParams, allowedParams) {
+  return allowedParams.some((key) => String(searchParams.get(key) || "").trim() !== "");
+}
+
+const QUERYOMATIC_GUARDED_PATHS = new Set([
+  "/api/run",
+  "/api/generate",
+  "/api/options/refresh",
+]);
+
+function missingFilterResponse(env, id, origin) {
+  return json({ error: "At least one filter is required", requestId: id }, env, 400, origin);
 }
 
 
@@ -344,17 +413,17 @@ async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearch
 // person query, SLATE_QUERY_URL + SLATE_TOKEN_MAINDB) or "prompts" (the
 // key/value options query, SLATE_OPTIONS_URL + SLATE_TOKEN_PROMPTS).
 async function handleSlateProxyRoute(request, env, id, routeName, source, allowedParams, fixedParams) {
-  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
-    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
-  }
+  const denied = await guardRoute(request, env, id, routeName, env.PORTAL_ORIGIN);
+  if (denied) return denied;
 
-  if (!(await checkRateLimit(env, request, routeName))) {
-    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+  const searchParams = new URL(request.url).searchParams;
+  if (ROUTES_REQUIRING_A_FILTER.has(routeName) && !hasAnyFilter(searchParams, allowedParams)) {
+    return missingFilterResponse(env, id, env.PORTAL_ORIGIN);
   }
 
   const data = source === "prompts"
     ? await fetchSlateOptions(env, id)
-    : await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams, fixedParams);
+    : await proxySlateQuery(env, id, routeName, allowedParams, searchParams, fixedParams);
 
   return json(data, env, 200, env.PORTAL_ORIGIN);
 }
@@ -366,15 +435,15 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 // difference that matters is which origin the request is allowed to come
 // from — ALLOWED_ORIGIN (GitHub Pages) here, not PORTAL_ORIGIN (Slate).
 async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedParams, fixedParams) {
-  if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
-    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
+  const denied = await guardRoute(request, env, id, routeName, env.ALLOWED_ORIGIN);
+  if (denied) return denied;
+
+  const searchParams = new URL(request.url).searchParams;
+  if (ROUTES_REQUIRING_A_FILTER.has(routeName) && !hasAnyFilter(searchParams, allowedParams)) {
+    return missingFilterResponse(env, id, env.ALLOWED_ORIGIN);
   }
 
-  if (!(await checkRateLimit(env, request, routeName))) {
-    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
-  }
-
-  const data = await proxySlateQuery(env, id, routeName, allowedParams, new URL(request.url).searchParams, fixedParams);
+  const data = await proxySlateQuery(env, id, routeName, allowedParams, searchParams, fixedParams);
   return json(data, env, 200, env.ALLOWED_ORIGIN);
 }
 
@@ -913,13 +982,8 @@ async function fetchFunnelStages(env, id, routeName, stageNames, filters, scope)
 
 // Shared entry: origin check, rate limit, KV cache. `build` does the work.
 async function serveFunnelRoute(request, env, id, routeName, cacheKey, build) {
-  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
-    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
-  }
-
-  if (!(await checkRateLimit(env, request, routeName))) {
-    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
-  }
+  const denied = await guardRoute(request, env, id, routeName, env.PORTAL_ORIGIN);
+  if (denied) return denied;
 
   const cached = await env.OPTIONS_CACHE.get(cacheKey, "json").catch(() => null);
   if (cached) {
@@ -3031,6 +3095,30 @@ export default {
 
 
       // ======================================================
+      // QUERYOMATIC GUARD
+      //
+      // The POST routes below run the person query, spend
+      // Claude credit and commit to GitHub, so they get the
+      // same origin/key/rate-limit gate as the portal routes.
+      // BetterQuery calls them from GitHub Pages, and its
+      // Slate wrapper hands the page the key. GET /api/options
+      // stays open: options.md is already public in the repo.
+      // ======================================================
+
+      if (
+        request.method === "POST" &&
+        QUERYOMATIC_GUARDED_PATHS.has(url.pathname)
+      ) {
+        const denied = await guardRoute(
+          request, env, id,
+          "queryomatic" + url.pathname.slice(4).replace(/\//g, "-"),
+          env.ALLOWED_ORIGIN
+        );
+        if (denied) return denied;
+      }
+
+
+      // ======================================================
       // GET CURRENT OPTIONS.MD
       //
       // Read-only.
@@ -3220,6 +3308,28 @@ export default {
             {
               error:
                 "Missing 'params'",
+
+              requestId:
+                id,
+            },
+            env,
+            400
+          );
+        }
+
+
+        // Every maindb filter is optional, so an all-blank
+        // params object would return the whole population.
+        if (
+          !Object.values(
+            normalizeQueryParams(params)
+          ).some(Boolean)
+        ) {
+
+          return json(
+            {
+              error:
+                "Add at least one filter. BetterQuery won't return everyone at once.",
 
               requestId:
                 id,

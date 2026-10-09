@@ -18,6 +18,12 @@
 <script>
 (function () {
   'use strict';
+  // Shared gateway key. It comes from the one-line key snippet pasted ABOVE
+  // this wrapper in the Slate portal view and is never committed to this repo.
+  // See the PORTAL_KEY notes in tools/queryomatic/worker.js.
+  const gatewayHeaders = window.GS_GATEWAY_KEY
+    ? { Accept:'application/json', 'X-GS-Key':String(window.GS_GATEWAY_KEY) }
+    : { Accept:'application/json' };
   const frameOrigin = 'https://cade-macritchie.github.io';
   // Every Slate query below is proxied through the GS Labs Slate Gateway
   // Cloudflare Worker, which injects the real Slate query id/token
@@ -255,7 +261,7 @@
       url.searchParams.set('first', values.first);
       url.searchParams.set('last', values.last);
       url.searchParams.set('sisid', values.sisid);
-      const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+      const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:gatewayHeaders });
       if (!response.ok) throw new Error('Record Lookup query returned ' + response.status);
       return rowsFrom(await response.json());
     }));
@@ -330,7 +336,7 @@
     try {
       const url = new URL(additionalApplicationsService);
       url.searchParams.set('sisid', normalizedStudentId);
-      const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:{ Accept:'application/json' } });
+      const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:gatewayHeaders });
       if (!response.ok) throw new Error('Additional applications query returned ' + response.status);
       const applications = rowsFrom(await response.json()).map(normalizeApplication).filter(function (application) {
         return application.SIS_ID === normalizedStudentId;
