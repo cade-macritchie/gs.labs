@@ -221,6 +221,15 @@
     background: var(--accent); border-color: var(--accent); color: var(--ink);
   }
   .hint { font-size: 0.82rem; color: var(--ink-soft); margin: 0 0 0.5rem; }
+
+  .columns-picker { margin-top: 0.75rem; border: 1px solid var(--line); border-radius: var(--radius); padding: 0.5rem 0.75rem; }
+  .columns-picker summary { cursor: pointer; font-family: var(--subhead); font-size: 0.76rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+  .columns-summary { color: var(--ink-soft); font-weight: 400; letter-spacing: 0; text-transform: none; margin-left: 0.4rem; }
+  .preset-btn { padding: 0.3rem 0.75rem; font-size: 0.78rem; border-color: var(--line); color: var(--ink-soft); }
+  .preset-btn.active { border-color: var(--accent); background: var(--accent); color: var(--ink); }
+  .column-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0.2rem 0.75rem; margin-top: 0.6rem; }
+  .column-list label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; text-transform: none; letter-spacing: 0; margin: 0; cursor: pointer; }
+  .column-list input { width: auto; margin: 0; }
 </style>
 </head>
 <body>
@@ -268,6 +277,11 @@
       <div class="count" id="resultCount"></div>
       <button id="downloadBtn">Download CSV</button>
     </div>
+    <details class="columns-picker" id="columnsPicker">
+      <summary>Columns <span class="columns-summary" id="columnsSummary"></span></summary>
+      <div class="chips" id="presetRow"></div>
+      <div class="column-list" id="columnList"></div>
+    </details>
     <div class="table-scroll">
       <table id="resultsTable">
         <thead id="resultsHead"></thead>
@@ -327,7 +341,35 @@
     ["person_created_date_start", "Person Created Date (Start)"],
     ["person_created_date_end", "Person Created Date (End)"],
     ["alt_form_type", "Alternate Form Type"],
+    ["app_status", "Application Status"],
+    ["app_round", "Application Round"],
+    ["app_f1", "F-1 Visa (1/0)"],
+    ["app_submitted_start", "Submitted Date (Start)"],
+    ["app_submitted_end", "Submitted Date (End)"],
+    ["app_decision_date_start", "Decision Date (Start)"],
+    ["app_decision_date_end", "Decision Date (End)"],
+    ["degree_interest", "Degree Interest"],
+    ["academic_interest", "Academic Interest"],
+    ["entry_term", "Entry Term (Interest)"],
+    ["entry_year", "Entry Year (Interest)"],
+    ["marital_status", "Marital Status"],
+    ["event_title", "Event Title (contains)"],
+    ["event_date_start", "Event Date (Start)"],
+    ["event_date_end", "Event Date (End)"],
+    ["event_attended", "Attended Event (1)"],
   ];
+
+  // Export presets for the column picker. Columns a preset names that the
+  // current result doesn't have are skipped, since maindb's app_* set varies.
+  const PII_COLUMN = /^per_(name|first|last|preferred|email|phone|sisid|birt|qr)|_url$/i;
+  const EXPORT_PRESETS = [
+    ["all", "All columns", null],
+    ["contact", "Contact list", ["per_first", "per_last", "per_preferred", "per_email", "per_phone", "per_city", "per_region", "per_country", "per_status", "per_campus_assigned"]],
+    ["application", "Application status", ["per_name", "per_email", "per_sisid", "per_status", "app_program", "app_degree", "app_term", "app_year", "app_round", "app_status", "app_decision_code", "app_created_date", "app_submitted_date", "app_decision_date", "app_missing_mats", "app_count", "app_f1", "app_url"]],
+    ["events", "Event attendance", ["per_name", "per_email", "per_phone", "per_status", "event_titles", "event_count", "event_attended_count", "event_last_date", "per_origin_source"]],
+    ["nopii", "No PII", (columns) => columns.filter((c) => !PII_COLUMN.test(c))],
+  ];
+  const COLUMN_PREF_KEY = "queryomatic.exportColumns";
   const PARAM_LABELS = Object.fromEntries(PARAMS);
   const PARAM_KEYS = PARAMS.map(([key]) => key);
 
@@ -504,6 +546,89 @@
     });
   }
 
+  // ---------- Export columns ----------
+
+  let allColumns = [];
+  let selectedColumns = [];
+  let activePreset = "all";
+
+  function loadColumnPref() {
+    try { return JSON.parse(localStorage.getItem(COLUMN_PREF_KEY)) || null; } catch { return null; }
+  }
+
+  function saveColumnPref() {
+    try {
+      localStorage.setItem(COLUMN_PREF_KEY, JSON.stringify(
+        activePreset === "custom" ? { preset: "custom", columns: selectedColumns } : { preset: activePreset }
+      ));
+    } catch { /* storage unavailable; the choice just isn't remembered */ }
+  }
+
+  function presetColumns(presetId) {
+    const preset = EXPORT_PRESETS.find(([id]) => id === presetId);
+    if (!preset || !preset[2]) return allColumns.slice();
+    const picked = typeof preset[2] === "function" ? preset[2](allColumns) : preset[2];
+    return allColumns.filter((c) => picked.includes(c));
+  }
+
+  function applyPreset(presetId) {
+    activePreset = presetId;
+    selectedColumns = presetColumns(presetId);
+    saveColumnPref();
+    renderColumnPicker();
+    renderResults(currentData);
+  }
+
+  function initColumns(rows) {
+    allColumns = [];
+    rows.forEach((row) => Object.keys(row).forEach((c) => { if (!allColumns.includes(c)) allColumns.push(c); }));
+    const pref = loadColumnPref();
+    if (pref && pref.preset === "custom" && Array.isArray(pref.columns)) {
+      activePreset = "custom";
+      selectedColumns = allColumns.filter((c) => pref.columns.includes(c));
+      if (!selectedColumns.length) { activePreset = "all"; selectedColumns = allColumns.slice(); }
+    } else {
+      activePreset = pref && EXPORT_PRESETS.some(([id]) => id === pref.preset) ? pref.preset : "all";
+      selectedColumns = presetColumns(activePreset);
+    }
+    renderColumnPicker();
+  }
+
+  function renderColumnPicker() {
+    const presetRow = $("presetRow");
+    presetRow.innerHTML = "";
+    EXPORT_PRESETS.forEach(([id, label]) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "preset-btn" + (id === activePreset ? " active" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", () => applyPreset(id));
+      presetRow.appendChild(btn);
+    });
+
+    const list = $("columnList");
+    list.innerHTML = "";
+    allColumns.forEach((col) => {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = selectedColumns.includes(col);
+      box.addEventListener("change", () => {
+        selectedColumns = allColumns.filter((c) => (c === col ? box.checked : selectedColumns.includes(c)));
+        activePreset = "custom";
+        saveColumnPref();
+        renderColumnPicker();
+        renderResults(currentData);
+      });
+      label.appendChild(box);
+      label.appendChild(document.createTextNode(col));
+      list.appendChild(label);
+    });
+
+    const presetName = (EXPORT_PRESETS.find(([id]) => id === activePreset) || [, "Custom"])[1];
+    $("columnsSummary").textContent = `${selectedColumns.length} of ${allColumns.length} · ${presetName}`;
+  }
+
   function renderResults(rows) {
     const panel = $("resultsPanel");
     const head = $("resultsHead");
@@ -514,13 +639,15 @@
 
     if (!Array.isArray(rows) || rows.length === 0) {
       panel.style.display = "block";
+      $("columnsPicker").style.display = "none";
       replay(panel);
       count.textContent = "0 results";
       body.innerHTML = '<tr><td class="empty">No rows returned</td></tr>';
       return;
     }
 
-    const columns = Object.keys(rows[0]);
+    $("columnsPicker").style.display = "block";
+    const columns = selectedColumns.length ? selectedColumns : allColumns;
     const headRow = document.createElement("tr");
     columns.forEach((col) => {
       const th = document.createElement("th");
@@ -544,12 +671,11 @@
     replay(panel);
   }
 
-  function toCSV(rows) {
+  function toCSV(rows, columns) {
     if (!rows.length) return "";
-    const columns = Object.keys(rows[0]);
     const escape = (val) => {
-      const s = String(val ?? "");
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      const s = decodeEntities(val);
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const lines = [columns.join(",")];
     rows.forEach((row) => {
@@ -631,6 +757,7 @@
 
   function finishRun(rows) {
     currentData = rows;
+    initColumns(rows);
     renderSearchedRow(lastParams);
     renderResults(rows);
     if (!rows.length) {
@@ -703,8 +830,9 @@
 
   $("downloadBtn").addEventListener("click", () => {
     if (!currentData.length) return;
-    const csv = toCSV(currentData);
-    const blob = new Blob([csv], { type: "text/csv" });
+    const csv = toCSV(currentData, selectedColumns.length ? selectedColumns : allColumns);
+    // BOM so Excel reads the file as UTF-8 (accented names, curly quotes).
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;

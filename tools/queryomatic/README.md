@@ -107,7 +107,8 @@ a portal showing real numbers and a portal showing zero.
   the field is Date-typed and rejects `""`.
   (These returned nothing before 2026-09-21; the query has since been changed
   on the Slate side, so re-probe before trusting an old note about them.)
-- **There is no `app_degree` column** — the degree is `per_degree_current`.
+- **Degree columns:** `app_degree` (the first application's degree, added 2026-10-12), `per_degree_current` (enrolled degree) and `per_degree_interest` (from the RFI).
+- **Campus is a column now** (`per_campus_assigned`, added 2026-10-12). Regional Campus could group by it instead of asking for each campus by name; it hasn't been switched over.
 - **The output columns are not fixed.** The query has been observed returning
   its `app_*` block (`app_term`, `app_year`, `app_status`, …) on one day
   and only `app_decision_code` on another, and passing `teachingsite` narrows
@@ -201,7 +202,16 @@ The main Slate query and Queryomatic currently share this parameter contract:
 - Academic and enrollment: `term`, `year`, `status`, `pipeline`, `teachingsite`, `campus_assigned`, `program`
 - Application: `app_code`, `app_createddate_start`, `app_createddate_end`
 - Person record: `person_created_date_start`, `person_created_date_end` (the model returns `YYYY-MM-DD`; the Worker converts to `M/D/YYYY`, and blank date bounds are omitted rather than sent as `""`)
-- Alternate form population: `alt_form_type` (`Event` for event-associated people)
+- Alternate form population: `alt_form_type` (checks only one form response per person; the `event_*` filters replace it)
+- Application detail: `app_status`, `app_round`, `app_f1`, `app_submitted_start`/`_end`, `app_decision_date_start`/`_end`
+- Inquiry/RFI detail: `degree_interest`, `academic_interest` (contains), `entry_term`, `entry_year`, `marital_status`
+- Events: `event_title` (contains), `event_date_start`/`_end`, `event_attended` (`1`). They apply together: a person matches when one registration that isn't Cancelled, Declined or Saved for Later satisfies every event filter that's set (`event_filters` in Slate, a formula over a nested count).
+
+`/api/run` sends every date parameter as `M/D/YYYY` (all are typed `date` in Slate except `app_createddate_end`, which is `string`). `/api/run` moves a `YYYY-MM-DD` `_end` bound forward one day, because every maindb date filter compares `@end > field` and would otherwise drop the end day.
+
+**Adding a maindb filter in Slate** (query `all_people`): declare the parameter under **Edit Web Service** first (`<param id="x" type="string" />`), or saving the filter fails. Then copy an existing formula filter such as `campus_assigned`, change the formula to `((@x is null) or (@x = '') or (@x = @v_x))`, and swap its export for the field, renamed to `v_x`. Check that Matching Rows is unchanged with the parameter blank.
+
+Columns added 2026-10-12: `per_first`, `per_last`, `per_preferred`, `per_campus_assigned`, `per_created_date`, `per_city`/`per_region`/`per_country` (primary address), `per_origin_source` (first origin source), `per_academic_interest`, `per_degree_interest`, `per_entry_term`, `per_entry_year`, `per_marital_status`, `app_submitted_date`, `app_decision_date`, `app_url`, `app_degree`, `app_f1`, `app_count`, `app_missing_mats`, `event_titles`, `event_count`, `event_attended_count`, `event_last_date`. All are subquery or one-to-one exports, so it's still one row per person.
 
 Keep the `SLATE_QUERY_URL`, the frontend `PARAMS` list, and the Worker's generated JSON schema in sync when adding another parameter. Fixed prompt values belong in `options.md`; free-text identity and date parameters are described directly in the Worker prompt.
 

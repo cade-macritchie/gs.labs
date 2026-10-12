@@ -124,6 +124,25 @@ const QUERY_PARAMETER_KEYS = Object.freeze([
   "person_created_date_end",
   "campus_assigned",
   "alt_form_type",
+  // Added 2026-10-12. Each is an ignore-when-blank filter on all_people.
+  "app_status",
+  "app_round",
+  "app_f1",
+  "app_submitted_start",
+  "app_submitted_end",
+  "app_decision_date_start",
+  "app_decision_date_end",
+  "academic_interest",
+  "degree_interest",
+  "entry_term",
+  "entry_year",
+  "marital_status",
+  // The four event_* filters apply together: a person matches when at least
+  // one non-cancelled event registration satisfies all of the ones given.
+  "event_title",
+  "event_date_start",
+  "event_date_end",
+  "event_attended",
 ]);
 
 // Date-typed maindb parameters: Slate rejects "" for these, so a blank is
@@ -133,13 +152,29 @@ const DATE_PARAMETER_KEYS = Object.freeze([
   "app_createddate_end",
   "person_created_date_start",
   "person_created_date_end",
+  "app_submitted_start",
+  "app_submitted_end",
+  "app_decision_date_start",
+  "app_decision_date_end",
+  "event_date_start",
+  "event_date_end",
 ]);
 
-// The person-created fields expect M/D/YYYY (no leading zeros); the model
+// The date fields expect M/D/YYYY (no leading zeros); the model
 // returns YYYY-MM-DD. Anything that isn't a YYYY-MM-DD date passes through.
 function toSlatePersonDate(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   return m ? `${Number(m[2])}/${Number(m[3])}/${m[1]}` : value;
+}
+
+// maindb's date filters compare `@end > field`, and a bare date means
+// midnight, so the end day itself would be left out. Queryomatic promises
+// inclusive ranges, so a YYYY-MM-DD end bound is moved to the next day.
+function inclusiveEndDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return value;
+  const next = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1));
+  return next.toISOString().slice(0, 10);
 }
 
 
@@ -2566,6 +2601,15 @@ The output keys are Slate query parameter names. Map them to these options.md se
 - app_code: Decision Code
 - campus_assigned: campus
 - alt_form_type: alt_form_type
+- app_status: app_status
+- app_round: app_round
+- app_f1: app_f1
+- degree_interest: standard_degree
+- entry_term: entry_term
+- entry_year: academic_year
+- marital_status: marital_status
+
+academic_interest is matched as "contains", so use the closest academic_interests value or a shorter word from the request (e.g. "Counseling").
 
 The first, last, and sisid parameters are free text and do not require a Valid Values lookup. Use first and last only when the user identifies a person by name. For a clearly stated full name, put all given-name words in first and the family name in last. Use sisid for an explicitly provided student/SIS ID.
 
@@ -2573,13 +2617,21 @@ Use the exact Valid Values from the mapped section. For a shorthand location suc
 
 Today is ${currentDate}. Resolve relative academic-term language when possible. For example, "this fall" means term "Fall" and the academic-year value whose first year is this calendar year. Thus, during 2026, "this fall" maps to year "2026-2027".
 
-When the user asks for people associated with events or event registrations, set alt_form_type to the exact value "Event". Otherwise leave alt_form_type empty.
+Leave alt_form_type empty. It only checks one form response per person, so it misses most event registrants; the event_* filters below replace it. When the user asks for people tied to any event at all (no event name or dates), set event_date_start to "2000-01-01" so every event registration counts.
 
 When the user asks for "students", use the exact person_status value "Student" in the status output key. When they ask for admitted students or admitted applications, use status "Student" and decision code "AT". For provisionally admitted students, use decision code "ATP" instead.
 
 Application Created Date is a date range. Use app_createddate_start for the inclusive beginning of the requested range and app_createddate_end for the inclusive end. Return dates in YYYY-MM-DD format. If the user provides only one boundary, leave the other boundary empty. If they name a full month, use its first and last calendar dates. Never return app_createddate.
 
-Person Created Date is a separate date range for when the person's record was created (when they first inquired or entered Slate), not when an application was created. Use person_created_date_start for the inclusive beginning and person_created_date_end for the inclusive end, in YYYY-MM-DD format, following the same rules as Application Created Date. Use it for requests like "inquiries from last month" or "people added since August"; use the app_createddate fields only when the user says application created or submitted. Leave both empty otherwise.
+Person Created Date is a separate date range for when the person's record was created (when they first inquired or entered Slate), not when an application was created. Use person_created_date_start for the inclusive beginning and person_created_date_end for the inclusive end, in YYYY-MM-DD format, following the same rules as Application Created Date. Use it for requests like "inquiries from last month" or "people added since August"; use the app_createddate fields only when the user says application created or started. Leave both empty otherwise.
+
+Application Submitted Date (app_submitted_start / app_submitted_end) and Decision Date (app_decision_date_start / app_decision_date_end) are date ranges with the same rules. Use the submitted fields for "submitted", "completed" or "turned in" applications, and the decision-date fields for requests like "admitted this month" or "decisions made since September" (combine them with app_code when a specific decision is named).
+
+app_status is the application's funnel stage (e.g. "Awaiting Materials", "Decided"). app_round separates Master's/diploma/certificate applications from PhD & ThM applications. app_f1 is "1" for applicants needing an F-1 student visa (international students) and "0" for those who don't.
+
+degree_interest, entry_term, entry_year, academic_interest and marital_status describe what a person said on an inquiry or RFI ("inquiries interested in the MDiv", "people planning to start Fall 2027"). Use program, term and year instead when the user is talking about an application.
+
+Event filters: event_title is matched as "contains", so use a distinctive part of the event name ("Bible Teaching Conference", "SBC"). event_date_start / event_date_end are a YYYY-MM-DD range on the event's date. Set event_attended to "1" only when the user says attended, came, or showed up; leave it empty for registered or signed up.
 
 OPTIONS.MD
 ============================================================
@@ -2620,7 +2672,7 @@ No markdown fences.`;
             "claude-haiku-4-5-20251001",
 
           max_tokens:
-            500,
+            1000,
 
           system:
             systemPrompt,
@@ -2800,8 +2852,8 @@ async function runSlateQuery(
 
     url.searchParams.set(
       key,
-      key.startsWith("person_created_date_")
-        ? toSlatePersonDate(value)
+      DATE_PARAMETER_KEYS.includes(key)
+        ? toSlatePersonDate(key.endsWith("_end") ? inclusiveEndDate(value) : value)
         : value ?? ""
     );
   }

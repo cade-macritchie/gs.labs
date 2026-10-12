@@ -12,6 +12,10 @@ These are filled out during RFIs and simply represent the interests that the inq
 
 <!-- VALUES:academic_interests START -->
 
+- Adult Ministry
+- Biblical Studies
+- Christian Counseling
+- Church History
 - Intercultural Studies
 - Leadership
 - Missions
@@ -285,13 +289,14 @@ These are the different types of degrees.
 
 ### Context
 
-
+The term a person said they plan to start, from an inquiry or RFI. Sent as `entry_term`; pair it with `entry_year` (an academic_year value) for "starting Fall 2027". For applications use `term` instead.
 
 ### Valid Values
 
 <!-- VALUES:entry_term START -->
 
 - Fall
+- January
 - Spring
 - Summer
 
@@ -301,7 +306,7 @@ These are the different types of degrees.
 
 ### Context
 
-_Add context for this parameter here._
+The person's marital status. Sent as `marital_status`.
 
 ### Valid Values
 
@@ -485,7 +490,7 @@ These are teaching sites where accepted students OR applicants may express inter
 
 ### Context
 
-_Add context for this parameter here._
+The degree or program a person said they're interested in on an inquiry or RFI. Sent as `degree_interest`. For applications use `program` instead.
 
 ### Valid Values
 
@@ -512,6 +517,7 @@ _Add context for this parameter here._
 - Doctor of Philosophy
 - Global Engagement Certificate
 - IMB Qualification Certificate
+- Intercultural Studies Certificate
 - Korean-English Bilingual Diploma in Divinity
 - Korean-English Bilingual Diploma in Educational Leadership
 - Korean-English Bilingual Diploma in Global Engagement
@@ -524,10 +530,12 @@ _Add context for this parameter here._
 - LIST
 - Master of Arts in Christian Counseling
 - Master of Arts in Educational Leadership
+- Master of Arts in Intercultural Studies
 - Master of Biblical and Theological Studies
 - Master of Biblical Counseling
 - Master of Divinity
 - Master of Global Engagement
+- Master of Missiological Essentials
 - Master of Theological Essentials
 - Master of Theological Studies
 - Master of Theological Studies - Biblical Studies Concentration
@@ -556,6 +564,12 @@ These values represent application decision stages:
 - `DF` - Defer
 - `DN` - Deny
 
+Slate also returns these codes. Their meanings haven't been confirmed against Slate's decision setup, so match them only when the user names the code itself:
+
+- `WT` - probably Waitlist
+- `WD` - probably Withdrawn
+- `ADP` - unconfirmed
+
 ### Valid Values
 
 <!-- VALUES:app_code START -->
@@ -564,6 +578,9 @@ These values represent application decision stages:
 - ATP
 - DF
 - DN
+- WT
+- WD
+- ADP
 
 <!-- VALUES:app_code END -->
 
@@ -572,3 +589,69 @@ These values represent application decision stages:
 ### Context
 
 Use this to filter on when an application was created. A date range is sent as `app_createddate_start` for the inclusive beginning and `app_createddate_end` for the inclusive end. Dates must use `YYYY-MM-DD`. Leave either parameter empty when the request provides only one boundary.
+
+## app_status
+
+### Context
+
+The application's funnel stage, sent as `app_status`. "Incomplete" or "missing materials" means `Awaiting Materials`; "ready to review" or "waiting on a decision" means `Awaiting Decision`; "started but not submitted" means `Awaiting Submission`.
+
+### Valid Values
+
+<!-- VALUES:app_status START -->
+
+- Awaiting Submission
+- Awaiting Materials
+- Awaiting Payment
+- Awaiting Decision
+- Decided
+
+<!-- VALUES:app_status END -->
+
+## app_round
+
+### Context
+
+Which application an applicant used, sent as `app_round`. Master's, diploma and certificate programs use the first; "PhD", "ThM" or "doctoral" means the second.
+
+### Valid Values
+
+<!-- VALUES:app_round START -->
+
+- Application for Masters, Diplomas, & Certificates
+- Application for PhD & ThM
+
+<!-- VALUES:app_round END -->
+
+## app_f1
+
+### Context
+
+Whether the applicant needs an F-1 student visa, sent as `app_f1`. "International students", "F-1" or "visa students" means `1`; "domestic" or "not F-1" means `0`.
+
+### Valid Values
+
+<!-- VALUES:app_f1 START -->
+
+- 1
+- 0
+
+<!-- VALUES:app_f1 END -->
+
+## Application Submitted and Decision Dates (Start/End)
+
+### Context
+
+`app_submitted_start` / `app_submitted_end` filter on when the application was submitted. `app_decision_date_start` / `app_decision_date_end` filter on when its decision was made; pair them with `app_code` for "admitted this month". Both are inclusive `YYYY-MM-DD` ranges, and either boundary may be left empty.
+
+## Events
+
+### Context
+
+Four filters that apply together. A person matches when at least one of their event registrations (cancelled, declined and saved-for-later registrations don't count) satisfies every event filter that is set.
+
+- `event_title` matches when the event's title contains the text, e.g. `Bible Teaching Conference` or `SBC`.
+- `event_date_start` / `event_date_end` are an inclusive `YYYY-MM-DD` range on the event's date. For "anyone who came to any event", set `event_date_start` to `2000-01-01`.
+- `event_attended` set to `1` keeps only registrations marked Attended. Leave it empty for "registered".
+
+The results' `event_titles` column lists each person's events, newest first.
