@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="origin">
+  <title>Mailing Success</title>
+  <script defer src="../../assets/portal-analytics.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Montserrat:wght@400;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/dashboard.css">
+  <style>
+    /* GS 2026 brand refresh, scoped the same way as the other reports: namespaced
+       --nb-* vars so assets/dashboard.css's shared tokens stay untouched. */
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+    .mailing-dashboard {
+      --nb-black:#0c0f14; --nb-darkgray:#2c343a; --nb-teal:#234048; --nb-rust:#c44329; --nb-gold:#d3a422; --nb-grayblue:#708aa2;
+      --nb-radius:4px;
+      --nb-font-heading:'Tiempos Fine',Georgia,serif; --nb-font-subheading:Montserrat,'Segoe UI',sans-serif; --nb-font-body:'Open Sans',system-ui,sans-serif;
+      font-family: var(--nb-font-body);
+    }
+    .mailing-dashboard .gs-header { background: linear-gradient(120deg, var(--nb-black), var(--nb-darkgray)); }
+    .mailing-dashboard .wordmark { display: flex; align-items: center; }
+    .mailing-dashboard .wordmark-logo { height: 26px; width: auto; }
+    .mailing-dashboard .header-title { display: inline-flex; align-items: center; gap: 10px; color: var(--nb-gold); font-family: var(--nb-font-subheading); }
+    .mailing-dashboard .header-title::before, .mailing-dashboard .header-title::after { content: ''; width: 16px; height: 1px; background: var(--nb-gold); }
+    .mailing-dashboard .page-intro { background: linear-gradient(122deg, var(--nb-black), var(--nb-darkgray)); border-radius: var(--nb-radius); }
+    .mailing-dashboard .page-intro::before {
+      border: 0; box-shadow: none; border-radius: 0;
+      width: 260px; height: 260px; top: auto; right: -30px; bottom: -30px;
+      background: url('../../assets/brand-new/gs-logomark-white.png') no-repeat center / contain;
+      opacity: .14;
+    }
+    .mailing-dashboard .page-intro::after { background: var(--nb-gold); }
+    .mailing-dashboard .intro-heading { font-family: var(--nb-font-heading); }
+    .mailing-dashboard .intro-subtitle { color: rgba(255,255,255,.82); }
+    .mailing-dashboard .stat-cell { border-radius: var(--nb-radius); text-align: center; }
+    .mailing-dashboard .stat-val { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .mailing-dashboard .stat-lbl { font-family: var(--nb-font-subheading); }
+    .mailing-dashboard .section-heading { font-family: var(--nb-font-heading); color: var(--nb-black); }
+    .mailing-dashboard .container { max-width: 1120px; }
+
+    .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 14px; margin-bottom: 26px; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--nb-radius); background: var(--white); box-shadow: var(--shadow); }
+    .filter { display: grid; gap: 5px; min-width: 0; }
+    .filter label, .filter .filter-label { color: var(--muted); font: 800 .64rem/1.2 var(--nb-font-subheading); letter-spacing: .11em; text-transform: uppercase; }
+    .filter select, .filter input[type=search], .filter input[type=number] { width: 100%; min-height: 36px; padding: 6px 9px; border: 1px solid #cfd8dd; border-radius: var(--nb-radius); color: var(--ink); font: 600 .85rem var(--nb-font-body); background: #fff; }
+    .filter-check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-size: .8rem; font-weight: 650; cursor: pointer; }
+    .filter-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--nb-teal); }
+    .filter-wide { grid-column: span 2; }
+
+    .rank-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .rank-note { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+    .ghost-button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid #cfd8dd; border-radius: 999px; color: var(--nb-black); font: 700 .76rem var(--nb-font-subheading); background: #fff; cursor: pointer; }
+    .ghost-button:hover { border-color: var(--nb-gold); }
+    .ghost-button:disabled { opacity: .55; cursor: default; }
+    .primary-button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border: 0; border-radius: 999px; color: #fff; font: 700 .8rem var(--nb-font-subheading); background: var(--nb-teal); cursor: pointer; }
+    .primary-button:hover { background: var(--nb-black); }
+    .primary-button:disabled { opacity: .6; cursor: progress; }
+
+    .mailing-list { display: grid; gap: 10px; }
+    .mailing-card { position: relative; display: grid; grid-template-columns: 52px minmax(0, 1fr) 132px 132px 150px; gap: 14px; align-items: center; padding: 16px 18px 16px 14px; overflow: hidden; border: 1.5px solid var(--border); border-radius: var(--nb-radius); background: var(--white); box-shadow: var(--shadow); }
+    .mailing-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--card-accent, var(--nb-grayblue)); }
+    .mailing-card.method-sms { --card-accent: var(--nb-gold); }
+    .mailing-card.method-email { --card-accent: var(--nb-teal); }
+    .rank-badge { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: var(--nb-black); font: 700 1.05rem var(--nb-font-heading); background: #f1f3f5; }
+    .mailing-card:nth-child(-n+3) .rank-badge { color: #fff; background: var(--nb-black); }
+    .mailing-name { margin: 0 0 4px; color: var(--nb-black); font: 700 1.02rem/1.3 var(--nb-font-heading); overflow-wrap: anywhere; }
+    .mailing-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: .74rem; }
+    .method-pill { padding: 1px 7px; border-radius: 99px; color: #fff; font: 800 .6rem/1.6 var(--nb-font-subheading); letter-spacing: .08em; text-transform: uppercase; background: var(--card-accent, var(--nb-grayblue)); }
+    .mailing-subject { margin-top: 5px; color: var(--ink); font-size: .78rem; font-style: italic; overflow-wrap: anywhere; }
+    .metric { text-align: right; min-width: 0; }
+    .metric-label { display: block; margin-bottom: 4px; color: var(--muted); font: 800 .6rem/1.2 var(--nb-font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+    .metric-value { color: var(--nb-black); font: 700 1.3rem/1 var(--nb-font-heading); font-variant-numeric: tabular-nums; }
+    .metric-sub { display: block; margin-top: 3px; color: var(--muted); font-size: .7rem; }
+    .score-bar { height: 6px; margin-top: 7px; overflow: hidden; border-radius: 99px; background: #eceff2; }
+    .score-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--nb-gold), var(--nb-rust)); }
+    .show-more { display: flex; justify-content: center; margin-top: 14px; }
+
+    .ai-panel { padding: 24px; border-radius: var(--nb-radius); }
+    .ai-intro { margin: 0 0 14px; color: var(--muted); font-size: .84rem; line-height: 1.55; }
+    .ai-question { width: 100%; min-height: 64px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #cfd8dd; border-radius: var(--nb-radius); font: .88rem/1.45 var(--nb-font-body); resize: vertical; }
+    .ai-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .ai-status { color: var(--muted); font-size: .8rem; }
+    .ai-status.error { color: var(--nb-rust); font-weight: 700; }
+    .ai-result { margin-top: 20px; }
+    .ai-headline { margin: 0 0 16px; padding: 14px 16px; border-left: 4px solid var(--nb-gold); color: var(--nb-black); font: 600 1.05rem/1.45 var(--nb-font-heading); background: #faf7ee; }
+    .ai-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .ai-block h3 { margin: 0 0 8px; color: var(--nb-black); font: 800 .7rem/1.2 var(--nb-font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+    .ai-block ul { margin: 0; padding-left: 18px; color: var(--ink); font-size: .86rem; line-height: 1.5; }
+    .ai-block li { margin-bottom: 8px; }
+    .ai-block li span { display: block; color: var(--muted); font-size: .78rem; }
+    .ai-block.full { grid-column: 1 / -1; }
+
+    @media (max-width: 860px) {
+      .mailing-card { grid-template-columns: 44px minmax(0, 1fr) repeat(2, auto); }
+      .mailing-card .metric-score { grid-column: 2 / -1; text-align: left; }
+      .ai-columns { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 560px) {
+      .filter-wide { grid-column: auto; }
+      .mailing-card { grid-template-columns: 40px minmax(0, 1fr); }
+      .mailing-card .metric { grid-column: 2; text-align: left; }
+      .rank-badge { width: 36px; height: 36px; }
+    }
+  </style>
+</head>
+<body class="mailing-dashboard">
+  <header class="gs-header">
+    <span class="wordmark"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></span>
+    <div class="header-divider"></div>
+    <a class="header-title header-home" href="../../" target="_top" aria-label="Return to Admissions">Home</a>
+  </header>
+
+  <div id="loading" class="loading">Waiting for mailing data from Slate&hellip;</div>
+
+  <main id="app" class="container" hidden>
+    <div class="page-intro">
+      <h1 class="intro-heading">Mailing Success</h1>
+      <p class="intro-subtitle">See how your recent emails and texts performed, rank them against each other, and have AI pick out what the best ones have in common.</p>
+    </div>
+
+    <div class="stat-bar">
+      <div class="stat-cell"><div id="stat-mailings" class="stat-val">0</div><div class="stat-lbl">Mailings</div></div>
+      <div class="stat-cell"><div id="stat-delivered" class="stat-val">0</div><div class="stat-lbl">Delivered</div></div>
+      <div class="stat-cell"><div id="stat-click" class="stat-val">—</div><div class="stat-lbl">Avg Email Click Rate</div></div>
+      <div class="stat-cell"><div id="stat-reply" class="stat-val">—</div><div class="stat-lbl">Avg Text Reply Rate</div></div>
+    </div>
+
+    <form id="filters" class="filters" onsubmit="return false">
+      <div class="filter">
+        <label for="f-method">Type</label>
+        <select id="f-method">
+          <option value="all">Email &amp; text</option>
+          <option value="email">Email only</option>
+          <option value="sms">Text only</option>
+        </select>
+      </div>
+      <div class="filter">
+        <label for="f-range">Sent in the last</label>
+        <select id="f-range">
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="180">6 months</option>
+          <option value="365">12 months</option>
+          <option value="0">All time</option>
+        </select>
+      </div>
+      <div class="filter">
+        <label for="f-sort">Rank by</label>
+        <select id="f-sort">
+          <option value="score">Success score</option>
+          <option value="replyRate">Text reply rate</option>
+          <option value="clickRate">Click rate</option>
+          <option value="openRate">Email open rate</option>
+          <option value="delivered">Delivered</option>
+          <option value="date">Most recent</option>
+        </select>
+      </div>
+      <div class="filter">
+        <label for="f-min">Min. delivered</label>
+        <input id="f-min" type="number" min="0" step="5" value="25">
+      </div>
+      <div class="filter">
+        <label for="f-window">Count text replies within</label>
+        <select id="f-window">
+          <option value="24">24 hours</option>
+          <option value="72" selected>3 days</option>
+          <option value="168">7 days</option>
+        </select>
+      </div>
+      <div class="filter">
+        <label for="f-owner">Sent by</label>
+        <select id="f-owner"><option value="">Anyone</option></select>
+      </div>
+      <div class="filter filter-wide">
+        <label for="f-search">Search</label>
+        <input id="f-search" type="search" placeholder="Mailing name, subject or folder">
+      </div>
+      <div class="filter">
+        <span class="filter-label">Automated</span>
+        <label class="filter-check" for="f-system"><input id="f-system" type="checkbox"> Include form &amp; system emails</label>
+      </div>
+    </form>
+
+    <div class="section-divider">
+      <div class="section-eyebrow">Leaderboard</div>
+      <div class="section-heading">Ranked Mailings</div>
+    </div>
+
+    <div class="rank-toolbar">
+      <div id="rank-note" class="rank-note"></div>
+      <button id="export-csv" class="ghost-button" type="button">Export CSV</button>
+    </div>
+    <div id="mailing-list" class="mailing-list"></div>
+    <div id="mailing-empty" hidden></div>
+    <div class="show-more"><button id="show-more" class="ghost-button" type="button" hidden>Show more</button></div>
+
+    <div class="section-divider">
+      <div class="section-eyebrow">AI Analysis</div>
+      <div class="section-heading">What the Best Mailings Have in Common</div>
+    </div>
+
+    <section class="panel ai-panel" aria-labelledby="ai-heading">
+      <h2 id="ai-heading" hidden>AI analysis</h2>
+      <p class="ai-intro">Claude compares the top and bottom mailings in the current ranking (using the filters above) and looks for shared factors: timing, audience size, wording, subject lines and type. Only mailing-level numbers and names are sent; no student records.</p>
+      <textarea id="ai-question" class="ai-question" maxlength="500" placeholder="Optional: ask something specific, e.g. &quot;Do texts with a question get more replies?&quot;"></textarea>
+      <div class="ai-row">
+        <button id="ai-run" class="primary-button" type="button">Analyze top vs. bottom mailings</button>
+        <span id="ai-status" class="ai-status" role="status"></span>
+      </div>
+      <div id="ai-result" class="ai-result" hidden></div>
+    </section>
+  </main>
+
+  <script src="../../assets/dashboard-common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    const DASHBOARD = 'mailing-success';
+    const PARENT_ORIGIN = 'https://enroll.gs.edu';
+    const PAGE_SIZE = 25;
+    const AI_GROUP_SIZE = 8;
+    const ui = window.DashboardUI;
+    const pct = new Intl.NumberFormat('en-US', { style:'percent', maximumFractionDigits:1 });
+    const int = new Intl.NumberFormat('en-US');
+    const dateFmt = new Intl.DateTimeFormat('en-US', { month:'short', day:'numeric', year:'numeric', timeZone:'UTC' });
+    const timeFmt = new Intl.DateTimeFormat('en-US', { weekday:'short', hour:'numeric', minute:'2-digit', timeZone:'UTC' });
+    const $ = function (id) { return document.getElementById(id); };
+
+    let mailings = [];
+    let replies = [];
+    let ranked = [];
+    let shown = PAGE_SIZE;
+    let pendingAnalysis = null;
+
+    function clean(value) { return ui.text(value, '').trim(); }
+
+    // Slate renders mailing and inbox timestamps in the same database-local
+    // zone without an offset, so read them as naive wall-clock times (stored
+    // as UTC epoch millis) and compare them to each other, never to Date.now().
+    function parseStamp(value) {
+      const m = clean(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+      if (!m) return null;
+      return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    }
+
+    function digits(value) {
+      const d = clean(value).replace(/\D/g, '');
+      return d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+    }
+
+    function rate(part, whole) { return whole > 0 ? part / whole : null; }
+
+    function isAutomated(folder) {
+      const f = clean(folder);
+      return /^SYS:/i.test(f) || /^system$/i.test(f);
+    }
+
+    function normalize(payload) {
+      mailings = (Array.isArray(payload.mailings) ? payload.mailings : []).map(function (row) {
+        const method = /sms/i.test(clean(row.method)) ? 'sms' : 'email';
+        const sent = ui.number(row.sent);
+        const delivered = ui.number(row.delivered);
+        const start = parseStamp(row.start) || parseStamp(row.created);
+        return {
+          id: clean(row.id),
+          name: clean(row.name) || 'Untitled mailing',
+          subject: clean(row.subject),
+          folder: [clean(row.folder), clean(row.subfolder)].filter(Boolean).join(' / '),
+          rawFolder: clean(row.folder),
+          owner: clean(row.user),
+          method: method,
+          number: digits(row.number || (method === 'sms' ? row.sender : '')),
+          start: start,
+          sent: sent,
+          delivered: delivered,
+          bounce: ui.number(row.bounce),
+          skip: ui.number(row.skip),
+          opens: ui.number(row.uopens),
+          clicks: ui.number(row.uclicks),
+          ongoing: clean(row.ongoing) === '1'
+        };
+      }).filter(function (m) { return m.start != null; });
+
+      replies = (Array.isArray(payload.replies) ? payload.replies : []).map(function (row) {
+        return { t: parseStamp(row.t), to: digits(row.to), who: clean(row.who), stop: !!row.stop };
+      }).filter(function (r) { return r.t != null && r.to; });
+
+      // "Now" for the date-range filter is the newest timestamp Slate gave us,
+      // which keeps it in the same naive clock as the data.
+      const stamps = mailings.map(function (m) { return m.start; }).concat(replies.map(function (r) { return r.t; }));
+      normalize.now = stamps.length ? Math.max.apply(null, stamps) : Date.now();
+
+      const owners = Array.from(new Set(mailings.map(function (m) { return m.owner; }).filter(Boolean))).sort();
+      const ownerSelect = $('f-owner');
+      ownerSelect.replaceChildren(new Option('Anyone', ''));
+      owners.forEach(function (o) { ownerSelect.appendChild(new Option(o, o)); });
+    }
+
+    // A reply belongs to the most recent text mailing sent from the number it
+    // was sent to, if that mailing went out within the reply window. Texts
+    // staff send one-to-one from the Inbox aren't mailings, so a reply to one
+    // of those can be credited to the last mailing from that number.
+    function attributeReplies(windowHours) {
+      const windowMs = windowHours * 3600000;
+      const byNumber = new Map();
+      mailings.forEach(function (m) {
+        m.repliers = 0; m.replyMessages = 0; m.optOuts = 0;
+        if (m.method !== 'sms' || !m.number) return;
+        if (!byNumber.has(m.number)) byNumber.set(m.number, []);
+        byNumber.get(m.number).push(m);
+      });
+      byNumber.forEach(function (list) { list.sort(function (a, b) { return a.start - b.start; }); });
+
+      const people = new Map();
+      replies.forEach(function (r) {
+        const list = byNumber.get(r.to);
+        if (!list) return;
+        let match = null;
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+          if (list[i].start <= r.t) { match = list[i]; break; }
+        }
+        if (!match || r.t - match.start > windowMs) return;
+        match.replyMessages += 1;
+        if (!people.has(match)) people.set(match, { all: new Set(), stop: new Set() });
+        const seen = people.get(match);
+        seen.all.add(r.who || ('anon' + match.replyMessages));
+        if (r.stop) seen.stop.add(r.who || ('anon' + match.replyMessages));
+      });
+      people.forEach(function (seen, m) { m.repliers = seen.all.size; m.optOuts = seen.stop.size; });
+
+      mailings.forEach(function (m) {
+        m.openRate = m.method === 'email' ? rate(m.opens, m.delivered) : null;
+        m.clickRate = rate(m.clicks, m.delivered);
+        m.replyRate = m.method === 'sms' ? rate(m.repliers, m.delivered) : null;
+        m.optOutRate = m.method === 'sms' ? rate(m.optOuts, m.delivered) : null;
+        m.bounceRate = rate(m.bounce, m.sent);
+        // Email opens are inflated by Apple Mail privacy prefetching, so clicks
+        // are the email success measure; replies are the text one.
+        m.primary = m.method === 'sms' ? m.replyRate : m.clickRate;
+      });
+    }
+
+    // Score = percentile of a mailing's primary measure among the filtered
+    // mailings of the same type, so emails and texts rank on one 0–100 scale.
+    function scoreWithinMethod(list) {
+      ['email', 'sms'].forEach(function (method) {
+        const group = list.filter(function (m) { return m.method === method && m.primary != null; });
+        const values = group.map(function (m) { return m.primary; }).sort(function (a, b) { return a - b; });
+        group.forEach(function (m) {
+          if (values.length < 2) { m.score = null; return; }
+          let below = 0, equal = 0;
+          values.forEach(function (v) { if (v < m.primary) below += 1; else if (v === m.primary) equal += 1; });
+          m.score = Math.round(((below + (equal - 1) / 2) / (values.length - 1)) * 100);
+        });
+      });
+    }
+
+    function filtered() {
+      const method = $('f-method').value;
+      const days = Number($('f-range').value);
+      const min = Math.max(0, Number($('f-min').value) || 0);
+      const owner = $('f-owner').value;
+      const includeSystem = $('f-system').checked;
+      const q = $('f-search').value.trim().toLowerCase();
+      const cutoff = days ? normalize.now - days * 86400000 : -Infinity;
+      return mailings.filter(function (m) {
+        if (method !== 'all' && m.method !== method) return false;
+        if (m.start < cutoff) return false;
+        if (m.delivered < min) return false;
+        if (owner && m.owner !== owner) return false;
+        if (!includeSystem && isAutomated(m.rawFolder)) return false;
+        if (q && (m.name + ' ' + m.subject + ' ' + m.folder).toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+    }
+
+    function sortKey(m, key) {
+      if (key === 'date') return m.start;
+      if (key === 'delivered') return m.delivered;
+      const v = m[key];
+      return v == null ? -1 : v;
+    }
+
+    function recompute() {
+      attributeReplies(Number($('f-window').value));
+      const list = filtered();
+      scoreWithinMethod(list);
+      const key = $('f-sort').value;
+      ranked = list.slice().sort(function (a, b) {
+        return sortKey(b, key) - sortKey(a, key) || b.delivered - a.delivered || b.start - a.start;
+      });
+      shown = PAGE_SIZE;
+      renderStats(list);
+      renderList();
+    }
+
+    function average(list, field) {
+      const vals = list.map(function (m) { return m[field]; }).filter(function (v) { return v != null; });
+      return vals.length ? vals.reduce(function (s, v) { return s + v; }, 0) / vals.length : null;
+    }
+
+    function renderStats(list) {
+      $('stat-mailings').textContent = int.format(list.length);
+      $('stat-delivered').textContent = int.format(list.reduce(function (s, m) { return s + m.delivered; }, 0));
+      const click = average(list.filter(function (m) { return m.method === 'email'; }), 'clickRate');
+      const reply = average(list, 'replyRate');
+      $('stat-click').textContent = click == null ? '—' : pct.format(click);
+      $('stat-reply').textContent = reply == null ? '—' : pct.format(reply);
+    }
+
+    function metricCell(label, value, sub, extraClass) {
+      const cell = document.createElement('div');
+      cell.className = 'metric' + (extraClass ? ' ' + extraClass : '');
+      const l = document.createElement('span'); l.className = 'metric-label'; l.textContent = label;
+      const v = document.createElement('div'); v.className = 'metric-value'; v.textContent = value;
+      cell.append(l, v);
+      if (sub) { const s = document.createElement('span'); s.className = 'metric-sub'; s.textContent = sub; cell.appendChild(s); }
+      return cell;
+    }
+
+    function fmtRate(v) { return v == null ? '—' : pct.format(v); }
+
+    function card(m, index) {
+      const el = document.createElement('article');
+      el.className = 'mailing-card method-' + m.method;
+
+      const badge = document.createElement('div');
+      badge.className = 'rank-badge';
+      badge.textContent = index + 1;
+
+      const body = document.createElement('div');
+      const name = document.createElement('h3'); name.className = 'mailing-name'; name.textContent = m.name;
+      const meta = document.createElement('div'); meta.className = 'mailing-meta';
+      const pill = document.createElement('span'); pill.className = 'method-pill'; pill.textContent = m.method === 'sms' ? 'Text' : 'Email';
+      const when = document.createElement('span'); when.textContent = dateFmt.format(new Date(m.start)) + ' · ' + timeFmt.format(new Date(m.start));
+      meta.append(pill, when);
+      if (m.owner) { const o = document.createElement('span'); o.textContent = m.owner; meta.appendChild(o); }
+      if (m.folder) { const f = document.createElement('span'); f.textContent = m.folder; meta.appendChild(f); }
+      body.append(name, meta);
+      if (m.subject) { const s = document.createElement('div'); s.className = 'mailing-subject'; s.textContent = m.subject; body.appendChild(s); }
+
+      const delivered = metricCell('Delivered', int.format(m.delivered), m.bounceRate ? fmtRate(m.bounceRate) + ' bounced' : '');
+      let main;
+      if (m.method === 'sms') {
+        main = metricCell('Reply rate', fmtRate(m.replyRate), int.format(m.repliers) + ' replied' + (m.optOuts ? ' · ' + m.optOuts + ' opted out' : ''));
+      } else {
+        main = metricCell('Click rate', fmtRate(m.clickRate), 'Opened ' + fmtRate(m.openRate));
+      }
+      const score = metricCell('Success score', m.score == null ? '—' : String(m.score), '', 'metric-score');
+      if (m.score != null) {
+        const bar = document.createElement('div'); bar.className = 'score-bar';
+        const fill = document.createElement('div'); fill.className = 'score-fill'; fill.style.width = m.score + '%';
+        bar.appendChild(fill); score.appendChild(bar);
+      }
+      el.append(badge, body, delivered, main, score);
+      return el;
+    }
+
+    function renderList() {
+      const list = $('mailing-list');
+      const empty = $('mailing-empty');
+      list.replaceChildren();
+      empty.replaceChildren();
+      empty.hidden = ranked.length > 0;
+      if (!ranked.length) empty.appendChild(ui.emptyState('No mailings match these filters. Try a longer date range or a lower minimum.'));
+      ranked.slice(0, shown).forEach(function (m, i) { list.appendChild(card(m, i)); });
+      $('show-more').hidden = ranked.length <= shown;
+      const sms = ranked.filter(function (m) { return m.method === 'sms'; }).length;
+      $('rank-note').textContent = ranked.length
+        ? int.format(ranked.length) + ' mailings. Score is each mailing’s percentile among the same type: click rate for emails, reply rate for texts' + (sms ? ' (replies counted within ' + $('f-window').selectedOptions[0].text + ' of sending).' : '.')
+        : '';
+    }
+
+    function exportCsv() {
+      ui.downloadCsv('mailing-success', [
+        { label:'Rank', value:function (m) { return ranked.indexOf(m) + 1; } },
+        { label:'Mailing', key:'name' },
+        { label:'Type', value:function (m) { return m.method === 'sms' ? 'Text' : 'Email'; } },
+        { label:'Sent', value:function (m) { return new Date(m.start).toISOString().replace('T', ' ').slice(0, 16); } },
+        { label:'Sent by', key:'owner' },
+        { label:'Folder', key:'folder' },
+        { label:'Subject', key:'subject' },
+        { label:'Delivered', key:'delivered' },
+        { label:'Bounce rate', value:function (m) { return fmtRate(m.bounceRate); } },
+        { label:'Open rate', value:function (m) { return fmtRate(m.openRate); } },
+        { label:'Click rate', value:function (m) { return fmtRate(m.clickRate); } },
+        { label:'Repliers', value:function (m) { return m.method === 'sms' ? m.repliers : ''; } },
+        { label:'Reply rate', value:function (m) { return fmtRate(m.replyRate); } },
+        { label:'Opt-outs', value:function (m) { return m.method === 'sms' ? m.optOuts : ''; } },
+        { label:'Success score', value:function (m) { return m.score == null ? '' : m.score; } }
+      ], ranked);
+    }
+
+    // ---- AI analysis -------------------------------------------------------
+    // The page can't call the gateway itself (the gateway key lives only in the
+    // Slate portal view), so it asks the wrapper to make the call and waits
+    // for the answer to come back over postMessage.
+
+    function aiRow(m, group) {
+      const d = new Date(m.start);
+      return {
+        group: group,
+        rank: ranked.indexOf(m) + 1,
+        name: m.name,
+        type: m.method === 'sms' ? 'text' : 'email',
+        subject: m.subject,
+        folder: m.folder,
+        sent_by: m.owner,
+        sent_at: d.toISOString().slice(0, 16).replace('T', ' '),
+        weekday: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()],
+        delivered: m.delivered,
+        bounce_rate: m.bounceRate,
+        open_rate: m.openRate,
+        click_rate: m.clickRate,
+        reply_rate: m.replyRate,
+        opt_out_rate: m.optOutRate,
+        success_score: m.score
+      };
+    }
+
+    function runAnalysis() {
+      const scored = ranked.filter(function (m) { return m.score != null; });
+      if (scored.length < 4) {
+        setStatus('Need at least 4 scored mailings in the current view. Widen the filters and try again.', true);
+        return;
+      }
+      const byScore = scored.slice().sort(function (a, b) { return b.score - a.score || b.delivered - a.delivered; });
+      const n = Math.min(AI_GROUP_SIZE, Math.floor(byScore.length / 2));
+      const rows = byScore.slice(0, n).map(function (m) { return aiRow(m, 'top'); })
+        .concat(byScore.slice(-n).map(function (m) { return aiRow(m, 'bottom'); }));
+      const requestId = 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      pendingAnalysis = requestId;
+      $('ai-run').disabled = true;
+      $('ai-result').hidden = true;
+      setStatus('Analyzing ' + rows.length + ' mailings… this can take up to a minute.');
+      window.parent.postMessage({
+        type: 'mailing-success-analyze',
+        dashboard: DASHBOARD,
+        requestId: requestId,
+        payload: {
+          question: $('ai-question').value.trim().slice(0, 500),
+          filters: {
+            type: $('f-method').selectedOptions[0].text,
+            range: $('f-range').selectedOptions[0].text,
+            min_delivered: Number($('f-min').value) || 0,
+            reply_window: $('f-window').selectedOptions[0].text
+          },
+          mailings: rows
+        }
+      }, PARENT_ORIGIN);
+      setTimeout(function () {
+        if (pendingAnalysis === requestId) {
+          pendingAnalysis = null;
+          $('ai-run').disabled = false;
+          setStatus('The analysis timed out. Try again in a moment.', true);
+        }
+      }, 120000);
+    }
+
+    function setStatus(text, isError) {
+      const s = $('ai-status');
+      s.textContent = text || '';
+      s.classList.toggle('error', !!isError);
+    }
+
+    function list(items, render) {
+      const ul = document.createElement('ul');
+      (items || []).forEach(function (item) { const li = document.createElement('li'); render(li, item); ul.appendChild(li); });
+      return ul;
+    }
+
+    function block(title, ul, full) {
+      const div = document.createElement('div');
+      div.className = 'ai-block' + (full ? ' full' : '');
+      const h = document.createElement('h3'); h.textContent = title;
+      div.append(h, ul);
+      return div;
+    }
+
+    function factorItem(li, item) {
+      li.textContent = clean(item.factor);
+      if (item.evidence) { const s = document.createElement('span'); s.textContent = clean(item.evidence); li.appendChild(s); }
+    }
+
+    function renderAnalysis(result) {
+      const out = $('ai-result');
+      out.replaceChildren();
+      const head = document.createElement('p'); head.className = 'ai-headline'; head.textContent = clean(result.headline);
+      const cols = document.createElement('div'); cols.className = 'ai-columns';
+      cols.append(
+        block('What top mailings share', list(result.top_patterns, factorItem)),
+        block('What low performers share', list(result.low_patterns, factorItem)),
+        block('Try next', list(result.recommendations, function (li, t) { li.textContent = clean(t); }), true)
+      );
+      if (result.answer) cols.appendChild(block('Your question', list([result.answer], function (li, t) { li.textContent = clean(t); }), true));
+      if (result.caveats && result.caveats.length) cols.appendChild(block('Keep in mind', list(result.caveats, function (li, t) { li.textContent = clean(t); }), true));
+      out.append(head, cols);
+      out.hidden = false;
+    }
+
+    window.addEventListener('message', function (event) {
+      if (event.origin !== PARENT_ORIGIN || event.source !== window.parent || !event.data) return;
+      if (event.data.type !== 'mailing-success-analysis' || event.data.dashboard !== DASHBOARD) return;
+      if (event.data.requestId !== pendingAnalysis) return;
+      pendingAnalysis = null;
+      $('ai-run').disabled = false;
+      if (event.data.error || !event.data.result) {
+        setStatus(clean(event.data.error) || 'The analysis failed. Try again.', true);
+        return;
+      }
+      setStatus('');
+      renderAnalysis(event.data.result);
+    });
+
+    // ---- wiring ------------------------------------------------------------
+
+    ['f-method', 'f-range', 'f-sort', 'f-window', 'f-owner', 'f-system'].forEach(function (id) { $(id).addEventListener('change', recompute); });
+    ['f-min', 'f-search'].forEach(function (id) { $(id).addEventListener('input', recompute); });
+    $('show-more').addEventListener('click', function () { shown += PAGE_SIZE; renderList(); });
+    $('export-csv').addEventListener('click', exportCsv);
+    $('ai-run').addEventListener('click', runAnalysis);
+
+    window.DashboardBridge.create(DASHBOARD, function (payload) {
+      normalize(payload);
+      recompute();
+      ui.showApp();
+    });
+  }());
+  </script>
+</body>
+</html>

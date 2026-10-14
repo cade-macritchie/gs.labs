@@ -77,11 +77,15 @@
  *   one-off connected check — both backed by the CheckinPrintQueue Durable Object,
  *   one instance per station name. See "CHECK-IN PRINT QUEUE".)
  *
+ * - POST /api/mailings/analyze                (mailing-success wrapper: asks Claude what the
+ *   top and bottom ranked mailings have in common. PORTAL_ORIGIN + key gated.
+ *   See "MAILING SUCCESS AI ANALYSIS".)
+ *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
  * - SLATE_TOKEN_PROMPTS                        (prompts query: options refresh + /api/slate/portal-options)
  * - SLATE_TOKEN_MAINDB                         (maindb query: /api/run + every other /api/slate/* route)
- * - ANTHROPIC_API_KEY                          (Queryomatic /api/generate)
+ * - ANTHROPIC_API_KEY                          (Queryomatic /api/generate, /api/mailings/analyze)
  * - GITHUB_TOKEN                               (Queryomatic options.md commits)
  * - SLATE_OPTIONS_URL                          (prompts query URL)
  * - SLATE_QUERY_URL                            (maindb query URL)
@@ -497,6 +501,174 @@ async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedPa
 // well enough to query it reliably added a lot of fragility for something
 // checkin-qr-image already solves more directly — see tools/checkin/README.md.
 const CHECKIN_FIXED_PARAMS = Object.freeze({});
+
+
+// ============================================================
+// MAILING SUCCESS AI ANALYSIS (POST /api/mailings/analyze)
+//
+// reports/mailing-success/ ranks Deliver mailings, then asks Claude what the
+// top and bottom ones have in common. The hosted page has no gateway key, so
+// its Slate wrapper (slate-templates/wrappers/mailing-success-wrapper.liquid.html)
+// makes this call from PORTAL_ORIGIN with X-GS-Key and relays the answer back.
+//
+// Only mailing-level rows come in (name, subject, folder, owner, send time,
+// counts and rates) — never people. Every field is re-shaped below so a caller
+// can't stuff arbitrary text or volume into the prompt.
+// ============================================================
+
+const MAILING_ANALYSIS_MODEL = "claude-opus-5-5";
+const MAILING_ANALYSIS_MAX_ROWS = 40;
+
+const MAILING_ANALYSIS_SCHEMA = Object.freeze({
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    top_patterns: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { factor: { type: "string" }, evidence: { type: "string" } },
+        required: ["factor", "evidence"],
+        additionalProperties: false,
+      },
+    },
+    low_patterns: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { factor: { type: "string" }, evidence: { type: "string" } },
+        required: ["factor", "evidence"],
+        additionalProperties: false,
+      },
+    },
+    recommendations: { type: "array", items: { type: "string" } },
+    answer: { type: "string" },
+    caveats: { type: "array", items: { type: "string" } },
+  },
+  required: ["headline", "top_patterns", "low_patterns", "recommendations", "answer", "caveats"],
+  additionalProperties: false,
+});
+
+const MAILING_ANALYSIS_SYSTEM = `You analyze Slate Deliver mailing results for the admissions and enrollment staff at Gateway Seminary, a graduate theological school.
+
+You get two groups of mailings from the same filtered view: "top" (highest success score) and "bottom" (lowest). Success score is a mailing's percentile within its own type: click rate for emails (opens are inflated by Apple Mail privacy prefetching, so treat open rate as weak evidence), reply rate for texts. Rates are fractions (0.08 = 8%).
+
+Find the factors that separate the two groups: send weekday and time of day, audience size, email vs. text, subject-line wording and length, mailing-name cues about purpose or audience (inquiries, applicants, current students, events, deadlines), folder, and sender. Cite specific mailings by name as evidence. Prefer a few well-supported patterns over many weak ones, and say when a pattern rests on only two or three mailings. Recommendations should be concrete things staff can try on their next mailing.
+
+If the staff member asked a question, answer it directly in "answer" from this data, or say what data would be needed; otherwise set "answer" to an empty string. Use "caveats" for limits of the data, such as small samples, reply windows, or replies that may belong to one-to-one texts.`;
+
+function analysisText(value, max) {
+  return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function analysisRate(value) {
+  const n = Number(value);
+  return value == null || value === "" || !Number.isFinite(n) ? null : Math.round(n * 10000) / 10000;
+}
+
+function shapeMailingRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.slice(0, MAILING_ANALYSIS_MAX_ROWS).map((row) => ({
+    group: row && row.group === "top" ? "top" : "bottom",
+    rank: Number.isFinite(Number(row?.rank)) ? Number(row.rank) : null,
+    name: analysisText(row?.name, 160),
+    type: row?.type === "text" ? "text" : "email",
+    subject: analysisText(row?.subject, 200),
+    folder: analysisText(row?.folder, 80),
+    sent_by: analysisText(row?.sent_by, 60),
+    sent_at: analysisText(row?.sent_at, 16),
+    weekday: analysisText(row?.weekday, 3),
+    delivered: Number.isFinite(Number(row?.delivered)) ? Number(row.delivered) : 0,
+    bounce_rate: analysisRate(row?.bounce_rate),
+    open_rate: analysisRate(row?.open_rate),
+    click_rate: analysisRate(row?.click_rate),
+    reply_rate: analysisRate(row?.reply_rate),
+    opt_out_rate: analysisRate(row?.opt_out_rate),
+    success_score: analysisRate(row?.success_score),
+  }));
+}
+
+async function handleMailingAnalyze(request, env, id) {
+  const denied = await guardRoute(request, env, id, "mailings-analyze", env.PORTAL_ORIGIN);
+  if (denied) return denied;
+
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error("ANTHROPIC_API_KEY is missing");
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON body", requestId: id }, env, 400, env.PORTAL_ORIGIN);
+  }
+
+  const mailings = shapeMailingRows(body?.mailings);
+  if (mailings.length < 4 || !mailings.some((m) => m.group === "top") || !mailings.some((m) => m.group === "bottom")) {
+    return json({ error: "Send at least two top and two bottom mailings", requestId: id }, env, 400, env.PORTAL_ORIGIN);
+  }
+
+  const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
+  const question = analysisText(body?.question, 500);
+  const userContent =
+    `Current view: ${analysisText(filters.type, 40) || "all types"}, sent in the last ${analysisText(filters.range, 40) || "(unspecified)"}, ` +
+    `at least ${Number(filters.min_delivered) || 0} delivered, text replies counted within ${analysisText(filters.reply_window, 40) || "3 days"}.\n\n` +
+    `Mailings (JSON):\n${JSON.stringify(mailings)}\n\n` +
+    (question ? `Staff question: ${question}` : "No specific question was asked.");
+
+  logInfo(id, "Mailing analysis request", { rows: mailings.length, hasQuestion: !!question });
+
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "server-side-fallback-2026-07-01",
+    },
+    body: JSON.stringify({
+      model: MAILING_ANALYSIS_MODEL,
+      max_tokens: 16000,
+      fallbacks: "default",
+      output_config: {
+        effort: "medium",
+        format: { type: "json_schema", schema: MAILING_ANALYSIS_SCHEMA },
+      },
+      system: MAILING_ANALYSIS_SYSTEM,
+      messages: [{ role: "user", content: userContent }],
+    }),
+  });
+
+  const responseText = await resp.text();
+  if (!resp.ok) {
+    logError(id, "Anthropic error", { status: resp.status, body: responseText.slice(0, 500) });
+    return json({ error: `AI service error (HTTP ${resp.status})`, requestId: id }, env, 502, env.PORTAL_ORIGIN);
+  }
+
+  let message;
+  try {
+    message = JSON.parse(responseText);
+  } catch {
+    return json({ error: "AI service returned invalid JSON", requestId: id }, env, 502, env.PORTAL_ORIGIN);
+  }
+
+  if (message.stop_reason === "refusal") {
+    return json({ error: "The AI declined to analyze these mailings", requestId: id }, env, 502, env.PORTAL_ORIGIN);
+  }
+  if (message.stop_reason === "max_tokens") {
+    return json({ error: "The analysis ran too long; try fewer mailings", requestId: id }, env, 502, env.PORTAL_ORIGIN);
+  }
+
+  const textBlock = (message.content || []).find((block) => block.type === "text");
+  let analysis;
+  try {
+    analysis = JSON.parse(textBlock ? textBlock.text : "");
+  } catch {
+    return json({ error: "AI response was not valid JSON", requestId: id }, env, 502, env.PORTAL_ORIGIN);
+  }
+
+  return json({ analysis, model: message.model, requestId: id }, env, 200, env.PORTAL_ORIGIN);
+}
 
 
 // ============================================================
@@ -3139,6 +3311,13 @@ export default {
       }
 
       if (
+        url.pathname === "/api/mailings/analyze" &&
+        request.method === "POST"
+      ) {
+        return await handleMailingAnalyze(request, env, id);
+      }
+
+      if (
         url.pathname === "/api/analytics/summary" &&
         request.method === "GET"
       ) {
@@ -3471,7 +3650,7 @@ export default {
         url.pathname === "/api/slate/checkin-qr-image" ||
         url.pathname.startsWith("/api/checkin/")
           ? env.ALLOWED_ORIGIN
-          : url.pathname.startsWith("/api/slate/") ? env.PORTAL_ORIGIN : undefined
+          : url.pathname.startsWith("/api/slate/") || url.pathname.startsWith("/api/mailings/") ? env.PORTAL_ORIGIN : undefined
       );
     }
   },

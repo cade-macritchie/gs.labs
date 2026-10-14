@@ -33,6 +33,7 @@ gs.labs/
 │   ├── advancement-student-life-events/    [dashboard]  Advancement & Student Life Events
 │   ├── public-event-registrants/           [dashboard]  Public event registrant counts
 │   ├── event-tracker/                      [dashboard]  Event Tracker
+│   ├── mailing-success/                    [dashboard]  Mailing Success (ranked Deliver mailings + AI analysis)
 │   └── regional-campus/                    [dashboard]  Regional Campus funnel & drilldown
 │
 ├── tools/
@@ -131,6 +132,8 @@ The Regional Campus wrapper does not require a Liquid query export. It reads `ca
 The Enrollment Events report uses its `event_people` portal query only to associate a person identity (SIS ID or email) with an event. It retrieves current person status and drilldown details from the shared `all_people` JSON service with `alt_form_type=Event`; the service must continue exporting the `per_*` person fields and `app_degree`. If the service is later configured to return an event-title field (`event_title`, `alt_form_title`, `form_title`, or `title`), the wrapper can use those rows without the identity-association query.
 
 The Advancement and Student Life Events portal uses the `public_events_registrants` Liquid query export and does not call a JSON service. Each registrant row exports `ev_title`, `reg_date`, `ev_date`, and `ev_link_slate`. Liquid renders the complete export and supplies its total through the `size` filter before JavaScript groups all matching `ev_title` rows into one event. `reg_date` supplies the cumulative registration-growth chart; `ev_date` supplies the event date once for the grouped card. Each card can open its analytics detail or its event record in Slate through `ev_link_slate`.
+
+The Mailing Success portal (`mailing_success`) uses two Liquid query exports on its GET method and no JSON service. `mailings` (Message Mailing base, Status IN Completed/Running/Running-Ongoing, Method IN Email/SMS) exports one row per mailing as `ml_*` fields; `sms_replies` (Inbox base, Message Type = External Message, Method = SMS) exports one row per inbound text as `rp_created`, `rp_to`, `rp_from`, `rp_person`, and `rp_body`. The wrapper reduces each reply body to a STOP flag in Liquid and hashes the sender before posting rows to the hosted page, which credits each reply to the latest text mailing sent from the number it was sent to within the chosen reply window (24 hours, 3 days, or 7 days). Its success score is a mailing's percentile within its type: click rate for emails, reply rate for texts. The AI panel posts the top and bottom ranked mailings back to the wrapper, which calls the gateway's `POST /api/mailings/analyze` route with the portal key (PORTAL_ORIGIN-gated, Claude Opus 5.5 with JSON-schema output). Paste the gateway key snippet above the wrapper in the portal view.
 
 The Enrollment Events, Teaching Sites, and Regional Campus funnel drilldowns can export their currently filtered record tables as CSV files.
 

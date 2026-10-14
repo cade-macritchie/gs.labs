@@ -1,0 +1,136 @@
+<!--
+  Mailing Success Slate wrapper (portal key mailing_success).
+
+  Paste the gateway key snippet (local-files/security-key-snippets/key-snippet.html)
+  ABOVE this wrapper in the portal view; it sets window.GS_GATEWAY_KEY, which
+  this wrapper sends when it asks the gateway for an AI analysis.
+
+  The portal method must link two queries, with these names and exports:
+
+  mailings      (Message Mailing base; Status IN Completed/Running/Running-Ongoing,
+                 Method IN Email/SMS) — one row per mailing:
+                 ml_id, ml_name, ml_method, ml_folder, ml_subfolder, ml_status,
+                 ml_subject, ml_sender, ml_number, ml_user, ml_start, ml_created,
+                 ml_sent, ml_delivered, ml_bounce, ml_skip, ml_opens, ml_uopens,
+                 ml_clicks, ml_uclicks, ml_ongoing, ml_recurring
+
+  sms_replies   (Inbox base; Message Type IN External Message, Message Method = SMS)
+                 — one row per inbound text:
+                 rp_created, rp_to, rp_from, rp_person, rp_body
+
+  Reply bodies and phone numbers never leave this page. Liquid reduces each
+  body to a STOP flag, and the script below replaces the sender with a short
+  hash before anything is posted to the hosted page.
+-->
+<div id="mailingSuccessData" style="display:none">
+  <div class="mailings">
+    {% for m in mailings %}
+      <div class="mailing">
+        <span class="id">{{ m.ml_id | escape }}</span>
+        <span class="name">{{ m.ml_name | escape }}</span>
+        <span class="method">{{ m.ml_method | escape }}</span>
+        <span class="folder">{{ m.ml_folder | escape }}</span>
+        <span class="subfolder">{{ m.ml_subfolder | escape }}</span>
+        <span class="subject">{{ m.ml_subject | escape }}</span>
+        <span class="sender">{{ m.ml_sender | escape }}</span>
+        <span class="number">{{ m.ml_number | escape }}</span>
+        <span class="user">{{ m.ml_user | escape }}</span>
+        <span class="start">{{ m.ml_start | escape }}</span>
+        <span class="created">{{ m.ml_created | escape }}</span>
+        <span class="sent">{{ m.ml_sent | escape }}</span>
+        <span class="delivered">{{ m.ml_delivered | escape }}</span>
+        <span class="bounce">{{ m.ml_bounce | escape }}</span>
+        <span class="skip">{{ m.ml_skip | escape }}</span>
+        <span class="uopens">{{ m.ml_uopens | escape }}</span>
+        <span class="uclicks">{{ m.ml_uclicks | escape }}</span>
+        <span class="ongoing">{{ m.ml_ongoing | escape }}</span>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="replies">
+    {% for r in sms_replies %}
+      {% assign body = r.rp_body | strip | downcase | remove: '.' | remove: '!' %}
+      <div class="reply">
+        <span class="t">{{ r.rp_created | escape }}</span>
+        <span class="to">{{ r.rp_to | escape }}</span>
+        <span class="who">{% if r.rp_person != blank %}{{ r.rp_person | escape }}{% else %}{{ r.rp_from | escape }}{% endif %}</span>
+        <span class="stop">{% if body == 'stop' or body == 'stopall' or body == 'unsubscribe' or body == 'cancel' or body == 'end' or body == 'quit' %}1{% endif %}</span>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<iframe id="mailingSuccessFrame" src="https://cade-macritchie.github.io/gs.labs/reports/mailing-success/?v=1" title="Mailing Success" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+
+<script>
+(function () {
+  'use strict';
+
+  const dashboard = 'mailing-success';
+  const frameOrigin = 'https://cade-macritchie.github.io';
+  const analyzeService = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/mailings/analyze';
+  const frame = document.getElementById('mailingSuccessFrame');
+  const root = document.getElementById('mailingSuccessData');
+
+  function read(node, selector) {
+    const element = node && node.querySelector(selector);
+    return element ? element.textContent.trim() : '';
+  }
+
+  // FNV-1a: enough to count distinct repliers without sending who they are.
+  function hash(value) {
+    let h = 0x811c9dc5;
+    const s = String(value || '');
+    for (let i = 0; i < s.length; i += 1) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return s ? h.toString(36) : '';
+  }
+
+  const mailingFields = ['id', 'name', 'method', 'folder', 'subfolder', 'subject', 'sender', 'number', 'user', 'start', 'created', 'sent', 'delivered', 'bounce', 'skip', 'uopens', 'uclicks', 'ongoing'];
+  const payload = {
+    mailings: Array.from(root.querySelectorAll('.mailing')).map(function (node) {
+      const row = {};
+      mailingFields.forEach(function (field) { row[field] = read(node, '.' + field); });
+      return row;
+    }),
+    replies: Array.from(root.querySelectorAll('.reply')).map(function (node) {
+      return { t: read(node, '.t'), to: read(node, '.to'), who: hash(read(node, '.who')), stop: read(node, '.stop') === '1' };
+    })
+  };
+
+  function post(message) {
+    if (frame.contentWindow) frame.contentWindow.postMessage(Object.assign({ dashboard: dashboard }, message), frameOrigin);
+  }
+
+  function sendData() {
+    post({ type: 'enrollment-dashboard-data', payload: payload });
+  }
+
+  function analyze(requestId, request) {
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    if (window.GS_GATEWAY_KEY) headers['X-GS-Key'] = String(window.GS_GATEWAY_KEY);
+    fetch(analyzeService, { method: 'POST', headers: headers, body: JSON.stringify(request || {}) })
+      .then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (body) {
+          if (!response.ok) throw new Error(body.error || ('Gateway error ' + response.status));
+          return body;
+        });
+      })
+      .then(function (body) { post({ type: 'mailing-success-analysis', requestId: requestId, result: body.analysis }); })
+      .catch(function (error) { post({ type: 'mailing-success-analysis', requestId: requestId, error: error.message || 'Analysis failed' }); });
+  }
+
+  window.addEventListener('message', function (event) {
+    if (event.origin !== frameOrigin || event.source !== frame.contentWindow || !event.data || event.data.dashboard !== dashboard) return;
+    if (event.data.type === 'enrollment-dashboard-ready') sendData();
+    if (event.data.type === 'mailing-success-analyze') analyze(String(event.data.requestId || ''), event.data.payload);
+    if (event.data.type === 'enrollment-dashboard-resize') {
+      frame.style.height = Math.max(600, Math.min(Number(event.data.height) || 600, 20000)) + 'px';
+    }
+  });
+
+  frame.addEventListener('load', sendData);
+}());
+</script>
