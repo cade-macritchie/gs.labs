@@ -51,6 +51,16 @@
     .filter-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--nb-teal); }
     .filter-wide { grid-column: span 2; }
 
+    .info-note { margin-bottom: 16px; border: 1px solid var(--border); border-left: 4px solid var(--nb-gold); border-radius: var(--nb-radius); background: #fffdf6; }
+    .info-note summary { display: flex; align-items: center; gap: 9px; padding: 11px 14px; color: var(--nb-black); font: 700 .8rem var(--nb-font-subheading); cursor: pointer; list-style: none; }
+    .info-note summary::-webkit-details-marker { display: none; }
+    .info-note summary::after { content: '+'; margin-left: auto; color: var(--muted); font-size: 1rem; }
+    .info-note[open] summary::after { content: '\2212'; }
+    .info-icon { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: #fff; font: 700 .7rem/1 Georgia, serif; font-style: italic; background: var(--nb-gold); }
+    .info-body { padding: 0 16px 14px 41px; color: var(--ink); font-size: .83rem; line-height: 1.55; }
+    .info-body p { margin: 0 0 9px; }
+    .info-body ul { margin: 0 0 9px; padding-left: 18px; }
+    .info-body li { margin-bottom: 5px; }
     .rank-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
     .rank-note { color: var(--muted); font-size: .8rem; line-height: 1.5; }
     .ghost-button { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid #cfd8dd; border-radius: 999px; color: var(--nb-black); font: 700 .76rem var(--nb-font-subheading); background: #fff; cursor: pointer; }
@@ -190,6 +200,21 @@
       <div class="section-heading">Ranked Mailings</div>
     </div>
 
+    <details class="info-note">
+      <summary><span class="info-icon" aria-hidden="true">i</span> How these numbers are counted</summary>
+      <div class="info-body">
+        <p><strong>Text replies are close, not exact.</strong> Slate doesn&rsquo;t link a reply to the text it&rsquo;s answering, so this report works it out: a reply counts for a mailing when it comes from someone that mailing was sent to, to the number it was sent from, within the reply window you pick above. If someone got more than one mailing, the most recent one gets the credit.</p>
+        <p>That makes reply rates fairly accurate, but a few things can throw them off:</p>
+        <ul>
+          <li><strong>Unrelated texts.</strong> If a recipient texts staff about something else inside the window, it still counts as a reply.</li>
+          <li><strong>Back-to-back mailings.</strong> When one person gets two texts close together, replies go to the newer one, even if they were answering the first.</li>
+          <li><strong>Late or switched replies.</strong> Replies after the window, or from a different phone than the one we texted, aren&rsquo;t counted.</li>
+        </ul>
+        <p><strong>Emails:</strong> clicks are counted by Slate and are exact for tracked links. Opens are inflated by Apple Mail, which opens emails automatically, so the score uses click rate instead.</p>
+        <p>For the most reliable text numbers, send mass texts from a number staff don&rsquo;t use for one-on-one texting, or ask people to reply with a keyword.</p>
+      </div>
+    </details>
+
     <div class="rank-toolbar">
       <div id="rank-note" class="rank-note"></div>
       <button id="export-csv" class="ghost-button" type="button">Export CSV</button>
@@ -290,6 +315,20 @@
         return { t: parseStamp(row.t), to: digits(row.to), who: clean(row.who), stop: !!row.stop };
       }).filter(function (r) { return r.t != null && r.to; });
 
+      // Who each text mailing went to, as the same phone hashes the replies
+      // carry. Without it (an older wrapper), replies fall back to counting
+      // anyone who texted the sending number.
+      const byId = new Map(mailings.map(function (m) { return [m.id, m]; }));
+      mailings.forEach(function (m) { m.recipients = null; });
+      (Array.isArray(payload.sent) ? payload.sent : []).forEach(function (row) {
+        const m = byId.get(clean(row.m));
+        const who = clean(row.who);
+        if (!m || !who) return;
+        if (!m.recipients) m.recipients = new Set();
+        m.recipients.add(who);
+      });
+      normalize.hasRecipients = mailings.some(function (m) { return m.recipients; });
+
       // "Now" for the date-range filter is the newest timestamp Slate gave us,
       // which keeps it in the same naive clock as the data.
       const stamps = mailings.map(function (m) { return m.start; }).concat(replies.map(function (r) { return r.t; }));
@@ -301,10 +340,11 @@
       owners.forEach(function (o) { ownerSelect.appendChild(new Option(o, o)); });
     }
 
-    // A reply belongs to the most recent text mailing sent from the number it
-    // was sent to, if that mailing went out within the reply window. Texts
-    // staff send one-to-one from the Inbox aren't mailings, so a reply to one
-    // of those can be credited to the last mailing from that number.
+    // A reply belongs to the most recent text mailing that (a) was sent from
+    // the number it was sent to, (b) went to the person replying, and (c) went
+    // out within the reply window. Slate doesn't link replies to mailings, so a
+    // recipient texting about something unrelated inside the window still
+    // counts; the info note on the page says so.
     function attributeReplies(windowHours) {
       const windowMs = windowHours * 3600000;
       const byNumber = new Map();
@@ -322,7 +362,12 @@
         if (!list) return;
         let match = null;
         for (let i = list.length - 1; i >= 0; i -= 1) {
-          if (list[i].start <= r.t) { match = list[i]; break; }
+          const m = list[i];
+          if (m.start > r.t) continue;
+          if (r.t - m.start > windowMs) break;
+          if (normalize.hasRecipients && !(m.recipients && m.recipients.has(r.who))) continue;
+          match = m;
+          break;
         }
         if (!match || r.t - match.start > windowMs) return;
         match.replyMessages += 1;

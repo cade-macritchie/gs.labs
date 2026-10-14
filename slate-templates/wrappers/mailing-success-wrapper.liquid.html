@@ -18,9 +18,14 @@
                  — one row per inbound text:
                  rp_created, rp_to, rp_from, rp_person, rp_body
 
+  sms_sent      (Message base; Method = SMS, Type IN Deliver Mailing)
+                 — one row per text a mailing sent:
+                 sn_mailing (Message Mailing GUID), sn_to (recipient phone)
+
   Reply bodies and phone numbers never leave this page. Liquid reduces each
-  body to a STOP flag, and the script below replaces the sender with a short
-  hash before anything is posted to the hosted page.
+  body to a STOP flag, and the script below replaces every phone number with
+  a short hash before anything is posted to the hosted page. The hosted page
+  only credits a reply to a mailing whose recipients include that hash.
 -->
 <div id="mailingSuccessData" style="display:none">
   <div class="mailings">
@@ -53,14 +58,17 @@
       <div class="reply">
         <span class="t">{{ r.rp_created | escape }}</span>
         <span class="to">{{ r.rp_to | escape }}</span>
-        <span class="who">{% if r.rp_person != blank %}{{ r.rp_person | escape }}{% else %}{{ r.rp_from | escape }}{% endif %}</span>
+        <span class="from">{{ r.rp_from | escape }}</span>
         <span class="stop">{% if body == 'stop' or body == 'stopall' or body == 'unsubscribe' or body == 'cancel' or body == 'end' or body == 'quit' %}1{% endif %}</span>
       </div>
     {% endfor %}
   </div>
+  <div class="sent-texts">
+    {% for s in sms_sent %}<div class="sent-text"><span class="m">{{ s.sn_mailing | escape }}</span><span class="to">{{ s.sn_to | escape }}</span></div>{% endfor %}
+  </div>
 </div>
 
-<iframe id="mailingSuccessFrame" src="https://cade-macritchie.github.io/gs.labs/reports/mailing-success/?v=1" title="Mailing Success" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="mailingSuccessFrame" src="https://cade-macritchie.github.io/gs.labs/reports/mailing-success/?v=2" title="Mailing Success" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 
 <script>
 (function () {
@@ -77,7 +85,12 @@
     return element ? element.textContent.trim() : '';
   }
 
-  // FNV-1a: enough to count distinct repliers without sending who they are.
+  // Last 10 digits, so "+1 909-555-0100" and "9095550100" hash the same.
+  function phone(value) {
+    return String(value || '').replace(/\D/g, '').slice(-10);
+  }
+
+  // FNV-1a: enough to match repliers to recipients without sending who they are.
   function hash(value) {
     let h = 0x811c9dc5;
     const s = String(value || '');
@@ -96,8 +109,11 @@
       return row;
     }),
     replies: Array.from(root.querySelectorAll('.reply')).map(function (node) {
-      return { t: read(node, '.t'), to: read(node, '.to'), who: hash(read(node, '.who')), stop: read(node, '.stop') === '1' };
-    })
+      return { t: read(node, '.t'), to: read(node, '.to'), who: hash(phone(read(node, '.from'))), stop: read(node, '.stop') === '1' };
+    }),
+    sent: Array.from(root.querySelectorAll('.sent-text')).map(function (node) {
+      return { m: read(node, '.m'), who: hash(phone(read(node, '.to'))) };
+    }).filter(function (row) { return row.m && row.who; })
   };
 
   function post(message) {
