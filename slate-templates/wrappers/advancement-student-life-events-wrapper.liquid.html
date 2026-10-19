@@ -3,6 +3,10 @@
   The portal query/export name must remain public_events_registrants and must
   expose ev_title, reg_date, ev_date, and ev_link_slate for one row per event
   registrant. reg_date is the registration date; ev_date is the event date.
+  reg_breakouts is optional: the registrant's chosen breakout sessions from
+  the registration form's Breakout Sessions field. Set the export's separator
+  to | (pipe) so session titles containing commas stay intact; ; and line
+  breaks also work, and a value with none of those is split on commas.
 
   Liquid renders the complete export before JavaScript reads or groups it.
   The Liquid size filter supplies the authoritative source-row total; the
@@ -17,12 +21,13 @@
         <span class="registration-date">{{ registrant.reg_date | escape }}</span>
         <span class="event-date">{{ registrant.ev_date | escape }}</span>
         <span class="event-link">{{ registrant.ev_link_slate | escape }}</span>
+        <span class="breakouts">{{ registrant.reg_breakouts | escape }}</span>
       </div>
     {% endfor %}
   </div>
 </div>
 
-<iframe id="publicEventRegistrantFrame" src="https://cade-macritchie.github.io/gs.labs/reports/advancement-student-life-events/?v=registration-growth-v3" title="Advancement and Student Life Events" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="publicEventRegistrantFrame" src="https://cade-macritchie.github.io/gs.labs/reports/advancement-student-life-events/?v=breakout-sessions-v1" title="Advancement and Student Life Events" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 
 <script>
 (function () {
@@ -73,14 +78,41 @@
     }
   }
 
+  function breakoutSessions(value) {
+    const raw = decodeEntities(value).trim();
+    if (!raw) return [];
+    const parts = /[|;\n\r]/.test(raw) ? raw.split(/[|;\n\r]+/) : raw.split(',');
+    const seen = new Set();
+    return parts.map(function (part) { return part.replace(/\s+/g, ' ').trim(); }).filter(function (part) {
+      const key = part.toLocaleLowerCase();
+      if (!part || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   const registrationRows = Array.from(root.querySelectorAll('.registration')).map(function (node) {
     return {
       title: read(node, '.event-title') || 'Untitled event',
       registrationDate: read(node, '.registration-date'),
       eventDate: read(node, '.event-date'),
-      url: eventLink(read(node, '.event-link'))
+      url: eventLink(read(node, '.event-link')),
+      breakouts: breakoutSessions(read(node, '.breakouts'))
     };
   });
+
+  // Tallies each registrant's chosen sessions onto their event, matching
+  // session titles case-insensitively and keeping the first spelling seen.
+  function addBreakouts(group, sessions) {
+    if (!sessions.length) return;
+    group.breakoutRespondents += 1;
+    sessions.forEach(function (name) {
+      const key = name.toLocaleLowerCase();
+      const existing = group.breakoutCounts.get(key);
+      if (existing) existing.count += 1;
+      else group.breakoutCounts.set(key, { name: name, count: 1 });
+    });
+  }
 
   const eventGroups = new Map();
   registrationRows.forEach(function (registration) {
@@ -91,20 +123,35 @@
       existing.registrationDates.push(registration.registrationDate);
       if (!existing.date && registration.eventDate) existing.date = registration.eventDate;
       if (!existing.url && registration.url) existing.url = registration.url;
+      addBreakouts(existing, registration.breakouts);
     } else {
-      eventGroups.set(key, {
+      const group = {
         title: registration.title,
         date: registration.eventDate,
         registrants: 1,
         registrationDates: [registration.registrationDate],
-        url: registration.url
-      });
+        url: registration.url,
+        breakoutRespondents: 0,
+        breakoutCounts: new Map()
+      };
+      addBreakouts(group, registration.breakouts);
+      eventGroups.set(key, group);
     }
   });
 
   const liquidTotal = Number(read(root, '.source-total'));
   const payload = {
-    events: Array.from(eventGroups.values()),
+    events: Array.from(eventGroups.values()).map(function (group) {
+      return {
+        title: group.title,
+        date: group.date,
+        registrants: group.registrants,
+        registrationDates: group.registrationDates,
+        url: group.url,
+        breakouts: Array.from(group.breakoutCounts.values()),
+        breakoutRespondents: group.breakoutRespondents
+      };
+    }),
     totalRegistrants: Number.isFinite(liquidTotal) ? liquidTotal : registrationRows.length
   };
 

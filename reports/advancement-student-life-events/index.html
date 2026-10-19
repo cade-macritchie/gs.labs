@@ -184,6 +184,25 @@
     .btc-registration-details .stat-bar { margin-bottom: 10px; }
     .btc-registration-details .stat-cell { text-align: center; }
     .btc-registration-note { margin: 0 0 24px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+    .breakout-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 10px; }
+    .breakout-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 128px;
+      padding: 20px 20px 18px 24px;
+      overflow: hidden;
+      border: 1.5px solid var(--border);
+      border-radius: var(--nb-radius);
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+    .breakout-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--nb-gold); }
+    .breakout-name { margin: 0; color: var(--nb-black); font: 700 1.05rem/1.35 var(--nb-font-heading); overflow-wrap: anywhere; }
+    .breakout-count { color: var(--nb-black); font: 700 1.8rem/1 var(--nb-font-heading); font-variant-numeric: tabular-nums; }
+    .breakout-note { margin: 0 0 24px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
     .registration-chart-panel { padding: 24px; }
     .registration-chart-heading { margin: 0; color: var(--navy); font: 700 1.3rem/1.25 'Playfair Display', Georgia, serif; }
     .registration-chart-copy { margin: 6px 0 24px; color: var(--muted); font-size: .84rem; line-height: 1.5; }
@@ -280,6 +299,12 @@
         <p id="btc-registration-note" class="btc-registration-note"></p>
       </section>
 
+      <section id="breakout-sessions" class="breakout-sessions" hidden>
+        <div class="section-divider"><div class="section-eyebrow">Projected Attendance</div><div class="section-heading">Breakout Sessions</div></div>
+        <div id="breakout-cards" class="breakout-cards"></div>
+        <p id="breakout-note" class="breakout-note"></p>
+      </section>
+
       <div class="panel registration-chart-panel">
         <h2 class="registration-chart-heading">Registration growth over time</h2>
         <p id="chart-copy" class="registration-chart-copy">Cumulative registrations based on each registrant's registration date.</p>
@@ -336,6 +361,8 @@
           ? record.registrationDates.map(clean)
           : Array.from({ length:registrants }, function () { return clean(record && record.date); });
         const eventDate = hasRegistrationDates ? clean(record && record.date) : '';
+        const breakouts = Array.isArray(record && record.breakouts) ? record.breakouts : [];
+        const breakoutRespondents = Math.max(0, Math.round(ui.number(record && record.breakoutRespondents)));
         const existing = groups.get(key);
 
         if (existing) {
@@ -343,21 +370,76 @@
           existing.registrationDates.push.apply(existing.registrationDates, dates);
           if (!existing.date && eventDate) existing.date = eventDate;
           if (!existing.url && clean(record && record.url)) existing.url = clean(record.url);
+          existing.breakoutRespondents += breakoutRespondents;
+          addBreakoutCounts(existing.breakoutCounts, breakouts);
         } else {
-          groups.set(key, {
+          const group = {
             title: title,
             date: eventDate,
             registrants: registrants,
             registrationDates: dates,
-            url: clean(record && record.url)
-          });
+            url: clean(record && record.url),
+            breakoutRespondents: breakoutRespondents,
+            breakoutCounts: new Map()
+          };
+          addBreakoutCounts(group.breakoutCounts, breakouts);
+          groups.set(key, group);
         }
       });
 
       return Array.from(groups.values()).map(function (record) {
         record.dateValue = parseDate(record.date);
+        record.breakouts = Array.from(record.breakoutCounts.values()).filter(function (session) { return session.count > 0; });
+        delete record.breakoutCounts;
         return record;
       });
+    }
+
+    function addBreakoutCounts(counts, sessions) {
+      sessions.forEach(function (session) {
+        const name = clean(session && session.name);
+        const count = Math.max(0, Math.round(ui.number(session && session.count)));
+        if (!name) return;
+        const key = name.toLocaleLowerCase();
+        const existing = counts.get(key);
+        if (existing) existing.count += count;
+        else counts.set(key, { name:name, count:count });
+      });
+    }
+
+    // One card per breakout session the event's registrants picked, busiest
+    // first. Sessions nobody picked never reach the payload, and the section
+    // stays hidden for events without breakout data.
+    function renderBreakoutSessions(record) {
+      const section = document.getElementById('breakout-sessions');
+      const list = document.getElementById('breakout-cards');
+      const sessions = record.breakouts.slice().sort(function (left, right) {
+        return right.count - left.count || left.name.localeCompare(right.name, undefined, { sensitivity:'base', numeric:true });
+      });
+      list.replaceChildren();
+      section.hidden = sessions.length === 0;
+      if (!sessions.length) return;
+
+      sessions.forEach(function (session) {
+        const card = document.createElement('article');
+        card.className = 'breakout-card';
+        const name = document.createElement('h3');
+        name.className = 'breakout-name';
+        name.textContent = session.name;
+        const count = document.createElement('div');
+        const countCaption = document.createElement('span');
+        countCaption.className = 'event-detail-label';
+        countCaption.textContent = 'Projected attendance';
+        const countValue = document.createElement('span');
+        countValue.className = 'breakout-count';
+        countValue.textContent = session.count.toLocaleString();
+        count.append(countCaption, countValue);
+        card.append(name, count);
+        list.appendChild(card);
+      });
+
+      const respondents = record.breakoutRespondents;
+      document.getElementById('breakout-note').textContent = respondents.toLocaleString() + ' of ' + record.registrants.toLocaleString() + ' registrant' + (record.registrants === 1 ? '' : 's') + ' chose at least one breakout session. Each card counts the registrants who chose that session on the registration form; attendees can still switch sessions at the event.';
     }
 
     function cumulativeRegistrations(record) {
@@ -561,6 +643,7 @@
       document.title = record.title + ' — Registration Analytics';
       renderRegistrationChart(record);
       loadBtcRegistrationDetails(record);
+      renderBreakoutSessions(record);
       // scrollIntoView also scrolls the Slate page, so the detail view isn't
       // opened off-screen when the event was clicked far down the list.
       document.body.scrollIntoView({ block:'start', behavior:'smooth' });
