@@ -5,8 +5,10 @@
   registrant. reg_date is the registration date; ev_date is the event date.
   reg_breakouts is optional: the registrant's chosen breakout sessions from
   the registration form's Breakout Sessions field. Set the export's separator
-  to | (pipe) so session titles containing commas stay intact; ; and line
-  breaks also work, and a value with none of those is split on commas.
+  to | (pipe) when Slate offers one so session titles containing commas stay
+  intact; ;, tabs and line breaks also work, and a value with none of those is
+  split on commas. The BTC 2027 form's Sessions field uses export key
+  sessions_list, pulled with a Form Field Value export.
 
   Liquid renders the complete export before JavaScript reads or groups it.
   The Liquid size filter supplies the authoritative source-row total; the
@@ -81,7 +83,7 @@
   function breakoutSessions(value) {
     const raw = decodeEntities(value).trim();
     if (!raw) return [];
-    const parts = /[|;\n\r]/.test(raw) ? raw.split(/[|;\n\r]+/) : raw.split(',');
+    const parts = /[|;\t\n\r]/.test(raw) ? raw.split(/[|;\t\n\r]+/) : raw.split(',');
     const seen = new Set();
     return parts.map(function (part) { return part.replace(/\s+/g, ' ').trim(); }).filter(function (part) {
       const key = part.toLocaleLowerCase();
