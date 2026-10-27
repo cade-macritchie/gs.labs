@@ -67,9 +67,10 @@
  * - GET /api/slate/regional-campus-records    (regional-campus wrapper)
  * - GET /api/slate/additional-applications    (student-lookup wrapper)
  *
- * - GET /api/slate/checkin-search             (tools/checkin/, called directly from GitHub
- *   Pages — NOT a Slate wrapper, so this one route checks Origin against
- *   ALLOWED_ORIGIN instead of PORTAL_ORIGIN. See handlePagesSlateProxyRoute.)
+ * - GET /api/slate/checkin-search             (tools/checkin/ last-name lookup of BTC 2027
+ *   individual registrants, called directly from GitHub Pages — NOT a Slate
+ *   wrapper. Backed by its own Slate query, not maindb, and gated by
+ *   ALLOWED_ORIGIN + the CHECKIN_KEY passcode. See "CHECK-IN LAST-NAME LOOKUP".)
  * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
  *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
  * - POST /api/checkin/print-queue             (tools/checkin/ scanners queue a print job)
@@ -92,6 +93,10 @@
  * - PORTAL_KEY                                 (shared gateway key the Slate portal views send
  *                                               as X-GS-Key — see gatewayKeyAllowed. Unset = not
  *                                               enforced, so code can deploy before Slate is ready.)
+ * - SLATE_CHECKIN_QUERY_URL                    (checkin_btc_registrants query: /api/slate/checkin-search)
+ * - SLATE_TOKEN_CHECKIN                        (that query's token)
+ * - CHECKIN_KEY                                (passcode tools/checkin/ devices send as X-Checkin-Key
+ *                                               for the last-name lookup. Unset = lookup refused.)
  *
  * Vars:
  * - ALLOWED_ORIGIN   (GitHub Pages origin — Queryomatic + analytics routes)
@@ -269,7 +274,7 @@ function corsHeaders(env, origin) {
       "GET,POST,OPTIONS",
 
     "Access-Control-Allow-Headers":
-      "Content-Type, X-GS-Key",
+      "Content-Type, X-GS-Key, X-Checkin-Key",
   };
 }
 
@@ -312,12 +317,12 @@ function originAllowed(request, allowedOrigin) {
 // deployed before the portal views send the key.
 function gatewayKeyAllowed(request, env) {
   if (!env.PORTAL_KEY) return true;
+  return keysMatch(request.headers.get("X-GS-Key") || "", String(env.PORTAL_KEY));
+}
 
-  const sent = request.headers.get("X-GS-Key") || "";
-  const expected = String(env.PORTAL_KEY);
+// Constant-time compare, written out so it also runs under the Node demo.
+function keysMatch(sent, expected) {
   if (sent.length !== expected.length) return false;
-
-  // Constant-time compare, written out so it also runs under the Node demo.
   let diff = 0;
   for (let i = 0; i < expected.length; i += 1) {
     diff |= sent.charCodeAt(i) ^ expected.charCodeAt(i);
@@ -468,39 +473,102 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 }
 
 
-// Same shape as handleSlateProxyRoute, but for a route called directly from a
-// GitHub Pages tool page's own script rather than from a Slate wrapper's
-// inline <script>. The only
-// difference that matters is which origin the request is allowed to come
-// from — ALLOWED_ORIGIN (GitHub Pages) here, not PORTAL_ORIGIN (Slate).
-async function handlePagesSlateProxyRoute(request, env, id, routeName, allowedParams, fixedParams) {
-  const denied = await guardRoute(request, env, id, routeName, env.ALLOWED_ORIGIN);
-  if (denied) return denied;
+// ============================================================
+// CHECK-IN LAST-NAME LOOKUP (GET /api/slate/checkin-search?last=<name>)
+//
+// For a BTC 2027 registrant who can't pull up their mobile pass:
+// tools/checkin/ sends a last name and gets back the matching individual
+// registrants (name, church, and their registration GUID, which is the id
+// in their mobile-pass link). Tapping one prints the same label a scan of
+// that pass would. See tools/checkin/README.md.
+//
+// Backed by its own Slate query (checkin_btc_registrants, SLATE_CHECKIN_QUERY_URL),
+// NOT maindb. Checked read-only 2026-10-27: all_people filtered to the BTC
+// 2027 event (event_title + event_date_*) is one row per person with no
+// registration/pass GUID, QR value or church column, so a lookup there
+// couldn't print a badge. The query's own filter pins it to the BTC 2027
+// individual registration form, and the only parameter is `last`, so a
+// caller can't widen it to anyone else.
+//
+// Not behind PORTAL_KEY: the page runs on GitHub Pages and on volunteers'
+// tablets, which must never hold the gateway key (it unlocks every maindb
+// route). It's gated instead by a separate passcode, the CHECKIN_KEY secret,
+// typed once per device and sent as X-Checkin-Key. Unlike PORTAL_KEY, an
+// unset CHECKIN_KEY refuses every lookup, since a last-name search is
+// enumerable in a way a pass GUID isn't. Origin, rate limit and the
+// required-filter rule apply as on every other person-level route, and only
+// the three fields the page shows are returned.
+// ============================================================
+
+const CHECKIN_SEARCH_MAX_RESULTS = 25;
+// A last name of 2-60 letters, spaces, apostrophes, periods or hyphens.
+const CHECKIN_LAST_NAME_PATTERN = /^[\p{L}][\p{L} '’.-]{1,59}$/u;
+
+async function handleCheckinSearch(request, env, id) {
+  if (!originAllowed(request, env.ALLOWED_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.ALLOWED_ORIGIN);
+  }
+
+  if (!env.CHECKIN_KEY || !env.SLATE_CHECKIN_QUERY_URL || !env.SLATE_TOKEN_CHECKIN) {
+    return json({ error: "Last-name lookup isn't set up yet", requestId: id }, env, 503, env.ALLOWED_ORIGIN);
+  }
+
+  if (!keysMatch(request.headers.get("X-Checkin-Key") || "", String(env.CHECKIN_KEY))) {
+    return json({ error: "Missing or wrong check-in passcode", requestId: id }, env, 401, env.ALLOWED_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "checkin-search"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.ALLOWED_ORIGIN);
+  }
 
   const searchParams = new URL(request.url).searchParams;
-  if (ROUTES_REQUIRING_A_FILTER.has(routeName) && !hasAnyFilter(searchParams, allowedParams)) {
+  if (ROUTES_REQUIRING_A_FILTER.has("checkin-search") && !hasAnyFilter(searchParams, ["last"])) {
     return missingFilterResponse(env, id, env.ALLOWED_ORIGIN);
   }
 
-  const data = await proxySlateQuery(env, id, routeName, allowedParams, searchParams, fixedParams);
-  return json(data, env, 200, env.ALLOWED_ORIGIN);
+  const last = String(searchParams.get("last") || "").trim().replace(/\s+/g, " ");
+  if (!CHECKIN_LAST_NAME_PATTERN.test(last)) {
+    return json({ error: "Type at least two letters of a last name", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+
+  const url = new URL(env.SLATE_CHECKIN_QUERY_URL);
+  url.searchParams.set("output", "json");
+  url.searchParams.set("last", last);
+  // Logs the route and result count only, never the name searched for.
+  logInfo(id, "Checkin search request", { route: "checkin-search" });
+
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_CHECKIN}`, Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    logError(id, "Checkin search query failed", { status: resp.status });
+    throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error("Slate query returned invalid JSON");
+  }
+
+  const text = (value, max) => String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, max);
+  const results = (Array.isArray(data?.row) ? data.row : [])
+    .map((row) => ({
+      id: text(row?.reg_id, 36).toLowerCase(),
+      name: text(`${text(row?.reg_first, 60)} ${text(row?.reg_last, 60)}`, 120),
+      last: text(row?.reg_last, 60),
+      church: text(row?.reg_church, 120),
+    }))
+    // Only a GUID ever leaves here, so the page can only build a Slate pass URL from it.
+    .filter((row) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(row.id) && row.name)
+    .sort((a, b) => a.last.localeCompare(b.last) || a.name.localeCompare(b.name))
+    .slice(0, CHECKIN_SEARCH_MAX_RESULTS)
+    .map(({ id: regId, name, church }) => ({ id: regId, name, church }));
+
+  logInfo(id, "Checkin search results", { count: results.length });
+  return json({ results }, env, 200, env.ALLOWED_ORIGIN);
 }
-
-
-// Fixed params always sent on every /api/slate/checkin-search call, on top of
-// whatever the caller sends. Empty for now — name search is still being
-// tested against the whole maindb population. Once there's a parameter that
-// should scope every check-in search (e.g. a specific event), add it here,
-// e.g. { alt_form_type: "Event" }, the same way the /inquiries route pins
-// { status: "Inquiry" }.
-//
-// A maindb-backed scan lookup (filtering by a scanned badge's id) was tried
-// and abandoned 2026-09-22: it needed a per_mobile_pass filter that only
-// matches event-registrant rows (which maindb only returns with
-// alt_form_type=Event), and reconstructing the exact original QR payload
-// well enough to query it reliably added a lot of fragility for something
-// checkin-qr-image already solves more directly — see tools/checkin/README.md.
-const CHECKIN_FIXED_PARAMS = Object.freeze({});
 
 
 // ============================================================
@@ -3131,8 +3199,11 @@ export default {
         pathname:
           url.pathname,
 
+        // A check-in lookup's query string is a registrant's last name.
         search:
-          url.search,
+          url.pathname === "/api/slate/checkin-search"
+            ? "[REDACTED]"
+            : url.search,
       }
     );
 
@@ -3274,16 +3345,12 @@ export default {
       }
 
       // Called directly from tools/checkin/'s own script (GitHub Pages
-      // origin), not a Slate wrapper — see handlePagesSlateProxyRoute.
+      // origin), not a Slate wrapper — see "CHECK-IN LAST-NAME LOOKUP".
       if (
         url.pathname === "/api/slate/checkin-search" &&
         request.method === "GET"
       ) {
-        return await handlePagesSlateProxyRoute(
-          request, env, id, "checkin-search",
-          ["first", "last", "sisid"],
-          CHECKIN_FIXED_PARAMS
-        );
+        return await handleCheckinSearch(request, env, id);
       }
 
       // Re-serves a per_qr_url PNG with CORS headers so tools/checkin/ can

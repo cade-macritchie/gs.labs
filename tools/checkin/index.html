@@ -99,6 +99,20 @@
       font: 700 .82rem var(--font-subheading); letter-spacing: .04em; text-decoration: underline;
     }
 
+    .lookup { margin: 0 0 18px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); }
+    .lookup-heading { margin: 0 0 12px; color: var(--navy); font: 700 .78rem var(--font-subheading); letter-spacing: .08em; text-transform: uppercase; }
+    .lookup-row { display: flex; gap: 10px; }
+    .lookup-row input { flex: 1; min-width: 0; height: var(--tap); padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); color: var(--ink); font-size: 1.05rem; }
+    .lookup-row input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(35,64,72,.14); }
+    .lookup-passcode { margin-top: 12px; }
+    .lookup .print-station-status:empty { display: none; }
+    .lookup-results { display: grid; gap: 8px; margin-top: 10px; }
+    .lookup-result { display: block; width: 100%; min-height: var(--tap); padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--canvas); color: var(--ink); text-align: left; cursor: pointer; }
+    .lookup-result:hover, .lookup-result:focus-visible { border-color: var(--teal); outline: none; }
+    .lookup-result:disabled { opacity: .55; cursor: default; }
+    .lookup-name { display: block; color: var(--navy); font: 700 1.05rem/1.3 var(--font-heading); }
+    .lookup-church { display: block; margin-top: 2px; color: var(--muted); font-size: .85rem; }
+
     .empty { padding: 26px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); color: var(--muted); text-align: center; }
 
     .profile-card { padding: 26px 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); box-shadow: var(--shadow); }
@@ -185,12 +199,26 @@
   <main>
     <div class="intro">
       <h1>Check in a registrant</h1>
-      <p>Scan a badge with the camera to reprint its QR code.</p>
+      <p>Scan a badge with the camera to reprint its QR code, or look someone up by last name if they don't have their pass.</p>
     </div>
 
     <div id="banners"></div>
 
     <button class="primary" id="camera-scan-btn" type="button">Scan with camera</button>
+
+    <section class="lookup" aria-labelledby="lookup-heading">
+      <h2 id="lookup-heading" class="lookup-heading">No pass? Look up by last name</h2>
+      <form id="lookup-form" class="lookup-row" autocomplete="off">
+        <input id="lookup-last" type="search" maxlength="60" placeholder="Last name" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Last name">
+        <button class="secondary" id="lookup-btn" type="submit">Find</button>
+      </form>
+      <label class="setting-field lookup-passcode" id="lookup-passcode" hidden>
+        <span>Check-in passcode (from the event lead, asked once on this device)</span>
+        <input id="lookup-key" type="password" autocomplete="off">
+      </label>
+      <p id="lookup-status" class="print-station-status" role="status" aria-live="polite"></p>
+      <div id="lookup-results" class="lookup-results"></div>
+    </section>
 
     <div class="station-picker">
       <label class="setting-field">
@@ -201,7 +229,7 @@
     </div>
 
     <section id="profile" hidden></section>
-    <div id="empty" class="empty">Tap "Scan with camera" to begin.</div>
+    <div id="empty" class="empty">Scan a pass or look someone up to begin.</div>
 
     <div class="print-station" id="print-station">
       <label class="setting-field">
@@ -260,6 +288,10 @@
     // PRINT_STATION_SERVICE and has the job pushed to it. See "Print station"
     // below.
     const PRINT_QUEUE_SERVICE = WORKER_URL + '/api/checkin/print-queue';
+    // Last-name lookup of BTC 2027 individual registrants — see "CHECK-IN
+    // LAST-NAME LOOKUP" in tools/queryomatic/worker.js and "Look up by last
+    // name" below.
+    const CHECKIN_SEARCH_SERVICE = WORKER_URL + '/api/slate/checkin-search';
     const PRINT_STATION_SERVICE = WORKER_URL + '/api/checkin/print-station';
     const DEFAULT_STATION = 'Main';
     // Same rule as CHECKIN_STATION_NAME_PATTERN in worker.js.
@@ -864,8 +896,7 @@
     // decodes is encoded straight back out as the printed QR and sent to the
     // Dymo printer immediately, no manual "Print" step. (A maindb lookup by
     // scanned id was tried and abandoned 2026-09-22 — see
-    // tools/checkin/README.md and the comment above CHECKIN_FIXED_PARAMS in
-    // tools/queryomatic/worker.js.) renderProfile() already handles either
+    // tools/checkin/README.md.) renderProfile() already handles either
     // shape of decoded value: a Slate barcode-image URL goes through
     // qrImageProxyUrl/checkin-qr-image so Slate's own rendered PNG gets
     // printed byte-for-byte; a raw scanned payload (e.g.
@@ -962,12 +993,12 @@
     // Queues before rendering, so a preview failure can never stop the print
     // job from being sent. Status goes in the top banner, where it's visible
     // without scrolling past the QR preview on a phone.
-    function handleDecodedValue(value) {
+    function handleDecodedValue(value, knownName) {
       stopCameraScan();
       const station = scanStation();
       setBanner('Sending to ' + station + '…');
       const queued = queueScannedValue(value);
-      const person = { name: '', email: '', status: '', sisid: '', qrUrl: value };
+      const person = { name: knownName || '', email: '', status: '', sisid: '', qrUrl: value };
       try {
         renderProfile(person);
       } catch (err) {
@@ -1053,6 +1084,157 @@
       cameraScanBtn.addEventListener('click', startCameraScan);
     }
     cameraCancelBtn.addEventListener('click', stopCameraScan);
+
+    // ----------------------------------------------------------------
+    // Look up by last name
+    //
+    // For a registrant without their mobile pass. The Worker searches the
+    // BTC 2027 individual registrants only (its own Slate query, pinned to
+    // that form) and returns name, church and registration GUID. Tapping a
+    // result prints exactly what scanning their pass would: Slate's own QR
+    // for that registration is fetched (through checkin-qr-image, for CORS)
+    // and decoded with jsQR, and the decoded value goes through
+    // handleDecodedValue() like a camera scan, so it's queued to the same
+    // station and the Worker reads the name off the same pass page.
+    //
+    // The lookup needs a check-in passcode (CHECKIN_KEY on the Worker),
+    // typed once per device and kept in localStorage. It's asked for before
+    // the first search and again whenever the Worker rejects it.
+    // ----------------------------------------------------------------
+
+    const SLATE_PASS_URL = 'https://enroll.gs.edu/register/mobile';
+    const LOOKUP_KEY_KEY = 'checkin.lookupKey';
+    const lookupForm = document.getElementById('lookup-form');
+    const lookupLastInput = document.getElementById('lookup-last');
+    const lookupBtn = document.getElementById('lookup-btn');
+    const lookupPasscode = document.getElementById('lookup-passcode');
+    const lookupKeyInput = document.getElementById('lookup-key');
+    const lookupStatus = document.getElementById('lookup-status');
+    const lookupResults = document.getElementById('lookup-results');
+    let lookupToken = 0;
+
+    function askForPasscode(message) {
+      lookupPasscode.hidden = false;
+      lookupStatus.textContent = message;
+      lookupKeyInput.focus();
+    }
+
+    async function searchByLastName() {
+      const last = lookupLastInput.value.trim().replace(/\s+/g, ' ');
+      const typedKey = lookupKeyInput.value.trim();
+      if (typedKey) writeStored(LOOKUP_KEY_KEY, typedKey);
+      const key = readStored(LOOKUP_KEY_KEY);
+      lookupResults.replaceChildren();
+      if (!key) { askForPasscode('Enter the check-in passcode, then tap Find.'); return; }
+      if (last.length < 2) { lookupStatus.textContent = 'Type at least two letters of a last name.'; return; }
+
+      const token = ++lookupToken;
+      lookupBtn.disabled = true;
+      lookupStatus.textContent = 'Searching…';
+      try {
+        const url = new URL(CHECKIN_SEARCH_SERVICE);
+        url.searchParams.set('last', last);
+        const response = await fetch(url.toString(), { cache: 'no-store', headers: { 'X-Checkin-Key': key } });
+        const data = await response.json().catch(function () { return {}; });
+        if (token !== lookupToken) return;
+        if (response.status === 401) {
+          writeStored(LOOKUP_KEY_KEY, '');
+          lookupKeyInput.value = '';
+          askForPasscode('That passcode didn’t work. Enter it again, then tap Find.');
+          return;
+        }
+        if (!response.ok) throw new Error(data.error || 'returned ' + response.status);
+        lookupPasscode.hidden = true;
+        lookupKeyInput.value = '';
+        renderLookupResults(Array.isArray(data.results) ? data.results : [], last);
+      } catch (err) {
+        if (token !== lookupToken) return;
+        lookupStatus.textContent = 'Lookup failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
+      } finally {
+        if (token === lookupToken) lookupBtn.disabled = false;
+      }
+    }
+
+    function renderLookupResults(results, last) {
+      lookupResults.replaceChildren();
+      lookupStatus.textContent = results.length
+        ? 'Tap the registrant to print their badge.'
+        : 'No BTC 2027 registrant has a last name starting with “' + last + '”. Check the spelling, or try the name they registered under.';
+      results.forEach(function (result) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'lookup-result';
+        const name = document.createElement('span');
+        name.className = 'lookup-name';
+        name.textContent = result.name;
+        button.appendChild(name);
+        if (result.church) {
+          const church = document.createElement('span');
+          church.className = 'lookup-church';
+          church.textContent = result.church;
+          button.appendChild(church);
+        }
+        button.addEventListener('click', function () { printLookedUp(result); });
+        lookupResults.appendChild(button);
+      });
+    }
+
+    async function printLookedUp(result) {
+      Array.from(lookupResults.querySelectorAll('button')).forEach(function (button) { button.disabled = true; });
+      setBanner('Getting ' + result.name + '’s pass…');
+      window.scrollTo(0, 0);
+      const value = await passValueFor(result.id);
+      ++lookupToken;
+      lookupLastInput.value = '';
+      lookupResults.replaceChildren();
+      lookupStatus.textContent = '';
+      lookupBtn.disabled = false;
+      handleDecodedValue(value, result.name);
+    }
+
+    // The value a camera scan of this registration's pass would decode to.
+    // If Slate's QR image can't be fetched or decoded, falls back to the bare
+    // registration GUID: the Worker still finds the pass (and the name) from
+    // it, but the printed QR may not be byte-for-byte what the pass shows.
+    async function passValueFor(regId) {
+      try {
+        const response = await fetch(qrImageProxyUrl(SLATE_PASS_URL + '?id=' + regId + '&cmd=barcode'), { cache: 'no-store' });
+        if (!response.ok) throw new Error('QR image request returned ' + response.status);
+        const objectUrl = URL.createObjectURL(await response.blob());
+        try {
+          const img = await new Promise(function (resolve, reject) {
+            const image = new Image();
+            image.onload = function () { resolve(image); };
+            image.onerror = function () { reject(new Error('QR image did not load')); };
+            image.src = objectUrl;
+          });
+          // A white border so the code has a quiet zone jsQR can find.
+          const pad = 24;
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth + pad * 2;
+          canvas.height = img.naturalHeight + pad * 2;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, pad, pad);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = window.jsQR && window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+          if (code && code.data) return code.data;
+          throw new Error('QR image could not be decoded');
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      } catch (err) {
+        console.warn('[checkin] Using the registration id instead of the pass QR:', err && err.message);
+        return regId.replace(/-/g, '');
+      }
+    }
+
+    lookupPasscode.hidden = Boolean(readStored(LOOKUP_KEY_KEY));
+    lookupForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      searchByLastName();
+    });
 
     // ----------------------------------------------------------------
     // Print station

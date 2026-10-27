@@ -66,21 +66,31 @@ print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 | `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
 | `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
-| `GET /api/slate/checkin-search` | maindb | Check-In (`tools/checkin/`) — name search only | `first`, `last`, `sisid` |
+| `GET /api/slate/checkin-search` | `checkin_btc_registrants` (not maindb) | Check-In (`tools/checkin/`) — last-name lookup | `last` |
 | `GET /api/slate/checkin-qr-image` | (proxies a Slate-rendered PNG, not maindb) | Check-In (`tools/checkin/`) | `url` (validated against `CHECKIN_QR_IMAGE_PATTERN`) |
 
 The last three (before `checkin-search`) have no caller since the portal
 rebuild and are kept only for ad-hoc use. Nothing should be built on them.
 
 `checkin-search` is different from every other `/api/slate/*` route: it's
-called directly from `tools/checkin/`'s own script running on GitHub Pages,
-not from a Slate wrapper's inline `<script>` running on `enroll.gs.edu`. It
-therefore checks `Origin`/`Referer` against `ALLOWED_ORIGIN` instead of
-`PORTAL_ORIGIN` — see `handlePagesSlateProxyRoute` in `worker.js`. It also
-always sends `CHECKIN_FIXED_PARAMS` (currently empty) on top of the caller's
-params, the same mechanism `/api/slate/inquiries` uses to pin `status:
-"Inquiry"` — add a parameter there once the check-in portal needs to be
-scoped to a specific event instead of the whole maindb population.
+called directly from `tools/checkin/`'s own script running on GitHub Pages
+(and on volunteers' tablets), not from a Slate wrapper's inline `<script>`
+running on `enroll.gs.edu`. It therefore checks `Origin`/`Referer` against
+`ALLOWED_ORIGIN` instead of `PORTAL_ORIGIN`, and instead of `PORTAL_KEY` it
+needs the `CHECKIN_KEY` passcode in an `X-Checkin-Key` header (refused with
+503 while `CHECKIN_KEY`, `SLATE_CHECKIN_QUERY_URL` or `SLATE_TOKEN_CHECKIN`
+is unset). Since 2026-10-27 it no longer reads maindb: it runs its own
+`checkin_btc_registrants` query, pinned in Slate to the BTC 2027 individual
+registration form, with `last` as its only parameter, and returns only
+`id`, `name` and `church` per match (25 at most). See "CHECK-IN LAST-NAME
+LOOKUP" in `worker.js` and "Look up by last name" in
+`tools/checkin/README.md` for why and for the query's exact setup.
+
+```bash
+wrangler secret put SLATE_CHECKIN_QUERY_URL   # checkin_btc_registrants web service URL
+wrangler secret put SLATE_TOKEN_CHECKIN       # that query's token
+wrangler secret put CHECKIN_KEY               # passcode the check-in staff type once per device
+```
 
 Route parameter names that differ from the maindb query’s own are renamed by
 `MAINDB_PARAM_ALIASES` in `worker.js` (`site` → `teachingsite`, `campus` →
@@ -249,6 +259,9 @@ single-page app.
   purpose: `GET /api/options` (options.md is public anyway),
   `/api/slate/teaching-site-trend` (aggregate counts only), the analytics
   routes, and the Check-In QR image and print-queue routes.
+  `/api/slate/checkin-search` doesn't take the gateway key either: it has its
+  own `CHECKIN_KEY` passcode, so the gateway key never goes on a check-in
+  tablet.
   To rotate: paste a new snippet into every portal view first, then
   `wrangler secret put PORTAL_KEY` with the new value.
 - **No filters, no data.** `/api/run`, `/api/slate/records`,

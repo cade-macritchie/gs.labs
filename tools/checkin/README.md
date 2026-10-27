@@ -2,8 +2,9 @@
 
 Tablet/mobile-first check-in portal: tap "Scan with camera", point the
 device's camera at a registrant's badge, and its QR code is decoded and
-handed off for reprinting — no lookup, no manual print step. Hosted on
-GitHub Pages.
+handed off for reprinting — no manual print step. A registrant without their
+pass can be looked up by last name instead (BTC 2027 individual registrants
+only, see "Look up by last name"). Hosted on GitHub Pages.
 
 Any device that can load this page and run a camera can scan (including
 one that can't run DYMO Connect at all, like a Kindle Fire tablet — see
@@ -11,7 +12,8 @@ one that can't run DYMO Connect at all, like a Kindle Fire tablet — see
 needs to be a print station.
 
 There is no logging or persistence here on purpose — this is scan-and-print
-only, no record of who checked in or when. (The print queue itself is
+only, no record of who checked in or when. A lookup is logged by its result
+count, never the name searched for. (The print queue itself is
 short-lived infrastructure, not a check-in record — see "Print stations".)
 
 ## How it's wired
@@ -29,8 +31,7 @@ short-lived infrastructure, not a check-in record — see "Print stations".)
     maindb only returns with `alt_form_type=Event`), and reliably
     reconstructing the *exact* originally-scanned payload from whatever got
     decoded turned out to be more fragile than just reprinting the scanned
-    value directly. See the comment above `CHECKIN_FIXED_PARAMS` in
-    `tools/queryomatic/worker.js` if this is ever revisited.
+    value directly.
   - A scanned QR decodes to a value like
     `person:07f59624160e47eea4c10394429ea33f` (confirmed by actually
     decoding a real barcode image) when the badge is a "person" type, or
@@ -45,15 +46,83 @@ short-lived infrastructure, not a check-in record — see "Print stations".)
   (loaded from jsDelivr, same pattern as the existing `qrcode.js` CDN
   script). On a successful decode, the overlay closes and the value is
   queued for a print station — see `handleDecodedValue()`.
-  There is no name-search fallback and no manual scan/paste input anymore
-  (removed 2026-09-24) — camera scanning is the only entry point.
-- **`isProbablyUrl()`/`qrImageProxyUrl()` are kept even though camera-scanned
-  codes are never URL-shaped in practice.** They were built for the old
-  name-search flow's `per_qr_url` field (a link to a Slate-rendered PNG,
-  re-served with CORS via `GET /api/slate/checkin-qr-image` on
-  `gs-labs-slate-gateway` — see `handleCheckinQrImage` in
-  `tools/queryomatic/worker.js`) and are left in place as a defensive
-  fallback in case a decoded value is ever URL-shaped.
+  The original maindb name search and the manual scan/paste input were
+  removed 2026-09-24. A last-name lookup came back 2026-10-27, scoped to BTC
+  2027 individual registrants, and prints through this same scan path — see
+  "Look up by last name".
+- **`isProbablyUrl()` is kept even though camera-scanned codes are never
+  URL-shaped in practice.** It was built for the old name-search flow's
+  `per_qr_url` field (a link to a Slate-rendered PNG) and is left in place
+  as a defensive fallback in case a decoded value is ever URL-shaped.
+  `qrImageProxyUrl()` re-serves such a PNG with CORS via
+  `GET /api/slate/checkin-qr-image` on `gs-labs-slate-gateway` (see
+  `handleCheckinQrImage` in `tools/queryomatic/worker.js`); the last-name
+  lookup uses it to read a registrant's pass QR.
+
+## Look up by last name
+
+Added 2026-10-27 for registrants who arrive without their mobile pass. Type
+a last name under "No pass? Look up by last name", tap **Find**, then tap the
+person. Each result shows the name and, when there is one, the church.
+
+- **Only BTC 2027 individual registrants are searched**, never all of
+  maindb. The page calls `GET /api/slate/checkin-search?last=<name>`, and the
+  Worker runs its own Slate query, `checkin_btc_registrants`, whose filters
+  pin it to the BTC 2027 individual registration form. `last` is the only
+  parameter, so the page can't widen the search. Matches are last names
+  *starting with* what was typed, at least two letters, 25 results at most.
+- **Why not maindb:** checked read-only 2026-10-27, `all_people` filtered to
+  the BTC 2027 event (`event_title` + `event_date_start/_end` = 2027-01-30)
+  returns one row per person with no registration or pass GUID, no QR value
+  and no church. It couldn't print the badge a scan prints. It also can't
+  tell the individual form from other BTC 2027 forms.
+- **A looked-up badge matches a scanned one.** Tapping a result fetches
+  Slate's own QR image for that registration
+  (`enroll.gs.edu/register/mobile?id=<reg_id>&cmd=barcode`, through
+  `checkin-qr-image`), decodes it with jsQR, and hands the decoded value to
+  `handleDecodedValue()`, the same function a camera scan calls. So it's
+  queued to the selected print station the same way, and the Worker reads
+  the name off the same pass page. If the image can't be fetched or decoded,
+  the page queues the bare registration GUID instead (32 hex, no dashes). The
+  Worker still finds the pass and name from it, but the printed QR then
+  encodes the GUID rather than whatever the pass's QR encodes. See
+  `passValueFor()`.
+- **Passcode.** The lookup needs the `CHECKIN_KEY` secret, sent as
+  `X-Checkin-Key`. It's asked for on a device's first search, kept in that
+  browser's `localStorage` (`checkin.lookupKey`), and asked for again if the
+  Worker rejects it. It's not the Slate gateway key, which must never go on
+  a check-in tablet. With `CHECKIN_KEY` unset the Worker refuses every lookup
+  (503), unlike `PORTAL_KEY`, because a last-name search can list
+  registrants in a way a pass GUID can't.
+
+### The Slate query this needs
+
+Create it once in Slate (it doesn't exist yet as of 2026-10-27):
+
+- **Name** `checkin_btc_registrants`, Configurable Joins, base **Form
+  Responses**, in the same folder as `all_people`.
+- **Filters:** Form is the BTC 2027 individual registration form (GUID
+  `13b61153-c379-4b88-bffa-d8688ec85af4`), and the response isn't Cancelled,
+  Declined or Saved for Later (the same rule maindb's `event_*` filters use).
+- **Parameter `last`:** declare it under **Edit Web Service** first
+  (`<param id="last" type="string" />`), then add a Formula filter
+  `((@last is not null) and (@last <> '') and (@v_last like @last + '%'))`
+  with the person's Last Name export renamed `v_last`. Unlike maindb's
+  filters, a blank `last` must match **nobody**.
+- **Exports** (exact names):
+  - `reg_id`: the form response's GUID. It must be the `id=` in the
+    registrant's mobile-pass link (check one against the "View mobile pass"
+    button in a "Thanks for Registering" email).
+  - `reg_first`, `reg_last`: the person's first and last name, as the pass
+    prints them.
+  - `reg_church`: the form's church field (the value the pass's Church line
+    shows), as a Form Field Value export.
+- **Web service:** JSON, authenticated the same way as `all_people`. Put its
+  URL in `wrangler secret put SLATE_CHECKIN_QUERY_URL` and its token in
+  `SLATE_TOKEN_CHECKIN` (see `tools/queryomatic/README.md`). The Worker adds
+  `output=json` and `last` itself.
+- Then `wrangler secret put CHECKIN_KEY` with a passcode to give the
+  check-in staff.
 
 ## Print stations
 
@@ -238,7 +307,7 @@ on every guess.
 
 ## Local testing without a printer
 
-You can exercise the search flow and on-screen QR rendering without DYMO
+You can exercise the scan and lookup flows and on-screen QR rendering without DYMO
 Connect installed at all — the QR preview always renders (it's independent
 of Dymo), and hitting "Print to Dymo" with DYMO unavailable surfaces the
 "Print via browser dialog instead" fallback rather than failing silently.
