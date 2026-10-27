@@ -97,7 +97,14 @@ person. Each result shows the name and, when there is one, the church.
 
 ### The Slate query this needs
 
-Create it once in Slate (it doesn't exist yet as of 2026-10-27):
+Created in Slate 2026-10-27 (query id `304b4661-7024-4e06-9bb2-a37670070f24`).
+As built: one custom SQL filter (form, not cancelled/declined, not pending,
+`len(@last) >= 2`, and the person's last name starts with `@last` via
+`left(...) =`, so `%`/`_` aren't wildcards); `reg_id` is the Form Response
+GUID; `reg_first`/`reg_last` come from `[person]`; `reg_church` is
+`dbo.getFormResponseTopTable(<response>, 'church')`. The Church Name field had
+no export key, so it was given `church` the same day (older answers resolve
+under it too). The original spec:
 
 - **Name** `checkin_btc_registrants`, Configurable Joins, base **Form
   Responses**, in the same folder as `all_people`.
