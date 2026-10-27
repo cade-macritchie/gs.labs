@@ -224,12 +224,19 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
   under DYMO Connect's install folder).
 - **Layout** (`buildLabelXml()`): Gateway logo, then the event title, then a
   thin rule across the top. Below that, the QR code on the left and the
-  registrant's name on the right. A name longer than 14 characters wraps
-  onto two lines so it stays large. Anything switched off is left out and
-  the rest grows into the room. With no name, the QR is centered.
+  registrant's name on the right, with their church (added 2026-10-27) in
+  smaller type under it. A name longer than 14 characters wraps onto two
+  lines so it stays large; a church longer than 22 wraps too. Anything
+  switched off or blank is left out and the rest grows into the room. With
+  no name and no church, the QR is centered.
+  - Every text object uses `FitMode` `AlwaysFit`, which grows short text as
+    well as shrinking long text. So the church's box is sized to its line
+    count (one line or two), which keeps it smaller than the name. Checked
+    with `RenderLabel` 2026-10-27: `ShrinkToFit` doesn't shrink at all in
+    this DYMO Connect, it just clips.
 - **Vertical layout** (setting): prints the same stock in `Portrait`, with the
   printable rect's axes swapped. The header is centered, then a large QR with
-  the name centered under it. A title longer than 24 characters wraps onto two
+  the name and church centered under it. A title longer than 24 characters wraps onto two
   lines, since the label is only about 2.2in wide this way.
 - **The logo** is `assets/brand-new/gs-logo-horizontal-black.png`, drawn onto a
   white canvas at 600px wide before embedding, because a transparent PNG
@@ -241,21 +248,26 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
   `Address` (same `<DieCutSKU>` catalog). Its printable rect is the 450
   driver's `Address30252` entry; the 550's `lw5xx.gpd` gives the same numbers.
   At about 1in tall it gets a compact layout, checked with `RenderLabel`: the
-  QR fills the height on the left, and the logo, title and name stack to its
-  right. Vertical layout is disabled for this size. Pick the size that's
+  QR fills the height on the left, and the logo, title, name and church
+  stack to its right. With a church the name stays on one line. Vertical layout is disabled for this size. Pick the size that's
   actually loaded in the printer. `LABEL_STOCKS` in `index.html` is where to
   add another size.
-- **Settings** (label size, event title, logo on/off, name on/off, vertical layout) live in the print
-  station's own browser (`localStorage`, key `checkin.labelSettings`), set
-  from the "Label settings" panel under the print-station toggle. They're
-  read fresh on every print, and the panel shows a live preview rendered by
-  DYMO Connect itself. Clearing that browser's site data resets them to the
-  defaults (logo and name on, no title).
-- **The name** comes from the Worker, not the scanner. When a scan is
-  queued, `lookupCheckinPassName()` in `tools/queryomatic/worker.js` opens
-  that pass's Slate mobile page
+- **Settings** (label size, event title, logo on/off, name on/off, church
+  on/off, vertical layout) live in the print station's own browser
+  (`localStorage`, key `checkin.labelSettings`), set from the "Label
+  settings" panel under the print-station toggle. They're read fresh on every
+  print, and the panel shows a live preview rendered by DYMO Connect itself.
+  Clearing that browser's site data resets them to the defaults (logo, name
+  and church on, no title). A station saved before the church setting existed
+  gets it switched on. The event title field's placeholder suggests "The
+  Bible Teaching Conference 2027" for BTC, but only what's typed prints.
+- **The name and church** come from the Worker, not the scanner. When a
+  scan (or a last-name lookup) is queued, `lookupCheckinPass()` in
+  `tools/queryomatic/worker.js` opens that pass's Slate mobile page
   (`enroll.gs.edu/register/mobile?id=<guid>[&type=<type>]`) on the server and
-  stores the name with the job. Where the name lives depends on the pass
+  stores the name and church with the job. The church is the BTC 2027 pass's
+  `<p class="pass__church">` (`p.pass_church` also accepted); a pass without
+  one prints no church line. Where the name lives depends on the pass
   template. The custom event pass uses `<p class="pass__name">` (double
   underscore, first and last name split by a `<br>`). The default "person"
   pass uses a bare `<div>` inside `.pass_badge`. `p.pass_name` is also
@@ -264,8 +276,9 @@ Coordinates are in inches (`DYMOPoint`/`Size`), not twips.
   version printed as the "name". If nothing matches, the label prints
   without a name rather than the scan failing. The Worker logs only the
   lookup's outcome and the page's element classes (e.g.
-  `nameLookup: "pass-name [div.pass_container …]"`), never the name. So if a
-  new pass template ever prints no name, the logs show its structure.
+  `nameLookup: "pass-name church [div.pass_container …]"`), never the name
+  or church. So if a new pass template ever prints no name or church, the
+  logs show its structure.
 
 The header shows a live "DYMO ready — <printer name>" / "DYMO Connect not
 detected" status so staff can tell at a glance whether printing will work,

@@ -175,6 +175,7 @@
       #print-fallback.printing { display: flex !important; flex-direction: column; align-items: center; gap: 8px; padding: 0; }
       #print-fallback canvas, #print-fallback img { width: 200px; height: 200px; }
       #print-fallback .print-name { font: 700 14pt var(--font-subheading, Arial, sans-serif); }
+      #print-fallback .print-church { font: 11pt var(--font-body, Arial, sans-serif); }
     }
 
     /* Tablet/mobile IS the default layout above. This widens things for a
@@ -246,11 +247,12 @@
           <select id="setting-stock"></select>
         </label>
         <label class="setting-field">
-          <span>Event title</span>
-          <input id="setting-title" type="text" maxlength="80" placeholder="e.g. Fall Preview Day 2026">
+          <span>Event title (printed across the top)</span>
+          <input id="setting-title" type="text" maxlength="80" placeholder="e.g. The Bible Teaching Conference 2027">
         </label>
         <label class="setting-check"><input id="setting-logo" type="checkbox"> Gateway logo in the header</label>
         <label class="setting-check"><input id="setting-name" type="checkbox"> Print the registrant's name</label>
+        <label class="setting-check"><input id="setting-church" type="checkbox"> Print the registrant's church (under the name)</label>
         <label class="setting-check" id="setting-vertical-row"><input id="setting-vertical" type="checkbox"> Vertical layout (name under the QR code)</label>
         <div class="label-preview">
           <img id="label-preview-img" alt="Label preview" hidden>
@@ -379,7 +381,7 @@
         '<div class="profile-actions"><button class="link" id="scan-again" type="button">&larr; Scan again</button></div>';
 
       profile.querySelector('.profile-name').textContent = person.name || 'Scanned pass';
-      profile.querySelector('.profile-meta').textContent = [person.status, person.email, person.sisid].filter(Boolean).join(' · ') || 'No additional details on file';
+      profile.querySelector('.profile-meta').textContent = [person.church, person.status, person.email, person.sisid].filter(Boolean).join(' · ') || 'No additional details on file';
 
       const qrArea = profile.querySelector('.qr-area');
       const printBtn = profile.querySelector('#print-btn');
@@ -575,10 +577,10 @@
 
     // Header (logo, then event title, then a rule) across the top, then the
     // body centered in what's left. Horizontal: QR on the left, name to its
-    // right. Vertical (portrait, 2.2in wide): a large QR with the name
-    // centered under it. Anything switched off or blank is left out and the
-    // body grows into the room.
-    // opts: { stock, vertical, logoBase64, title, name, qrText | qrImageBase64 }
+    // right with the church under it. Vertical (portrait, 2.2in wide): a
+    // large QR with the name and church centered under it. Anything switched
+    // off or blank is left out and the rest grows into the room.
+    // opts: { stock, vertical, logoBase64, title, name, church, qrText | qrImageBase64 }
     function buildLabelXml(opts) {
       const labelStockInfo = labelStock(opts.stock);
       const vertical = Boolean(opts.vertical) && !labelStockInfo.compact;
@@ -627,11 +629,13 @@
 
     // Compact stock (30252, ~1in tall): there's no room for a header across
     // the top, so the QR fills the label's height on the left and the logo,
-    // title and name stack in the column to its right, centered vertically.
+    // title, name and church stack in the column to its right, centered
+    // vertically. With a church the name gets one line, not two, so it
+    // isn't shrunk to fit a quarter inch.
     function compactLabelObjects(opts, left, top, right, bottom) {
       const objects = [];
       const qrSize = bottom - top;
-      const hasText = Boolean(opts.logoBase64 || opts.title || opts.name);
+      const hasText = Boolean(opts.logoBase64 || opts.title || opts.name || opts.church);
       if (!hasText) {
         objects.push(qrObject(opts, objectLayoutXml((left + right - qrSize) / 2, top, qrSize, qrSize)));
         return objects;
@@ -643,9 +647,10 @@
       const logoHeight = opts.logoBase64 ? 0.18 : 0;
       const titleHeight = opts.title ? 0.2 : 0;
       const header = logoHeight + titleHeight + (logoHeight && titleHeight ? 0.02 : 0);
-      const ruleSpace = header && opts.name ? 0.07 : 0;
-      const nameHeight = opts.name ? Math.min(0.55, qrSize - header - ruleSpace) : 0;
-      let y = top + (qrSize - header - ruleSpace - nameHeight) / 2;
+      const ruleSpace = header && (opts.name || opts.church) ? 0.07 : 0;
+      const churchHeight = opts.church ? 0.16 : 0;
+      const nameHeight = opts.name ? Math.min(0.55, qrSize - header - ruleSpace - churchHeight) : 0;
+      let y = top + (qrSize - header - ruleSpace - nameHeight - churchHeight) / 2;
 
       if (opts.logoBase64) {
         objects.push(imageObjectXml('LOGO', opts.logoBase64, objectLayoutXml(colLeft, y, Math.min(1.4, colWidth), logoHeight), 'Left'));
@@ -660,7 +665,12 @@
         y += ruleSpace;
       }
       if (opts.name) {
-        objects.push(textObjectXml('NAME', splitInTwo(opts.name, 14), objectLayoutXml(colLeft, y, colWidth, nameHeight), 20, true, 'Left'));
+        const nameLines = opts.church ? [opts.name] : splitInTwo(opts.name, 14);
+        objects.push(textObjectXml('NAME', nameLines, objectLayoutXml(colLeft, y, colWidth, nameHeight), 20, true, 'Left'));
+        y += nameHeight;
+      }
+      if (opts.church) {
+        objects.push(textObjectXml('CHURCH', [opts.church], objectLayoutXml(colLeft, y, colWidth, churchHeight), 10, false, 'Left'));
       }
       return objects;
     }
@@ -685,28 +695,48 @@
         top += 0.08;
       }
 
+      // The name and church share one text block: the name gets most of it,
+      // the church a smaller line or two under it. AlwaysFit grows short text
+      // as well as shrinking long text (DYMO Connect's ShrinkToFit doesn't
+      // shrink at all, checked with RenderLabel), so the church's box is
+      // sized to its line count to keep it smaller than the name.
+      const textGap = opts.name && opts.church ? 0.04 : 0;
+      const churchLines = opts.church ? splitInTwo(opts.church, 22) : [];
+      const churchLinesHeight = churchLines.length > 1 ? 0.46 : 0.25;
       let qrLayout;
       let nameLayout;
+      let churchLayout;
       if (vertical) {
         const nameHeight = opts.name ? 0.8 : 0;
-        const gap = opts.name ? 0.12 : 0;
-        const qrSize = Math.min(right - left, bottom - top - nameHeight - gap);
-        const bodyTop = top + (bottom - top - qrSize - gap - nameHeight) / 2;
+        const churchHeight = opts.church ? churchLinesHeight : 0;
+        const textHeight = nameHeight + textGap + churchHeight;
+        const gap = textHeight ? 0.12 : 0;
+        const qrSize = Math.min(right - left, bottom - top - textHeight - gap);
+        const bodyTop = top + (bottom - top - qrSize - gap - textHeight) / 2;
+        const textTop = bodyTop + qrSize + gap;
         qrLayout = objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
-        nameLayout = objectLayoutXml(left, bodyTop + qrSize + gap, right - left, nameHeight);
+        nameLayout = objectLayoutXml(left, textTop, right - left, nameHeight);
+        churchLayout = objectLayoutXml(left, textTop + nameHeight + textGap, right - left, churchHeight);
       } else {
         const qrSize = Math.min(1.6, bottom - top);
         const bodyTop = top + (bottom - top - qrSize) / 2;
-        qrLayout = opts.name
+        qrLayout = opts.name || opts.church
           ? objectLayoutXml(left, bodyTop, qrSize, qrSize)
           : objectLayoutXml((left + right - qrSize) / 2, bodyTop, qrSize, qrSize);
-        const nameLeft = left + qrSize + 0.15;
-        nameLayout = objectLayoutXml(nameLeft, bodyTop, right - nameLeft, qrSize);
+        const textLeft = left + qrSize + 0.15;
+        // With no name the church is centered beside the QR.
+        const churchHeight = opts.church ? (opts.name ? churchLinesHeight : qrSize) : 0;
+        const nameHeight = opts.name ? qrSize - textGap - churchHeight : 0;
+        nameLayout = objectLayoutXml(textLeft, bodyTop, right - textLeft, nameHeight);
+        churchLayout = objectLayoutXml(textLeft, bodyTop + nameHeight + textGap, right - textLeft, churchHeight);
       }
 
       objects.push(qrObject(opts, qrLayout));
       if (opts.name) {
         objects.push(textObjectXml('NAME', splitInTwo(opts.name, 14), nameLayout, 28, true, align));
+      }
+      if (opts.church) {
+        objects.push(textObjectXml('CHURCH', churchLines, churchLayout, 14, false, align));
       }
       return objects;
     }
@@ -718,7 +748,7 @@
     // ----------------------------------------------------------------
 
     const LABEL_SETTINGS_KEY = 'checkin.labelSettings';
-    const DEFAULT_LABEL_SETTINGS = { stock: DEFAULT_STOCK, title: '', showLogo: true, showName: true, vertical: false };
+    const DEFAULT_LABEL_SETTINGS = { stock: DEFAULT_STOCK, title: '', showLogo: true, showName: true, showChurch: true, vertical: false };
 
     function loadLabelSettings() {
       try {
@@ -768,6 +798,7 @@
         logoBase64: settings.showLogo ? await loadLogoBase64() : '',
         title: settings.title.trim(),
         name: settings.showName ? (person.name || '') : '',
+        church: settings.showChurch ? (person.church || '') : '',
       };
       if (isProbablyUrl(person.qrUrl)) {
         const response = await fetch(qrImageProxyUrl(person.qrUrl), { cache: 'no-store' });
@@ -866,8 +897,9 @@
     function printViaBrowser(person) {
       if (!person.qrUrl) return;
       if (isProbablyUrl(person.qrUrl)) {
-        printFallback.innerHTML = '<img alt="">' + '<div class="print-name"></div>';
+        printFallback.innerHTML = '<img alt="">' + '<div class="print-name"></div><div class="print-church"></div>';
         printFallback.querySelector('.print-name').textContent = person.name;
+        printFallback.querySelector('.print-church').textContent = person.church || '';
         const img = printFallback.querySelector('img');
         img.addEventListener('load', function () {
           printFallback.classList.add('printing');
@@ -877,8 +909,9 @@
         img.src = qrImageProxyUrl(person.qrUrl);
         return;
       }
-      printFallback.innerHTML = '<canvas></canvas><div class="print-name"></div>';
+      printFallback.innerHTML = '<canvas></canvas><div class="print-name"></div><div class="print-church"></div>';
       printFallback.querySelector('.print-name').textContent = person.name;
+      printFallback.querySelector('.print-church').textContent = person.church || '';
       const canvas = printFallback.querySelector('canvas');
       window.QRCode.toCanvas(canvas, person.qrUrl, { width: 300, margin: 1 }, function (err) {
         if (err) return;
@@ -1008,8 +1041,9 @@
       queued.then(
         function (data) {
           const job = data && data.job;
-          // The Worker looked the name up from the pass while queueing.
+          // The Worker looked the name and church up from the pass while queueing.
           if (job && job.name) profile.querySelector('.profile-name').textContent = job.name;
+          if (job && job.church) profile.querySelector('.profile-meta').textContent = job.church;
           const who = job && job.name ? ': ' + job.name : '';
           if (data && data.stationConnected) setBanner('✓ Sent to ' + station + who + '.', 'success');
           else setBanner(station + ' isn’t online, so this scan is waiting' + who + '. It prints when that station connects (up to an hour).', 'error');
@@ -1348,7 +1382,7 @@
       if (handledJobIds.has(job.id)) { ackJob(job.id); return; }
       handledJobIds.add(job.id);
       printChain = printChain.then(async function () {
-        const person = { name: job.name || '', email: '', status: '', sisid: '', qrUrl: job.value };
+        const person = { name: job.name || '', church: job.church || '', email: '', status: '', sisid: '', qrUrl: job.value };
         try {
           renderProfile(person);
           await printLabel(person);
@@ -1414,10 +1448,11 @@
     const settingTitle = document.getElementById('setting-title');
     const settingLogo = document.getElementById('setting-logo');
     const settingName = document.getElementById('setting-name');
+    const settingChurch = document.getElementById('setting-church');
     const settingVertical = document.getElementById('setting-vertical');
     const labelPreviewImg = document.getElementById('label-preview-img');
     const labelPreviewStatus = document.getElementById('label-preview-status');
-    const SAMPLE_PERSON = { name: 'Sample Registrant', qrUrl: 'person:00000000000000000000000000000000' };
+    const SAMPLE_PERSON = { name: 'Sample Registrant', church: 'Sample Community Church', qrUrl: 'person:00000000000000000000000000000000' };
     let previewToken = 0;
 
     async function refreshLabelPreview() {
@@ -1451,7 +1486,7 @@
 
     function onSettingsChange() {
       syncVerticalOption();
-      saveLabelSettings({ stock: settingStock.value, title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked, vertical: settingVertical.checked });
+      saveLabelSettings({ stock: settingStock.value, title: settingTitle.value, showLogo: settingLogo.checked, showName: settingName.checked, showChurch: settingChurch.checked, vertical: settingVertical.checked });
       clearTimeout(previewDebounce);
       previewDebounce = setTimeout(refreshLabelPreview, 250);
     }
@@ -1468,9 +1503,10 @@
       settingTitle.value = initialSettings.title;
       settingLogo.checked = initialSettings.showLogo;
       settingName.checked = initialSettings.showName;
+      settingChurch.checked = initialSettings.showChurch;
       settingVertical.checked = initialSettings.vertical;
       syncVerticalOption();
-      [settingStock, settingTitle, settingLogo, settingName, settingVertical].forEach(function (el) {
+      [settingStock, settingTitle, settingLogo, settingName, settingChurch, settingVertical].forEach(function (el) {
         el.addEventListener(el.type === 'text' ? 'input' : 'change', onSettingsChange);
       });
       document.querySelector('.label-settings').addEventListener('toggle', function (event) {

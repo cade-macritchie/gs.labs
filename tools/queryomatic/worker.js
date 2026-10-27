@@ -875,8 +875,8 @@ export class CheckinPrintQueue {
     }
 
     if (pathname === "/push") {
-      const { value, name } = await request.json();
-      const job = { id: crypto.randomUUID(), value, name: name || "", ts: Date.now() };
+      const { value, name, church } = await request.json();
+      const job = { id: crypto.randomUUID(), value, name: name || "", church: church || "", ts: Date.now() };
       await this.storage.put("jobs", [...(await this.pendingJobs()), job].slice(-CHECKIN_PRINT_QUEUE_MAX));
       const stations = this.openStations();
       for (const ws of stations) ws.send(JSON.stringify({ type: "jobs", jobs: [job] }));
@@ -912,11 +912,11 @@ function checkinPrintQueueStub(env, stationKey) {
   return env.CHECKIN_PRINT_QUEUE.get(env.CHECKIN_PRINT_QUEUE.idFromName(`station:${stationKey}`));
 }
 
-async function pushCheckinPrintJob(env, stationKey, value, name) {
+async function pushCheckinPrintJob(env, stationKey, value, name, church) {
   const resp = await checkinPrintQueueStub(env, stationKey).fetch("https://checkin-print-queue/push", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ value, name }),
+    body: JSON.stringify({ value, name, church }),
   });
   return resp.json();
 }
@@ -933,7 +933,10 @@ async function pushCheckinPrintJob(env, stationKey, value, name) {
 // hence the :not([class]) child match rather than any div. There is
 // deliberately NO fallback to <title> or .pass_title: on some templates
 // those hold the pass/event title, and a label with no name beats a label
-// with the wrong one. The type
+// with the wrong one. The BTC 2027 pass also shows the registrant's church in
+// <p class="pass__church"> (p.pass_church accepted too), which the label
+// prints under the name; other templates have none, and the label just
+// leaves it out. The type
 // must be passed through as-is: an event registrant's page 404s with
 // &type=person, the same quirk CHECKIN_QR_IMAGE_PATTERN documents. Only a
 // validated GUID and a lowercase type word ever reach the URL, so this
@@ -950,11 +953,11 @@ function decodeHtmlEntities(text) {
     .replace(/&amp;/g, "&");
 }
 
-// Returns { name, outcome }. `outcome` is safe to log (never the name) and
-// says why a lookup came back empty.
-async function lookupCheckinPassName(value) {
+// Returns { name, church, outcome }. `outcome` is safe to log (never the
+// name or church) and says why a lookup came back empty.
+async function lookupCheckinPass(value) {
   const match = CHECKIN_PASS_CODE_PATTERN.exec(value);
-  if (!match) return { name: "", outcome: "unrecognized-code" };
+  if (!match) return { name: "", church: "", outcome: "unrecognized-code" };
   const [, type, ...guidParts] = match;
   const url = new URL("https://enroll.gs.edu/register/mobile");
   url.searchParams.set("id", guidParts.join("-").toLowerCase());
@@ -962,9 +965,10 @@ async function lookupCheckinPassName(value) {
 
   try {
     const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(4000) });
-    if (!resp.ok) return { name: "", outcome: `http-${resp.status}` };
+    if (!resp.ok) return { name: "", church: "", outcome: `http-${resp.status}` };
     let passName = "";
     let badgeName = "";
+    let passChurch = "";
     const classes = new Set();
     // The name can be split across a <br> (first / last), so each <br>
     // inside it becomes a space.
@@ -974,16 +978,19 @@ async function lookupCheckinPassName(value) {
       .on("p.pass__name, p.pass_name", addName)
       .on("p.pass__name br, p.pass_name br", addSpace)
       .on(".pass_badge > div:not([class])", { text(chunk) { badgeName += chunk.text; } })
+      .on("p.pass__church, p.pass_church", { text(chunk) { passChurch += chunk.text; } })
+      .on("p.pass__church br, p.pass_church br", { element() { passChurch += " "; } })
       .on("[class]", { element(el) { classes.add(`${el.tagName}.${el.getAttribute("class")}`); } })
       .transform(resp)
       .arrayBuffer();
     const name = decodeHtmlEntities(passName || badgeName).replace(/\s+/g, " ").trim().slice(0, 120);
+    const church = decodeHtmlEntities(passChurch).replace(/\s+/g, " ").trim().slice(0, 120);
     const source = passName ? "pass-name" : badgeName ? "pass-badge" : "no-match";
     // Element classes only (no text), so a template change is diagnosable
-    // from the logs without ever logging a name.
-    return { name, outcome: `${source} [${[...classes].join(" ")}]` };
+    // from the logs without ever logging a name or church.
+    return { name, church, outcome: `${source} ${church ? "church" : "no-church"} [${[...classes].join(" ")}]` };
   } catch (err) {
-    return { name: "", outcome: `error-${err?.name || "unknown"}` };
+    return { name: "", church: "", outcome: `error-${err?.name || "unknown"}` };
   }
 }
 
@@ -1015,9 +1022,9 @@ async function handleCheckinPrintQueuePost(request, env, id) {
     return json({ error: "A valid station name is required", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
   }
 
-  const { name, outcome } = await lookupCheckinPassName(value);
-  const { job, stationConnected } = await pushCheckinPrintJob(env, stationKey, value, name);
-  // Deliberately logs how the name lookup went, never the name itself.
+  const { name, church, outcome } = await lookupCheckinPass(value);
+  const { job, stationConnected } = await pushCheckinPrintJob(env, stationKey, value, name, church);
+  // Deliberately logs how the pass lookup went, never the name or church.
   logInfo(id, "Checkin print queue job queued", { jobId: job.id, station: stationKey, stationConnected, nameLookup: outcome });
   return json({ ok: true, job, stationConnected }, env, 200, env.ALLOWED_ORIGIN);
 }
