@@ -7,8 +7,14 @@
   the registration form's Breakout Sessions field. Set the export's separator
   to | (pipe) when Slate offers one so session titles containing commas stay
   intact; ;, tabs and line breaks also work, and a value with none of those is
-  split on commas. The BTC 2027 form's Sessions field uses export key
-  sessions_list, pulled with a Form Field Value export.
+  split on commas. The BTC 2027 form's old Sessions checkbox field uses
+  export key sessions_list, pulled with a Form Field Value export.
+  reg_session_a and reg_session_b are optional too: one talk each, from the
+  BTC 2027 form's single-select Session A (10:00 AM) and Session B
+  (11:10 AM) fields (export keys session_a and session_b), also pulled with
+  Form Field Value exports. A registrant with either one is counted by time
+  slot; one with only reg_breakouts is an earlier sign-up from before the
+  slots existed, and their sessions are counted separately.
 
   Liquid renders the complete export before JavaScript reads or groups it.
   The Liquid size filter supplies the authoritative source-row total; the
@@ -24,12 +30,14 @@
         <span class="event-date">{{ registrant.ev_date | escape }}</span>
         <span class="event-link">{{ registrant.ev_link_slate | escape }}</span>
         <span class="breakouts">{{ registrant.reg_breakouts | escape }}</span>
+        <span class="session-a">{{ registrant.reg_session_a | escape }}</span>
+        <span class="session-b">{{ registrant.reg_session_b | escape }}</span>
       </div>
     {% endfor %}
   </div>
 </div>
 
-<iframe id="publicEventRegistrantFrame" src="https://cade-macritchie.github.io/gs.labs/reports/advancement-student-life-events/?v=breakout-sessions-v1" title="Advancement and Student Life Events" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
+<iframe id="publicEventRegistrantFrame" src="https://cade-macritchie.github.io/gs.labs/reports/advancement-student-life-events/?v=breakout-slots-v1" title="Advancement and Student Life Events" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 
 <script>
 (function () {
@@ -93,27 +101,45 @@
     });
   }
 
+  function sessionChoice(value) {
+    return decodeEntities(value).replace(/\s+/g, ' ').trim();
+  }
+
   const registrationRows = Array.from(root.querySelectorAll('.registration')).map(function (node) {
     return {
       title: read(node, '.event-title') || 'Untitled event',
       registrationDate: read(node, '.registration-date'),
       eventDate: read(node, '.event-date'),
       url: eventLink(read(node, '.event-link')),
-      breakouts: breakoutSessions(read(node, '.breakouts'))
+      breakouts: breakoutSessions(read(node, '.breakouts')),
+      sessionA: sessionChoice(read(node, '.session-a')),
+      sessionB: sessionChoice(read(node, '.session-b'))
     };
   });
 
-  // Tallies each registrant's chosen sessions onto their event, matching
-  // session titles case-insensitively and keeping the first spelling seen.
-  function addBreakouts(group, sessions) {
-    if (!sessions.length) return;
-    group.breakoutRespondents += 1;
+  // Tallies sessions into one count map, matching session titles
+  // case-insensitively and keeping the first spelling seen. Returns whether
+  // anything was counted, so the caller can count the respondent.
+  function addSessions(counts, sessions) {
     sessions.forEach(function (name) {
       const key = name.toLocaleLowerCase();
-      const existing = group.breakoutCounts.get(key);
+      const existing = counts.get(key);
       if (existing) existing.count += 1;
-      else group.breakoutCounts.set(key, { name: name, count: 1 });
+      else counts.set(key, { name: name, count: 1 });
     });
+    return sessions.length > 0;
+  }
+
+  // A registrant who picked a Session A or B talk is counted by time slot.
+  // Only one with neither falls back to the old checkbox field, so an
+  // earlier sign-up's answers are never counted twice.
+  function addBreakouts(group, registration) {
+    if (registration.sessionA || registration.sessionB) {
+      if (addSessions(group.sessionACounts, registration.sessionA ? [registration.sessionA] : [])) group.sessionARespondents += 1;
+      if (addSessions(group.sessionBCounts, registration.sessionB ? [registration.sessionB] : [])) group.sessionBRespondents += 1;
+      return;
+    }
+    if (addSessions(group.breakoutCounts, registration.breakouts)) group.breakoutRespondents += 1;
   }
 
   const eventGroups = new Map();
@@ -125,7 +151,7 @@
       existing.registrationDates.push(registration.registrationDate);
       if (!existing.date && registration.eventDate) existing.date = registration.eventDate;
       if (!existing.url && registration.url) existing.url = registration.url;
-      addBreakouts(existing, registration.breakouts);
+      addBreakouts(existing, registration);
     } else {
       const group = {
         title: registration.title,
@@ -134,9 +160,13 @@
         registrationDates: [registration.registrationDate],
         url: registration.url,
         breakoutRespondents: 0,
-        breakoutCounts: new Map()
+        breakoutCounts: new Map(),
+        sessionARespondents: 0,
+        sessionACounts: new Map(),
+        sessionBRespondents: 0,
+        sessionBCounts: new Map()
       };
-      addBreakouts(group, registration.breakouts);
+      addBreakouts(group, registration);
       eventGroups.set(key, group);
     }
   });
@@ -151,7 +181,11 @@
         registrationDates: group.registrationDates,
         url: group.url,
         breakouts: Array.from(group.breakoutCounts.values()),
-        breakoutRespondents: group.breakoutRespondents
+        breakoutRespondents: group.breakoutRespondents,
+        sessionA: Array.from(group.sessionACounts.values()),
+        sessionARespondents: group.sessionARespondents,
+        sessionB: Array.from(group.sessionBCounts.values()),
+        sessionBRespondents: group.sessionBRespondents
       };
     }),
     totalRegistrants: Number.isFinite(liquidTotal) ? liquidTotal : registrationRows.length

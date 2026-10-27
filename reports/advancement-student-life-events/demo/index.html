@@ -61,6 +61,8 @@
     .conference-demo-dashboard .attendance-chart .bar-row { grid-template-columns: minmax(160px, 300px) 1fr 58px 82px; }
     .conference-demo-dashboard .bar-rate { display: flex; justify-content: flex-end; }
     .conference-demo-dashboard .badge { font-family: var(--nb-font-subheading); }
+    .conference-demo-dashboard .slot-heading { margin: 0 0 12px; color: var(--nb-black); font: 700 1.05rem/1.3 var(--nb-font-heading); }
+    .conference-demo-dashboard .slot-heading:not(:first-child) { margin-top: 22px; }
     .conference-demo-dashboard .footnote { margin: 18px 2px 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
 
     @media (max-width: 720px) {
@@ -91,7 +93,7 @@
     <div class="section-divider">
       <div class="section-eyebrow">Interest</div>
       <div class="section-heading">Selections by Breakout Session</div>
-      <p class="section-copy">How many registrants marked each breakout as something they plan to attend, captured at registration.</p>
+      <p class="section-copy">How many registrants picked each breakout for its time slot, captured at registration. Each registrant picks one talk per slot.</p>
     </div>
     <div id="interest-bars" class="bar-chart interest-chart"></div>
 
@@ -102,31 +104,36 @@
     </div>
     <div id="attendance-bars" class="bar-chart attendance-chart"></div>
 
-    <p class="footnote">Breakout attendance totals more than overall conference attendance because most attendees take in several sessions across the schedule.</p>
+    <p class="footnote">Breakout attendance totals more than overall conference attendance because most attendees take in a session in each time slot.</p>
   </main>
 
   <script>
   (function () {
     'use strict';
 
-    // Sample data only — shape it to match whatever the eventual Slate
-    // breakout-session export looks like once this page is wired up for real.
+    // Sample data only. Like the live report's Session A / Session B fields,
+    // each breakout belongs to one time slot and a registrant picks one talk
+    // per slot, so each slot's interest adds up to at most the registrants.
     var CONFERENCE_ATTENDANCE = 860;
+    var SLOTS = [
+      { key: 'A', label: 'Session A (10:00 AM)' },
+      { key: 'B', label: 'Session B (11:10 AM)' }
+    ];
     var BREAKOUTS = [
-      { title: 'Preaching with Clarity in a Distracted Age', interest: 412, attendance: 358 },
-      { title: 'Sustaining Pastoral Longevity', interest: 389, attendance: 331 },
-      { title: 'Discipleship Pathways That Actually Work', interest: 355, attendance: 289 },
-      { title: 'Shepherding Through Grief and Loss', interest: 340, attendance: 276 },
-      { title: 'Reaching Your Neighborhood for Christ', interest: 318, attendance: 241 },
-      { title: 'Biblical Counseling Fundamentals', interest: 296, attendance: 254 },
-      { title: 'Building Healthy Elder Boards', interest: 274, attendance: 198 },
-      { title: 'Church Planting in Under-Resourced Communities', interest: 251, attendance: 205 },
-      { title: 'Cross-Cultural Missions Today', interest: 233, attendance: 187 },
-      { title: 'Worship Leading and Theological Integrity', interest: 219, attendance: 176 },
-      { title: 'Youth Ministry That Outlasts the Youth Group', interest: 204, attendance: 149 },
-      { title: 'Women in Ministry Leadership', interest: 188, attendance: 152 },
-      { title: 'Financial Stewardship for Small Churches', interest: 162, attendance: 101 },
-      { title: 'Digital Tools for Modern Ministry', interest: 121, attendance: 58 }
+      { slot: 'A', title: 'Preaching with Clarity in a Distracted Age', interest: 142, attendance: 128 },
+      { slot: 'A', title: 'Sustaining Pastoral Longevity', interest: 131, attendance: 117 },
+      { slot: 'A', title: 'Discipleship Pathways That Actually Work', interest: 118, attendance: 96 },
+      { slot: 'A', title: 'Shepherding Through Grief and Loss', interest: 104, attendance: 88 },
+      { slot: 'A', title: 'Reaching Your Neighborhood for Christ', interest: 97, attendance: 71 },
+      { slot: 'A', title: 'Biblical Counseling Fundamentals', interest: 89, attendance: 77 },
+      { slot: 'A', title: 'Building Healthy Elder Boards', interest: 64, attendance: 41 },
+      { slot: 'B', title: 'Church Planting in Under-Resourced Communities', interest: 138, attendance: 119 },
+      { slot: 'B', title: 'Cross-Cultural Missions Today', interest: 127, attendance: 104 },
+      { slot: 'B', title: 'Worship Leading and Theological Integrity', interest: 119, attendance: 98 },
+      { slot: 'B', title: 'Youth Ministry That Outlasts the Youth Group', interest: 108, attendance: 79 },
+      { slot: 'B', title: 'Women in Ministry Leadership', interest: 96, attendance: 81 },
+      { slot: 'B', title: 'Financial Stewardship for Small Churches', interest: 82, attendance: 52 },
+      { slot: 'B', title: 'Digital Tools for Modern Ministry', interest: 69, attendance: 31 }
     ];
 
     function rateBadge(rate) {
@@ -163,62 +170,49 @@
       });
     }
 
-    function renderInterestChart() {
-      var rows = BREAKOUTS.slice().sort(function (a, b) { return b.interest - a.interest; });
-      var max = Math.max.apply(null, rows.map(function (row) { return row.interest; }));
-      var chart = document.getElementById('interest-bars');
-      rows.forEach(function (row) {
-        var el = document.createElement('div');
-        el.className = 'bar-row';
-        var label = document.createElement('div');
-        label.className = 'bar-label';
-        label.textContent = row.title;
-        label.title = row.title;
-        var track = document.createElement('div');
-        track.className = 'bar-track';
-        var fill = document.createElement('div');
-        fill.className = 'bar-fill';
-        fill.style.width = (row.interest / max * 100) + '%';
-        track.appendChild(fill);
-        var value = document.createElement('div');
-        value.className = 'bar-value';
-        value.textContent = row.interest.toLocaleString();
-        el.append(label, track, value);
-        chart.appendChild(el);
-      });
-    }
-
-    function renderAttendanceChart() {
-      var rows = BREAKOUTS.slice().sort(function (a, b) { return b.attendance - a.attendance; });
-      var max = Math.max.apply(null, rows.map(function (row) { return row.attendance; }));
-      var chart = document.getElementById('attendance-bars');
-      rows.forEach(function (row) {
-        var el = document.createElement('div');
-        el.className = 'bar-row';
-        var label = document.createElement('div');
-        label.className = 'bar-label';
-        label.textContent = row.title;
-        label.title = row.title;
-        var track = document.createElement('div');
-        track.className = 'bar-track';
-        var fill = document.createElement('div');
-        fill.className = 'bar-fill';
-        fill.style.width = (row.attendance / max * 100) + '%';
-        track.appendChild(fill);
-        var value = document.createElement('div');
-        value.className = 'bar-value';
-        value.textContent = row.attendance.toLocaleString();
-        var rateCell = document.createElement('div');
-        rateCell.className = 'bar-rate';
-        rateCell.appendChild(rateBadge(row.attendance / row.interest));
-        el.append(label, track, value, rateCell);
-        chart.appendChild(el);
+    // One bar group per time slot, busiest first. Bars share one scale
+    // across both slots so their lengths compare.
+    function renderSlotChart(chartId, field, withRate) {
+      var max = Math.max.apply(null, BREAKOUTS.map(function (row) { return row[field]; }));
+      var chart = document.getElementById(chartId);
+      SLOTS.forEach(function (slot) {
+        var heading = document.createElement('h3');
+        heading.className = 'slot-heading';
+        heading.textContent = slot.label;
+        chart.appendChild(heading);
+        BREAKOUTS.filter(function (row) { return row.slot === slot.key; })
+          .sort(function (a, b) { return b[field] - a[field]; })
+          .forEach(function (row) {
+            var el = document.createElement('div');
+            el.className = 'bar-row';
+            var label = document.createElement('div');
+            label.className = 'bar-label';
+            label.textContent = row.title;
+            label.title = row.title;
+            var track = document.createElement('div');
+            track.className = 'bar-track';
+            var fill = document.createElement('div');
+            fill.className = 'bar-fill';
+            fill.style.width = (row[field] / max * 100) + '%';
+            track.appendChild(fill);
+            var value = document.createElement('div');
+            value.className = 'bar-value';
+            value.textContent = row[field].toLocaleString();
+            el.append(label, track, value);
+            if (withRate) {
+              var rateCell = document.createElement('div');
+              rateCell.className = 'bar-rate';
+              rateCell.appendChild(rateBadge(row.attendance / row.interest));
+              el.appendChild(rateCell);
+            }
+            chart.appendChild(el);
+          });
       });
     }
 
     renderStats();
-    renderInterestChart();
-    renderAttendanceChart();
+    renderSlotChart('interest-bars', 'interest', false);
+    renderSlotChart('attendance-bars', 'attendance', true);
   }());
   </script>
 </body>

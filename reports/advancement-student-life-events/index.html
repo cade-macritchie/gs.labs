@@ -184,6 +184,9 @@
     .btc-registration-details .stat-bar { margin-bottom: 10px; }
     .btc-registration-details .stat-cell { text-align: center; }
     .btc-registration-note { margin: 0 0 24px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+    .breakout-group { margin-bottom: 22px; }
+    .breakout-group-heading { margin: 0 0 4px; color: var(--nb-black); font: 700 1.1rem/1.3 var(--nb-font-heading); }
+    .breakout-group-copy { margin: 0 0 12px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
     .breakout-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-bottom: 10px; }
     .breakout-card {
       position: relative;
@@ -301,7 +304,7 @@
 
       <section id="breakout-sessions" class="breakout-sessions" hidden>
         <div class="section-divider"><div class="section-eyebrow">Projected Attendance</div><div class="section-heading">Breakout Sessions</div></div>
-        <div id="breakout-cards" class="breakout-cards"></div>
+        <div id="breakout-groups"></div>
         <p id="breakout-note" class="breakout-note"></p>
       </section>
 
@@ -361,8 +364,12 @@
           ? record.registrationDates.map(clean)
           : Array.from({ length:registrants }, function () { return clean(record && record.date); });
         const eventDate = hasRegistrationDates ? clean(record && record.date) : '';
-        const breakouts = Array.isArray(record && record.breakouts) ? record.breakouts : [];
-        const breakoutRespondents = Math.max(0, Math.round(ui.number(record && record.breakoutRespondents)));
+        const slots = BREAKOUT_SLOTS.map(function (slot) {
+          return {
+            sessions: Array.isArray(record && record[slot.key]) ? record[slot.key] : [],
+            respondents: respondentCount(record && record[slot.respondentsKey])
+          };
+        });
         const existing = groups.get(key);
 
         if (existing) {
@@ -370,8 +377,7 @@
           existing.registrationDates.push.apply(existing.registrationDates, dates);
           if (!existing.date && eventDate) existing.date = eventDate;
           if (!existing.url && clean(record && record.url)) existing.url = clean(record.url);
-          existing.breakoutRespondents += breakoutRespondents;
-          addBreakoutCounts(existing.breakoutCounts, breakouts);
+          addSlotCounts(existing, slots);
         } else {
           const group = {
             title: title,
@@ -379,19 +385,44 @@
             registrants: registrants,
             registrationDates: dates,
             url: clean(record && record.url),
-            breakoutRespondents: breakoutRespondents,
-            breakoutCounts: new Map()
+            slotCounts: BREAKOUT_SLOTS.map(function () { return { respondents:0, counts:new Map() }; })
           };
-          addBreakoutCounts(group.breakoutCounts, breakouts);
+          addSlotCounts(group, slots);
           groups.set(key, group);
         }
       });
 
       return Array.from(groups.values()).map(function (record) {
         record.dateValue = parseDate(record.date);
-        record.breakouts = Array.from(record.breakoutCounts.values()).filter(function (session) { return session.count > 0; });
-        delete record.breakoutCounts;
+        BREAKOUT_SLOTS.forEach(function (slot, index) {
+          record[slot.key] = Array.from(record.slotCounts[index].counts.values()).filter(function (session) { return session.count > 0; });
+          record[slot.respondentsKey] = record.slotCounts[index].respondents;
+        });
+        delete record.slotCounts;
         return record;
+      });
+    }
+
+    // Breakout answers arrive in up to three buckets per event. sessionA and
+    // sessionB are the BTC form's single-select time-slot fields
+    // (reg_session_a / reg_session_b in the wrapper). breakouts is the older
+    // multi-select field (reg_breakouts): every answer for an event that only
+    // has that field, or, once an event has time slots, only the registrants
+    // who signed up before the slots existed.
+    const BREAKOUT_SLOTS = [
+      { key:'sessionA', respondentsKey:'sessionARespondents', label:'Session A (10:00 AM)' },
+      { key:'sessionB', respondentsKey:'sessionBRespondents', label:'Session B (11:10 AM)' },
+      { key:'breakouts', respondentsKey:'breakoutRespondents', label:'Earlier sign-ups (no time slot)' }
+    ];
+
+    function respondentCount(value) {
+      return Math.max(0, Math.round(ui.number(value)));
+    }
+
+    function addSlotCounts(group, slots) {
+      slots.forEach(function (slot, index) {
+        group.slotCounts[index].respondents += slot.respondents;
+        addBreakoutCounts(group.slotCounts[index].counts, slot.sessions);
       });
     }
 
@@ -407,39 +438,78 @@
       });
     }
 
-    // One card per breakout session the event's registrants picked, busiest
-    // first. Sessions nobody picked never reach the payload, and the section
+    function sortedSessions(sessions) {
+      return sessions.slice().sort(function (left, right) {
+        return right.count - left.count || left.name.localeCompare(right.name, undefined, { sensitivity:'base', numeric:true });
+      });
+    }
+
+    function breakoutCard(session) {
+      const card = document.createElement('article');
+      card.className = 'breakout-card';
+      const name = document.createElement('h3');
+      name.className = 'breakout-name';
+      name.textContent = session.name;
+      const count = document.createElement('div');
+      const countCaption = document.createElement('span');
+      countCaption.className = 'event-detail-label';
+      countCaption.textContent = 'Projected attendance';
+      const countValue = document.createElement('span');
+      countValue.className = 'breakout-count';
+      countValue.textContent = session.count.toLocaleString();
+      count.append(countCaption, countValue);
+      card.append(name, count);
+      return card;
+    }
+
+    function registrantCount(count) {
+      return count.toLocaleString() + ' registrant' + (count === 1 ? '' : 's');
+    }
+
+    // One card per session the event's registrants picked, busiest first.
+    // An event with time-slot answers gets a Session A group and a Session B
+    // group (each shown even before anyone picks it), plus an "Earlier
+    // sign-ups" group only when some registrants answered the old field
+    // alone. An event with only the old field keeps one ungrouped set of
+    // cards. Sessions nobody picked never reach the payload, and the section
     // stays hidden for events without breakout data.
     function renderBreakoutSessions(record) {
       const section = document.getElementById('breakout-sessions');
-      const list = document.getElementById('breakout-cards');
-      const sessions = record.breakouts.slice().sort(function (left, right) {
-        return right.count - left.count || left.name.localeCompare(right.name, undefined, { sensitivity:'base', numeric:true });
+      const container = document.getElementById('breakout-groups');
+      const hasSlots = record.sessionA.length > 0 || record.sessionB.length > 0;
+      const groups = BREAKOUT_SLOTS.filter(function (slot) {
+        return slot.key === 'breakouts' ? record.breakouts.length > 0 : hasSlots;
       });
-      list.replaceChildren();
-      section.hidden = sessions.length === 0;
-      if (!sessions.length) return;
+      container.replaceChildren();
+      section.hidden = groups.length === 0;
+      if (!groups.length) return;
 
-      sessions.forEach(function (session) {
-        const card = document.createElement('article');
-        card.className = 'breakout-card';
-        const name = document.createElement('h3');
-        name.className = 'breakout-name';
-        name.textContent = session.name;
-        const count = document.createElement('div');
-        const countCaption = document.createElement('span');
-        countCaption.className = 'event-detail-label';
-        countCaption.textContent = 'Projected attendance';
-        const countValue = document.createElement('span');
-        countValue.className = 'breakout-count';
-        countValue.textContent = session.count.toLocaleString();
-        count.append(countCaption, countValue);
-        card.append(name, count);
-        list.appendChild(card);
+      groups.forEach(function (slot) {
+        const sessions = sortedSessions(record[slot.key]);
+        const respondents = record[slot.respondentsKey];
+        const group = document.createElement('div');
+        group.className = 'breakout-group';
+        if (hasSlots) {
+          const heading = document.createElement('h3');
+          heading.className = 'breakout-group-heading';
+          heading.textContent = slot.label;
+          const copy = document.createElement('p');
+          copy.className = 'breakout-group-copy';
+          copy.textContent = slot.key === 'breakouts'
+            ? registrantCount(respondents) + ' signed up before the time slots were added. These are their picks from the old Sessions field, which had no time slot.'
+            : sessions.length ? registrantCount(respondents) + ' picked a talk for this slot.' : 'No one has picked a talk for this slot yet.';
+          group.append(heading, copy);
+        }
+        const list = document.createElement('div');
+        list.className = 'breakout-cards';
+        sessions.forEach(function (session) { list.appendChild(breakoutCard(session)); });
+        group.appendChild(list);
+        container.appendChild(group);
       });
 
-      const respondents = record.breakoutRespondents;
-      document.getElementById('breakout-note').textContent = respondents.toLocaleString() + ' of ' + record.registrants.toLocaleString() + ' registrant' + (record.registrants === 1 ? '' : 's') + ' chose at least one breakout session. Each card counts the registrants who chose that session on the registration form; attendees can still switch sessions at the event.';
+      document.getElementById('breakout-note').textContent = hasSlots
+        ? 'Each card counts the registrants who picked that talk for that time slot on the registration form; attendees can still switch sessions at the event.'
+        : record.breakoutRespondents.toLocaleString() + ' of ' + registrantCount(record.registrants) + ' chose at least one breakout session. Each card counts the registrants who chose that session on the registration form; attendees can still switch sessions at the event.';
     }
 
     function cumulativeRegistrations(record) {
