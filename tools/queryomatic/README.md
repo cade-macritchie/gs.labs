@@ -92,6 +92,24 @@ wrangler secret put SLATE_TOKEN_CHECKIN       # that query's token
 wrangler secret put CHECKIN_KEY               # passcode the check-in staff type once per device
 ```
 
+`btc-email-check` is the other exception: the BTC 2027 individual
+registration form's own Custom Script calls it on `enroll.gs.edu` to stop a
+group leader registering several people under one email (a reused email
+matches the same Slate person, so the second registration overwrites the
+first). It checks `PORTAL_ORIGIN` and the rate limit but needs no key, since
+the public form can't hold one, and answers only `{ "registered": true|false }`.
+It runs its own `btc_registrant_email_check` query (Slate, 2026-10-27: Form
+Response base, custom SQL filter pinned to the BTC 2027 individual form,
+active registrations, person email = `@email`, `email` its only web-service
+parameter). With either secret unset it returns 503 and the form lets the
+registrant submit. The form side is the "BTC DUPLICATE EMAIL CHECK" block in
+`local.files.misc/BTC/ind-registration.js`.
+
+```bash
+wrangler secret put SLATE_BTC_EMAIL_QUERY_URL # btc_registrant_email_check web service URL
+wrangler secret put SLATE_TOKEN_BTC_EMAIL     # that query's token
+```
+
 Route parameter names that differ from the maindb query’s own are renamed by
 `MAINDB_PARAM_ALIASES` in `worker.js` (`site` → `teachingsite`, `campus` →
 `campus_assigned`); everything else passes through unchanged, and blank values

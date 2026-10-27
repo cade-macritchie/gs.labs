@@ -71,6 +71,9 @@
  *   individual registrants, called directly from GitHub Pages — NOT a Slate
  *   wrapper. Backed by its own Slate query, not maindb, and gated by
  *   ALLOWED_ORIGIN + the CHECKIN_KEY passcode. See "CHECK-IN LAST-NAME LOOKUP".)
+ * - GET /api/slate/btc-email-check            (BTC 2027 individual registration form script:
+ *   is this email already registered? yes/no only. PORTAL_ORIGIN + rate limit,
+ *   no key. See "BTC DUPLICATE-EMAIL CHECK".)
  * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
  *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
  * - POST /api/checkin/print-queue             (tools/checkin/ scanners queue a print job)
@@ -95,6 +98,9 @@
  *                                               enforced, so code can deploy before Slate is ready.)
  * - SLATE_CHECKIN_QUERY_URL                    (checkin_btc_registrants query: /api/slate/checkin-search)
  * - SLATE_TOKEN_CHECKIN                        (that query's token)
+ * - SLATE_BTC_EMAIL_QUERY_URL                  (btc_registrant_email_check query: /api/slate/btc-email-check)
+ * - SLATE_TOKEN_BTC_EMAIL                      (that query's token. Either unset = check returns 503,
+ *                                               and the form lets people submit.)
  * - CHECKIN_KEY                                (passcode tools/checkin/ devices send as X-Checkin-Key
  *                                               for the last-name lookup. Unset = lookup refused.)
  *
@@ -568,6 +574,75 @@ async function handleCheckinSearch(request, env, id) {
 
   logInfo(id, "Checkin search results", { count: results.length });
   return json({ results }, env, 200, env.ALLOWED_ORIGIN);
+}
+
+
+// ============================================================
+// BTC DUPLICATE-EMAIL CHECK (GET /api/slate/btc-email-check)
+//
+// The BTC 2027 individual registration form (enroll.gs.edu) asks this whether
+// an email already has an active registration, so a group leader can't
+// register several people under their own email. A reused email matches the
+// same Slate person, so the second registration overwrites the first one's
+// name and only one mobile pass exists. See local.files.misc/BTC/
+// ind-registration.js ("BTC DUPLICATE EMAIL CHECK").
+//
+// Backed by its own Slate query (btc_registrant_email_check,
+// SLATE_BTC_EMAIL_QUERY_URL), pinned to the BTC 2027 individual form with
+// `email` as its only parameter. Answers yes/no only, never names or ids.
+//
+// Not behind PORTAL_KEY: it's called from the public registration form, which
+// can't hold a key. Gated by origin (PORTAL_ORIGIN) and the rate limit. That
+// leaves "is this email registered for BTC?" answerable by anyone who sends
+// that Origin header, which is the same thing the form itself reveals.
+// Unset secrets return 503, and the form lets the registrant submit.
+// ============================================================
+
+// Loose on purpose: Slate's own email field validates the format.
+const BTC_EMAIL_PATTERN = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+
+async function handleBtcEmailCheck(request, env, id) {
+  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
+  }
+
+  if (!env.SLATE_BTC_EMAIL_QUERY_URL || !env.SLATE_TOKEN_BTC_EMAIL) {
+    return json({ error: "Email check isn't set up yet", requestId: id }, env, 503, env.PORTAL_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "btc-email-check"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+  }
+
+  const email = String(new URL(request.url).searchParams.get("email") || "").trim();
+  if (!BTC_EMAIL_PATTERN.test(email)) {
+    return json({ error: "Send an email address", requestId: id }, env, 400, env.PORTAL_ORIGIN);
+  }
+
+  const url = new URL(env.SLATE_BTC_EMAIL_QUERY_URL);
+  url.searchParams.set("output", "json");
+  url.searchParams.set("email", email);
+  // Logs the route and the answer only, never the email.
+  logInfo(id, "BTC email check request", { route: "btc-email-check" });
+
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_BTC_EMAIL}`, Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    logError(id, "BTC email check query failed", { status: resp.status });
+    throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error("Slate query returned invalid JSON");
+  }
+
+  const registered = Array.isArray(data?.row) && data.row.length > 0;
+  logInfo(id, "BTC email check result", { registered });
+  return json({ registered }, env, 200, env.PORTAL_ORIGIN);
 }
 
 
@@ -3206,9 +3281,11 @@ export default {
         pathname:
           url.pathname,
 
-        // A check-in lookup's query string is a registrant's last name.
+        // A check-in lookup's query string is a registrant's last name, and
+        // a BTC email check's is an email address.
         search:
-          url.pathname === "/api/slate/checkin-search"
+          url.pathname === "/api/slate/checkin-search" ||
+          url.pathname === "/api/slate/btc-email-check"
             ? "[REDACTED]"
             : url.search,
       }
@@ -3358,6 +3435,15 @@ export default {
         request.method === "GET"
       ) {
         return await handleCheckinSearch(request, env, id);
+      }
+
+      // Called directly from the BTC 2027 registration form's own script
+      // (PORTAL_ORIGIN), not a wrapper — see "BTC DUPLICATE-EMAIL CHECK".
+      if (
+        url.pathname === "/api/slate/btc-email-check" &&
+        request.method === "GET"
+      ) {
+        return await handleBtcEmailCheck(request, env, id);
       }
 
       // Re-serves a per_qr_url PNG with CORS headers so tools/checkin/ can
