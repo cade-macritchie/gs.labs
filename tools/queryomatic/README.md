@@ -66,7 +66,8 @@ print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 | `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
 | `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
-| `GET /api/slate/checkin-search` | `checkin_btc_registrants` (not maindb) | Check-In (`tools/checkin/`) — last-name lookup | `last` |
+| `GET /api/slate/checkin-search` | `checkin_event_registrants` (not maindb) | Check-In (`tools/checkin/`) — last-name lookup | `form_title`, `last` |
+| `GET /api/slate/event-email-check` | `event_registrant_email_check` (not maindb) | Event registration forms' own scripts | `form_title`, `email` |
 | `GET /api/slate/checkin-qr-image` | (proxies a Slate-rendered PNG, not maindb) | Check-In (`tools/checkin/`) | `url` (validated against `CHECKIN_QR_IMAGE_PATTERN`) |
 
 The last three (before `checkin-search`) have no caller since the portal
@@ -80,34 +81,41 @@ running on `enroll.gs.edu`. It therefore checks `Origin`/`Referer` against
 needs the `CHECKIN_KEY` passcode in an `X-Checkin-Key` header (refused with
 503 while `CHECKIN_KEY`, `SLATE_CHECKIN_QUERY_URL` or `SLATE_TOKEN_CHECKIN`
 is unset). Since 2026-10-27 it no longer reads maindb: it runs its own
-`checkin_btc_registrants` query, pinned in Slate to the BTC 2027 individual
-registration form, with `last` as its only parameter, and returns only
-`id`, `name` and `church` per match (25 at most). See "CHECK-IN LAST-NAME
-LOOKUP" in `worker.js` and "Look up by last name" in
-`tools/checkin/README.md` for why and for the query's exact setup.
+`checkin_event_registrants` query and returns only `id`, `name` and
+`church` per match (25 at most). See "CHECK-IN LAST-NAME LOOKUP" in
+`worker.js` and "Look up by last name" in `tools/checkin/README.md` for why
+and for the query's exact setup.
 
-```bash
-wrangler secret put SLATE_CHECKIN_QUERY_URL   # checkin_btc_registrants web service URL
-wrangler secret put SLATE_TOKEN_CHECKIN       # that query's token
-wrangler secret put CHECKIN_KEY               # passcode the check-in staff type once per device
-```
-
-`btc-email-check` is the other exception: the BTC 2027 individual
+`event-email-check` is the other exception: an event's individual
 registration form's own Custom Script calls it on `enroll.gs.edu` to stop a
 group leader registering several people under one email (a reused email
 matches the same Slate person, so the second registration overwrites the
 first). It checks `PORTAL_ORIGIN` and the rate limit but needs no key, since
 the public form can't hold one, and answers only `{ "registered": true|false }`.
-It runs its own `btc_registrant_email_check` query (Slate, 2026-10-27: Form
-Response base, custom SQL filter pinned to the BTC 2027 individual form,
-active registrations, person email = `@email`, `email` its only web-service
-parameter). With either secret unset it returns 503 and the form lets the
-registrant submit. The form side is the "BTC DUPLICATE EMAIL CHECK" block in
-`local.files.misc/BTC/ind-registration.js`.
+It runs its own `event_registrant_email_check` query (Form Response base,
+custom SQL filter: the form titled `@form_title`, active registrations,
+person email = `@email`). With either secret unset it returns 503 and the
+form lets the registrant submit. The form side is the "EVENT DUPLICATE EMAIL
+CHECK" block in `local.files.misc/BTC/ind-registration.js` (built for BTC
+2027, 2026-10-27).
+
+**Both serve every conference.** Each call names the event's registration
+form by its exact Slate title (`form_title`), and each query matches only
+that form, so a new conference needs no new query, token or secret: the
+check-in devices are given the form's title, and the email-check block is
+pasted into the new form with its title. A blank or unknown title matches
+nobody. Both queries must stay limited to event registration forms, since
+`form_title` comes from the caller. (Until 2026-10-28 these were
+`checkin_btc_registrants` and `btc_registrant_email_check`, pinned to the
+BTC 2027 form, with `SLATE_BTC_EMAIL_QUERY_URL`/`SLATE_TOKEN_BTC_EMAIL` and a
+`/api/slate/btc-email-check` route.)
 
 ```bash
-wrangler secret put SLATE_BTC_EMAIL_QUERY_URL # btc_registrant_email_check web service URL
-wrangler secret put SLATE_TOKEN_BTC_EMAIL     # that query's token
+wrangler secret put SLATE_CHECKIN_QUERY_URL     # checkin_event_registrants web service URL
+wrangler secret put SLATE_TOKEN_CHECKIN         # that query's token
+wrangler secret put CHECKIN_KEY                 # passcode the check-in staff type once per device
+wrangler secret put SLATE_EVENT_EMAIL_QUERY_URL # event_registrant_email_check web service URL
+wrangler secret put SLATE_TOKEN_EVENT_EMAIL     # that query's token
 ```
 
 Route parameter names that differ from the maindb query’s own are renamed by

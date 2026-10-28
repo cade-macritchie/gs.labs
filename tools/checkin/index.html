@@ -104,7 +104,7 @@
     .lookup-row { display: flex; gap: 10px; }
     .lookup-row input { flex: 1; min-width: 0; height: var(--tap); padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--white); color: var(--ink); font-size: 1.05rem; }
     .lookup-row input:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(35,64,72,.14); }
-    .lookup-passcode { margin-top: 12px; }
+    .lookup-event, .lookup-passcode { margin-top: 12px; }
     .lookup .print-station-status:empty { display: none; }
     .lookup-results { display: grid; gap: 8px; margin-top: 10px; }
     .lookup-result { display: block; width: 100%; min-height: var(--tap); padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--canvas); color: var(--ink); text-align: left; cursor: pointer; }
@@ -213,6 +213,10 @@
         <input id="lookup-last" type="search" maxlength="60" placeholder="Last name" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Last name">
         <button class="secondary" id="lookup-btn" type="submit">Find</button>
       </form>
+      <label class="setting-field lookup-event">
+        <span>Event registration form (its exact title in Slate)</span>
+        <input id="lookup-form-title" type="text" maxlength="120" autocomplete="off" autocorrect="off" spellcheck="false">
+      </label>
       <label class="setting-field lookup-passcode" id="lookup-passcode" hidden>
         <span>Check-in passcode (from the event lead, asked once on this device)</span>
         <input id="lookup-key" type="password" autocomplete="off">
@@ -290,7 +294,7 @@
     // PRINT_STATION_SERVICE and has the job pushed to it. See "Print station"
     // below.
     const PRINT_QUEUE_SERVICE = WORKER_URL + '/api/checkin/print-queue';
-    // Last-name lookup of BTC 2027 individual registrants — see "CHECK-IN
+    // Last-name lookup of one event registration form's registrants — see "CHECK-IN
     // LAST-NAME LOOKUP" in tools/queryomatic/worker.js and "Look up by last
     // name" below.
     const CHECKIN_SEARCH_SERVICE = WORKER_URL + '/api/slate/checkin-search';
@@ -1122,9 +1126,12 @@
     // ----------------------------------------------------------------
     // Look up by last name
     //
-    // For a registrant without their mobile pass. The Worker searches the
-    // BTC 2027 individual registrants only (its own Slate query, pinned to
-    // that form) and returns name, church and registration GUID. Tapping a
+    // For a registrant without their mobile pass. The Worker searches only
+    // the registrants of the event registration form named here (its own
+    // Slate query, matched by the form's exact title) and returns name,
+    // church and registration GUID. The title is set once per device, or
+    // with ?form=<title> on the link handed to volunteers, and kept in
+    // localStorage like the station name. Tapping a
     // result prints exactly what scanning their pass would: Slate's own QR
     // for that registration is fetched (through checkin-qr-image, for CORS)
     // and decoded with jsQR, and the decoded value goes through
@@ -1138,7 +1145,9 @@
 
     const SLATE_PASS_URL = 'https://enroll.gs.edu/register/mobile';
     const LOOKUP_KEY_KEY = 'checkin.lookupKey';
+    const LOOKUP_FORM_TITLE_KEY = 'checkin.lookupFormTitle';
     const lookupForm = document.getElementById('lookup-form');
+    const lookupFormTitleInput = document.getElementById('lookup-form-title');
     const lookupLastInput = document.getElementById('lookup-last');
     const lookupBtn = document.getElementById('lookup-btn');
     const lookupPasscode = document.getElementById('lookup-passcode');
@@ -1153,12 +1162,30 @@
       lookupKeyInput.focus();
     }
 
+    function cleanFormTitle(value) {
+      return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    }
+
+    (function initLookupFormTitle() {
+      let fromUrl = '';
+      try { fromUrl = cleanFormTitle(new URLSearchParams(window.location.search).get('form')); } catch (e) { /* ignore */ }
+      if (fromUrl) writeStored(LOOKUP_FORM_TITLE_KEY, fromUrl);
+      lookupFormTitleInput.value = fromUrl || cleanFormTitle(readStored(LOOKUP_FORM_TITLE_KEY));
+      lookupFormTitleInput.addEventListener('change', function () {
+        const title = cleanFormTitle(lookupFormTitleInput.value);
+        lookupFormTitleInput.value = title;
+        writeStored(LOOKUP_FORM_TITLE_KEY, title);
+      });
+    }());
+
     async function searchByLastName() {
       const last = lookupLastInput.value.trim().replace(/\s+/g, ' ');
+      const formTitle = cleanFormTitle(lookupFormTitleInput.value);
       const typedKey = lookupKeyInput.value.trim();
       if (typedKey) writeStored(LOOKUP_KEY_KEY, typedKey);
       const key = readStored(LOOKUP_KEY_KEY);
       lookupResults.replaceChildren();
+      if (!formTitle) { lookupStatus.textContent = 'Enter the event’s registration form title, then tap Find.'; lookupFormTitleInput.focus(); return; }
       if (!key) { askForPasscode('Enter the check-in passcode, then tap Find.'); return; }
       if (last.length < 2) { lookupStatus.textContent = 'Type at least two letters of a last name.'; return; }
 
@@ -1167,6 +1194,7 @@
       lookupStatus.textContent = 'Searching…';
       try {
         const url = new URL(CHECKIN_SEARCH_SERVICE);
+        url.searchParams.set('form_title', formTitle);
         url.searchParams.set('last', last);
         const response = await fetch(url.toString(), { cache: 'no-store', headers: { 'X-Checkin-Key': key } });
         const data = await response.json().catch(function () { return {}; });
@@ -1180,7 +1208,7 @@
         if (!response.ok) throw new Error(data.error || 'returned ' + response.status);
         lookupPasscode.hidden = true;
         lookupKeyInput.value = '';
-        renderLookupResults(Array.isArray(data.results) ? data.results : [], last);
+        renderLookupResults(Array.isArray(data.results) ? data.results : [], last, formTitle);
       } catch (err) {
         if (token !== lookupToken) return;
         lookupStatus.textContent = 'Lookup failed: ' + (err && err.message ? err.message : 'unknown error') + '.';
@@ -1189,11 +1217,13 @@
       }
     }
 
-    function renderLookupResults(results, last) {
+    // An empty result is also what a mistyped form title returns, so the
+    // message names the form searched.
+    function renderLookupResults(results, last, formTitle) {
       lookupResults.replaceChildren();
       lookupStatus.textContent = results.length
         ? 'Tap the registrant to print their badge.'
-        : 'No BTC 2027 registrant has a last name starting with “' + last + '”. Check the spelling, or try the name they registered under.';
+        : 'No registrant of “' + formTitle + '” has a last name starting with “' + last + '”. Check the spelling (or try the name they registered under), and that the form title matches Slate exactly.';
       results.forEach(function (result) {
         const button = document.createElement('button');
         button.type = 'button';

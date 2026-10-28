@@ -67,13 +67,13 @@
  * - GET /api/slate/regional-campus-records    (regional-campus wrapper)
  * - GET /api/slate/additional-applications    (student-lookup wrapper)
  *
- * - GET /api/slate/checkin-search             (tools/checkin/ last-name lookup of BTC 2027
- *   individual registrants, called directly from GitHub Pages — NOT a Slate
- *   wrapper. Backed by its own Slate query, not maindb, and gated by
- *   ALLOWED_ORIGIN + the CHECKIN_KEY passcode. See "CHECK-IN LAST-NAME LOOKUP".)
- * - GET /api/slate/btc-email-check            (BTC 2027 individual registration form script:
- *   is this email already registered? yes/no only. PORTAL_ORIGIN + rate limit,
- *   no key. See "BTC DUPLICATE-EMAIL CHECK".)
+ * - GET /api/slate/checkin-search             (tools/checkin/ last-name lookup of one event
+ *   registration form's registrants (form_title), called directly from GitHub
+ *   Pages — NOT a Slate wrapper. Backed by its own Slate query, not maindb, and
+ *   gated by ALLOWED_ORIGIN + the CHECKIN_KEY passcode. See "CHECK-IN LAST-NAME LOOKUP".)
+ * - GET /api/slate/event-email-check          (an event registration form's own script:
+ *   is this email already registered on that form (form_title)? yes/no only.
+ *   PORTAL_ORIGIN + rate limit, no key. See "EVENT DUPLICATE-EMAIL CHECK".)
  * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
  *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
  * - POST /api/checkin/print-queue             (tools/checkin/ scanners queue a print job)
@@ -96,11 +96,14 @@
  * - PORTAL_KEY                                 (shared gateway key the Slate portal views send
  *                                               as X-GS-Key — see gatewayKeyAllowed. Unset = not
  *                                               enforced, so code can deploy before Slate is ready.)
- * - SLATE_CHECKIN_QUERY_URL                    (checkin_btc_registrants query: /api/slate/checkin-search)
+ * - SLATE_CHECKIN_QUERY_URL                    (checkin_event_registrants query: /api/slate/checkin-search)
  * - SLATE_TOKEN_CHECKIN                        (that query's token)
- * - SLATE_BTC_EMAIL_QUERY_URL                  (btc_registrant_email_check query: /api/slate/btc-email-check)
- * - SLATE_TOKEN_BTC_EMAIL                      (that query's token. Either unset = check returns 503,
+ * - SLATE_EVENT_EMAIL_QUERY_URL                (event_registrant_email_check query: /api/slate/event-email-check)
+ * - SLATE_TOKEN_EVENT_EMAIL                    (that query's token. Either unset = check returns 503,
  *                                               and the form lets people submit.)
+ *   One query (and token) per route serves every conference: each call names
+ *   its registration form by title (form_title), so a new event needs no new
+ *   secrets.
  * - CHECKIN_KEY                                (passcode tools/checkin/ devices send as X-Checkin-Key
  *                                               for the last-name lookup. Unset = lookup refused.)
  *
@@ -480,21 +483,42 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 
 
 // ============================================================
-// CHECK-IN LAST-NAME LOOKUP (GET /api/slate/checkin-search?last=<name>)
+// EVENT REGISTRATION FORM TITLE (form_title)
 //
-// For a BTC 2027 registrant who can't pull up their mobile pass:
-// tools/checkin/ sends a last name and gets back the matching individual
-// registrants (name, church, and their registration GUID, which is the id
-// in their mobile-pass link). Tapping one prints the same label a scan of
-// that pass would. See tools/checkin/README.md.
+// checkin-search and event-email-check each run one Slate query for every
+// conference: the caller names the registration form by its exact Slate
+// title (as shown in Slate's form list) and the query matches that one form, so a new event needs no new query, token or secret. Both
+// queries match event registration forms only, and a blank or unknown title
+// matches nobody. The title isn't a secret (the form shows it), so this only
+// checks its shape.
+// ============================================================
+
+// 2-120 characters: letters, digits, spaces and the punctuation form titles use.
+const FORM_TITLE_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} :;'’&().,\/+#|–—-]{1,119}$/u;
+
+function formTitleParam(searchParams) {
+  const title = String(searchParams.get("form_title") || "").trim().replace(/\s+/g, " ");
+  return FORM_TITLE_PATTERN.test(title) ? title : "";
+}
+
+
+// ============================================================
+// CHECK-IN LAST-NAME LOOKUP (GET /api/slate/checkin-search?form_title=<title>&last=<name>)
 //
-// Backed by its own Slate query (checkin_btc_registrants, SLATE_CHECKIN_QUERY_URL),
-// NOT maindb. Checked read-only 2026-10-27: all_people filtered to the BTC
-// 2027 event (event_title + event_date_*) is one row per person with no
-// registration/pass GUID, QR value or church column, so a lookup there
-// couldn't print a badge. The query's own filter pins it to the BTC 2027
-// individual registration form, and the only parameter is `last`, so a
-// caller can't widen it to anyone else.
+// For a registrant who can't pull up their mobile pass: tools/checkin/
+// sends the event's registration form title and a last name, and gets back
+// the matching registrants of that form (name, church, and their
+// registration GUID, which is the id in their mobile-pass link). Tapping one
+// prints the same label a scan of that pass would. See tools/checkin/README.md.
+//
+// Backed by its own Slate query (checkin_event_registrants,
+// SLATE_CHECKIN_QUERY_URL), NOT maindb. Checked read-only 2026-10-27:
+// all_people filtered to an event (event_title + event_date_*) is one row per
+// person with no registration/pass GUID, QR value or church column, so a
+// lookup there couldn't print a badge. The query matches one event
+// registration form by title (see "EVENT REGISTRATION FORM TITLE"), so a
+// caller can't widen it past that form's registrants. `church` is the form's
+// `church` field, blank on forms without one.
 //
 // Not behind PORTAL_KEY: the page runs on GitHub Pages and on volunteers'
 // tablets, which must never hold the gateway key (it unlocks every maindb
@@ -532,6 +556,11 @@ async function handleCheckinSearch(request, env, id) {
     return missingFilterResponse(env, id, env.ALLOWED_ORIGIN);
   }
 
+  const formTitle = formTitleParam(searchParams);
+  if (!formTitle) {
+    return json({ error: "Set the event's registration form title first", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
+  }
+
   const last = String(searchParams.get("last") || "").trim().replace(/\s+/g, " ");
   if (!CHECKIN_LAST_NAME_PATTERN.test(last)) {
     return json({ error: "Type at least two letters of a last name", requestId: id }, env, 400, env.ALLOWED_ORIGIN);
@@ -539,6 +568,7 @@ async function handleCheckinSearch(request, env, id) {
 
   const url = new URL(env.SLATE_CHECKIN_QUERY_URL);
   url.searchParams.set("output", "json");
+  url.searchParams.set("form_title", formTitle);
   url.searchParams.set("last", last);
   // Logs the route and result count only, never the name searched for.
   logInfo(id, "Checkin search request", { route: "checkin-search" });
@@ -578,58 +608,68 @@ async function handleCheckinSearch(request, env, id) {
 
 
 // ============================================================
-// BTC DUPLICATE-EMAIL CHECK (GET /api/slate/btc-email-check)
+// EVENT DUPLICATE-EMAIL CHECK (GET /api/slate/event-email-check?form_title=<title>&email=<email>)
 //
-// The BTC 2027 individual registration form (enroll.gs.edu) asks this whether
-// an email already has an active registration, so a group leader can't
-// register several people under their own email. A reused email matches the
-// same Slate person, so the second registration overwrites the first one's
-// name and only one mobile pass exists. See local.files.misc/BTC/
-// ind-registration.js ("BTC DUPLICATE EMAIL CHECK").
+// An event's individual registration form (enroll.gs.edu) asks this whether
+// an email already has an active registration on that form, so a group
+// leader can't register several people under their own email. A reused
+// email matches the same Slate person, so the second registration overwrites
+// the first one's name and only one mobile pass exists. Built for BTC 2027;
+// see local.files.misc/BTC/ind-registration.js ("EVENT DUPLICATE EMAIL
+// CHECK"), whose block is pasted into each conference's form with that
+// form's title.
 //
-// Backed by its own Slate query (btc_registrant_email_check,
-// SLATE_BTC_EMAIL_QUERY_URL), pinned to the BTC 2027 individual form with
-// `email` as its only parameter. Answers yes/no only, never names or ids.
+// Backed by its own Slate query (event_registrant_email_check,
+// SLATE_EVENT_EMAIL_QUERY_URL), with `form_title` (see "EVENT REGISTRATION
+// FORM TITLE") and `email` as its only parameters. Answers yes/no only,
+// never names or ids.
 //
 // Not behind PORTAL_KEY: it's called from the public registration form, which
 // can't hold a key. Gated by origin (PORTAL_ORIGIN) and the rate limit. That
-// leaves "is this email registered for BTC?" answerable by anyone who sends
-// that Origin header, which is the same thing the form itself reveals.
+// leaves "is this email registered for this event?" answerable by anyone who
+// sends that Origin header, which is the same thing each form itself reveals.
 // Unset secrets return 503, and the form lets the registrant submit.
 // ============================================================
 
 // Loose on purpose: Slate's own email field validates the format.
-const BTC_EMAIL_PATTERN = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+const REGISTRANT_EMAIL_PATTERN = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 
-async function handleBtcEmailCheck(request, env, id) {
+async function handleEventEmailCheck(request, env, id) {
   if (!originAllowed(request, env.PORTAL_ORIGIN)) {
     return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
   }
 
-  if (!env.SLATE_BTC_EMAIL_QUERY_URL || !env.SLATE_TOKEN_BTC_EMAIL) {
+  if (!env.SLATE_EVENT_EMAIL_QUERY_URL || !env.SLATE_TOKEN_EVENT_EMAIL) {
     return json({ error: "Email check isn't set up yet", requestId: id }, env, 503, env.PORTAL_ORIGIN);
   }
 
-  if (!(await checkRateLimit(env, request, "btc-email-check"))) {
+  if (!(await checkRateLimit(env, request, "event-email-check"))) {
     return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
   }
 
-  const email = String(new URL(request.url).searchParams.get("email") || "").trim();
-  if (!BTC_EMAIL_PATTERN.test(email)) {
+  const searchParams = new URL(request.url).searchParams;
+  const formTitle = formTitleParam(searchParams);
+  if (!formTitle) {
+    return json({ error: "Send the registration form's title", requestId: id }, env, 400, env.PORTAL_ORIGIN);
+  }
+
+  const email = String(searchParams.get("email") || "").trim();
+  if (!REGISTRANT_EMAIL_PATTERN.test(email)) {
     return json({ error: "Send an email address", requestId: id }, env, 400, env.PORTAL_ORIGIN);
   }
 
-  const url = new URL(env.SLATE_BTC_EMAIL_QUERY_URL);
+  const url = new URL(env.SLATE_EVENT_EMAIL_QUERY_URL);
   url.searchParams.set("output", "json");
+  url.searchParams.set("form_title", formTitle);
   url.searchParams.set("email", email);
   // Logs the route and the answer only, never the email.
-  logInfo(id, "BTC email check request", { route: "btc-email-check" });
+  logInfo(id, "Event email check request", { route: "event-email-check" });
 
   const resp = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_BTC_EMAIL}`, Accept: "application/json" },
+    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_EVENT_EMAIL}`, Accept: "application/json" },
   });
   if (!resp.ok) {
-    logError(id, "BTC email check query failed", { status: resp.status });
+    logError(id, "Event email check query failed", { status: resp.status });
     throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
   }
 
@@ -641,7 +681,7 @@ async function handleBtcEmailCheck(request, env, id) {
   }
 
   const registered = Array.isArray(data?.row) && data.row.length > 0;
-  logInfo(id, "BTC email check result", { registered });
+  logInfo(id, "Event email check result", { registered });
   return json({ registered }, env, 200, env.PORTAL_ORIGIN);
 }
 
@@ -3282,9 +3322,12 @@ export default {
           url.pathname,
 
         // A check-in lookup's query string is a registrant's last name, and
-        // a BTC email check's is an email address.
+        // an event email check's is an email address. btc-email-check is the
+        // email check's old path (404 now), still called by the BTC form's
+        // script until it's repasted.
         search:
           url.pathname === "/api/slate/checkin-search" ||
+          url.pathname === "/api/slate/event-email-check" ||
           url.pathname === "/api/slate/btc-email-check"
             ? "[REDACTED]"
             : url.search,
@@ -3437,13 +3480,13 @@ export default {
         return await handleCheckinSearch(request, env, id);
       }
 
-      // Called directly from the BTC 2027 registration form's own script
-      // (PORTAL_ORIGIN), not a wrapper — see "BTC DUPLICATE-EMAIL CHECK".
+      // Called directly from an event registration form's own script
+      // (PORTAL_ORIGIN), not a wrapper — see "EVENT DUPLICATE-EMAIL CHECK".
       if (
-        url.pathname === "/api/slate/btc-email-check" &&
+        url.pathname === "/api/slate/event-email-check" &&
         request.method === "GET"
       ) {
-        return await handleBtcEmailCheck(request, env, id);
+        return await handleEventEmailCheck(request, env, id);
       }
 
       // Re-serves a per_qr_url PNG with CORS headers so tools/checkin/ can

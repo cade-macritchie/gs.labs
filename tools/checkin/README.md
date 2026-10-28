@@ -3,8 +3,8 @@
 Tablet/mobile-first check-in portal: tap "Scan with camera", point the
 device's camera at a registrant's badge, and its QR code is decoded and
 handed off for reprinting — no manual print step. A registrant without their
-pass can be looked up by last name instead (BTC 2027 individual registrants
-only, see "Look up by last name"). Hosted on GitHub Pages.
+pass can be looked up by last name instead (registrants of the event
+registration form set on the device, see "Look up by last name"). Hosted on GitHub Pages.
 
 Any device that can load this page and run a camera can scan (including
 one that can't run DYMO Connect at all, like a Kindle Fire tablet — see
@@ -47,8 +47,8 @@ short-lived infrastructure, not a check-in record — see "Print stations".)
   script). On a successful decode, the overlay closes and the value is
   queued for a print station — see `handleDecodedValue()`.
   The original maindb name search and the manual scan/paste input were
-  removed 2026-09-24. A last-name lookup came back 2026-10-27, scoped to BTC
-  2027 individual registrants, and prints through this same scan path — see
+  removed 2026-09-24. A last-name lookup came back 2026-10-27, scoped to one
+  event registration form's registrants, and prints through this same scan path — see
   "Look up by last name".
 - **`isProbablyUrl()` is kept even though camera-scanned codes are never
   URL-shaped in practice.** It was built for the old name-search flow's
@@ -61,21 +61,28 @@ short-lived infrastructure, not a check-in record — see "Print stations".)
 
 ## Look up by last name
 
-Added 2026-10-27 for registrants who arrive without their mobile pass. Type
-a last name under "No pass? Look up by last name", tap **Find**, then tap the
-person. Each result shows the name and, when there is one, the church.
+Added 2026-10-27 for registrants who arrive without their mobile pass.
+Set the event's registration form once per device under "Event registration
+form", by its exact title in Slate (or open the page with
+`?form=<title>`, e.g. on the link handed to volunteers, which saves it the
+same way `?station=` does). Then type a last name under "No pass? Look up by
+last name", tap **Find**, then tap the person. Each result shows the name
+and, when there is one, the church.
 
-- **Only BTC 2027 individual registrants are searched**, never all of
-  maindb. The page calls `GET /api/slate/checkin-search?last=<name>`, and the
-  Worker runs its own Slate query, `checkin_btc_registrants`, whose filters
-  pin it to the BTC 2027 individual registration form. `last` is the only
-  parameter, so the page can't widen the search. Matches are last names
-  *starting with* what was typed, at least two letters, 25 results at most.
+- **Only that form's registrants are searched**, never all of maindb. The
+  page calls `GET /api/slate/checkin-search?form_title=<title>&last=<name>`,
+  and the Worker runs its own Slate query, `checkin_event_registrants`,
+  which matches the one event registration form with that exact title. One
+  query serves every conference (BTC 2027 first), so a new event only needs
+  its form title typed on the devices. A mistyped title finds nobody, which
+  is why the "no registrant" message names the form searched. Matches are
+  last names *starting with* what was typed, at least two letters, 25
+  results at most.
 - **Why not maindb:** checked read-only 2026-10-27, `all_people` filtered to
-  the BTC 2027 event (`event_title` + `event_date_start/_end` = 2027-01-30)
+  an event (BTC 2027: `event_title` + `event_date_start/_end` = 2027-01-30)
   returns one row per person with no registration or pass GUID, no QR value
   and no church. It couldn't print the badge a scan prints. It also can't
-  tell the individual form from other BTC 2027 forms.
+  tell an event's individual form from its other forms.
 - **A looked-up badge matches a scanned one.** Tapping a result fetches
   Slate's own QR image for that registration
   (`enroll.gs.edu/register/mobile?id=<reg_id>&cmd=barcode`, through
@@ -97,39 +104,47 @@ person. Each result shows the name and, when there is one, the church.
 
 ### The Slate query this needs
 
-Created in Slate 2026-10-27 (query id `304b4661-7024-4e06-9bb2-a37670070f24`).
-As built: one custom SQL filter (form, not cancelled/declined, not pending,
+Created in Slate 2026-10-27 as `checkin_btc_registrants` (query id
+`304b4661-7024-4e06-9bb2-a37670070f24`), pinned to the BTC 2027 individual
+registration form (GUID `13b61153-c379-4b88-bffa-d8688ec85af4`). To serve
+every conference (2026-10-28) it's renamed `checkin_event_registrants` and
+names the form by a `form_title` parameter instead of the pinned GUID. As
+built for BTC: one
+custom SQL filter (form, not cancelled/declined, not pending,
 `len(@last) >= 2`, and the person's last name starts with `@last` via
 `left(...) =`, so `%`/`_` aren't wildcards); `reg_id` is the Form Response
 GUID; `reg_first`/`reg_last` come from `[person]`; `reg_church` is
-`dbo.getFormResponseTopTable(<response>, 'church')`. The Church Name field had
-no export key, so it was given `church` the same day (older answers resolve
-under it too). The original spec:
+`dbo.getFormResponseTopTable(<response>, 'church')`. The BTC form's Church
+Name field had no export key, so it was given `church` the same day (older
+answers resolve under it too); give other events' church fields the same
+key, or the badge prints without one. The spec:
 
-- **Name** `checkin_btc_registrants`, Configurable Joins, base **Form
+- **Name** `checkin_event_registrants`, Configurable Joins, base **Form
   Responses**, in the same folder as `all_people`.
-- **Filters:** Form is the BTC 2027 individual registration form (GUID
-  `13b61153-c379-4b88-bffa-d8688ec85af4`), and the response isn't Cancelled,
-  Declined or Saved for Later (the same rule maindb's `event_*` filters use).
-- **Parameter `last`:** declare it under **Edit Web Service** first
-  (`<param id="last" type="string" />`), then add a Formula filter
-  `((@last is not null) and (@last <> '') and (@v_last like @last + '%'))`
-  with the person's Last Name export renamed `v_last`. Unlike maindb's
-  filters, a blank `last` must match **nobody**.
+- **Parameters:** declare both under **Edit Web Service**
+  (`<param id="form_title" type="string" />` and
+  `<param id="last" type="string" />`).
+- **Filter:** in the custom SQL filter, the response's form is an event
+  registration form whose title equals `@form_title` exactly, and the
+  response isn't Cancelled, Declined or Saved for Later (the same rule
+  maindb's `event_*` filters use). A blank `form_title` or `last` must
+  match **nobody**, unlike maindb's filters. Keep the event-form limit:
+  `form_title` comes from the caller, and the passcode is all that stands
+  between a device and any form it names.
 - **Exports** (exact names):
   - `reg_id`: the form response's GUID. It must be the `id=` in the
     registrant's mobile-pass link (check one against the "View mobile pass"
     button in a "Thanks for Registering" email).
   - `reg_first`, `reg_last`: the person's first and last name, as the pass
     prints them.
-  - `reg_church`: the form's church field (the value the pass's Church line
-    shows), as a Form Field Value export.
+  - `reg_church`: the form's `church` field (the value the pass's Church
+    line shows), blank on forms without one.
 - **Web service:** JSON, authenticated the same way as `all_people`. Put its
   URL in `wrangler secret put SLATE_CHECKIN_QUERY_URL` and its token in
   `SLATE_TOKEN_CHECKIN` (see `tools/queryomatic/README.md`). The Worker adds
-  `output=json` and `last` itself.
+  `output=json`, `form_title` and `last` itself.
 - Then `wrangler secret put CHECKIN_KEY` with a passcode to give the
-  check-in staff.
+  check-in staff. These three secrets serve every conference.
 
 ## Print stations
 
