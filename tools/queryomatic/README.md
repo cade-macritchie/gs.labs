@@ -92,9 +92,10 @@ group leader registering several people under one email (a reused email
 matches the same Slate person, so the second registration overwrites the
 first). It checks `PORTAL_ORIGIN` and the rate limit but needs no key, since
 the public form can't hold one, and answers only `{ "registered": true|false }`.
-It runs its own `event_registrant_email_check` query (Form Response base,
-custom SQL filter: the form titled `@form_title`, active registrations,
-person email = `@email`). With either secret unset it returns 503 and the
+It runs its own `event_registrant_email_check` query (Slate query id
+`3ebc59ad-3ee5-43b6-8fba-f9f765803d08`, folder **ai**; Form Response base,
+custom SQL filter: the event form whose `[form].[summary]` is `@form_title`
+and `[date] is not null`, active registrations, person email = `@email`). With either secret unset it returns 503 and the
 form lets the registrant submit. The form side is the "EVENT DUPLICATE EMAIL
 CHECK" block in `local.files.misc/BTC/ind-registration.js` (built for BTC
 2027, 2026-10-27).
@@ -107,7 +108,7 @@ pasted into the new form with its title. A blank or unknown title matches
 nobody. Both queries must stay limited to event registration forms, since
 `form_title` comes from the caller. (Until 2026-10-28 these were
 `checkin_btc_registrants` and `btc_registrant_email_check`, pinned to the
-BTC 2027 form, with `SLATE_BTC_EMAIL_QUERY_URL`/`SLATE_TOKEN_BTC_EMAIL` and a
+BTC 2027 form and still in Slate, unused, with `SLATE_BTC_EMAIL_QUERY_URL`/`SLATE_TOKEN_BTC_EMAIL` and a
 `/api/slate/btc-email-check` route.)
 
 ```bash

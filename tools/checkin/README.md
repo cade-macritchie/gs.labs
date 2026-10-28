@@ -104,23 +104,33 @@ and, when there is one, the church.
 
 ### The Slate query this needs
 
-Created in Slate 2026-10-27 as `checkin_btc_registrants` (query id
-`304b4661-7024-4e06-9bb2-a37670070f24`), pinned to the BTC 2027 individual
-registration form (GUID `13b61153-c379-4b88-bffa-d8688ec85af4`). To serve
-every conference (2026-10-28) it's renamed `checkin_event_registrants` and
-names the form by a `form_title` parameter instead of the pinned GUID. As
-built for BTC: one
-custom SQL filter (form, not cancelled/declined, not pending,
-`len(@last) >= 2`, and the person's last name starts with `@last` via
-`left(...) =`, so `%`/`_` aren't wildcards); `reg_id` is the Form Response
+`checkin_event_registrants` (query id `32f3a537-69bb-47b4-b11e-1bfe1e098217`,
+folder **ai**), built 2026-10-28 as a copy of the BTC-only
+`checkin_btc_registrants` (`304b4661-7024-4e06-9bb2-a37670070f24`, pinned to
+form GUID `13b61153-c379-4b88-bffa-d8688ec85af4`; kept, unused). One custom
+SQL filter:
+
+```sql
+len(ltrim(rtrim(isnull(@form_title, '')))) > 0
+and fr__JID_.[form] in (select f.[id] from [form] f where f.[summary] = ltrim(rtrim(@form_title)) and f.[date] is not null)
+and isnull(fr__JID_.[status], '') not in ('cancel', 'decline')
+and isnull(fr__JID_.[pending], 0) = 0
+and len(ltrim(rtrim(isnull(@last, '')))) >= 2
+and left((select p.[last] from [person] p where p.[id] = fr__JID_.[person]), len(ltrim(rtrim(@last)))) = ltrim(rtrim(@last))
+```
+
+A form's title is `[form].[summary]` (there's no `[title]` column), and
+`[date] is not null` keeps it to events, since plain forms have no date.
+`left(...) =` means `%`/`_` aren't wildcards. `reg_id` is the Form Response
 GUID; `reg_first`/`reg_last` come from `[person]`; `reg_church` is
 `dbo.getFormResponseTopTable(<response>, 'church')`. The BTC form's Church
-Name field had no export key, so it was given `church` the same day (older
+Name field had no export key, so it was given `church` on 2026-10-27 (older
 answers resolve under it too); give other events' church fields the same
-key, or the badge prints without one. The spec:
+key, or the badge prints without one. BTC 2027's form title is "The Bible
+Teaching Conference Registration 2027". The spec:
 
 - **Name** `checkin_event_registrants`, Configurable Joins, base **Form
-  Responses**, in the same folder as `all_people`.
+  Responses**, folder **ai**.
 - **Parameters:** declare both under **Edit Web Service**
   (`<param id="form_title" type="string" />` and
   `<param id="last" type="string" />`).
