@@ -577,7 +577,12 @@ async function handleCheckinSearch(request, env, id) {
     headers: { Authorization: `Bearer ${env.SLATE_TOKEN_CHECKIN}`, Accept: "application/json" },
   });
   if (!resp.ok) {
-    logError(id, "Checkin search query failed", { status: resp.status });
+    // Query location + Slate's reply, never the name searched for.
+    logError(id, "Checkin search query failed", {
+      status: resp.status,
+      query: `${url.origin}${url.pathname}?id=${url.searchParams.get("id")}&cmd=${url.searchParams.get("cmd")}`,
+      body: (await resp.text()).slice(0, 500),
+    });
     throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
   }
 
@@ -669,7 +674,12 @@ async function handleEventEmailCheck(request, env, id) {
     headers: { Authorization: `Bearer ${env.SLATE_TOKEN_EVENT_EMAIL}`, Accept: "application/json" },
   });
   if (!resp.ok) {
-    logError(id, "Event email check query failed", { status: resp.status });
+    // Query location + Slate's reply, never the email checked.
+    logError(id, "Event email check query failed", {
+      status: resp.status,
+      query: `${url.origin}${url.pathname}?id=${url.searchParams.get("id")}&cmd=${url.searchParams.get("cmd")}`,
+      body: (await resp.text()).slice(0, 500),
+    });
     throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
   }
 
