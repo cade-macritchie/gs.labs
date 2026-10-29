@@ -119,7 +119,9 @@ and len(ltrim(rtrim(isnull(@last, '')))) >= 2
 and left((select p.[last] from [person] p where p.[id] = fr__JID_.[person]), len(ltrim(rtrim(@last)))) = ltrim(rtrim(@last))
 ```
 
-A form's title is `[form].[summary]` (there's no `[title]` column), and
+A form's title is `[form].[summary]` (there's no `[title]` column). For an
+event that's the event name (the form builder's browser tab title), not the
+"...Registration..." name in the builder's breadcrumb. And
 `[date] is not null` keeps it to events, since plain forms have no date.
 `left(...) =` means `%`/`_` aren't wildcards. `reg_id` is the Form Response
 GUID; `reg_first`/`reg_last` come from `[person]`; `reg_church` is
@@ -127,7 +129,7 @@ GUID; `reg_first`/`reg_last` come from `[person]`; `reg_church` is
 Name field had no export key, so it was given `church` on 2026-10-27 (older
 answers resolve under it too); give other events' church fields the same
 key, or the badge prints without one. BTC 2027's form title is "The Bible
-Teaching Conference Registration 2027". The spec:
+Teaching Conference 2027" (checked 2026-10-28). The spec:
 
 - **Name** `checkin_event_registrants`, Configurable Joins, base **Form
   Responses**, folder **ai**.
