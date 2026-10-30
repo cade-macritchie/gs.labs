@@ -468,17 +468,17 @@
 
     // One card per session the event's registrants picked, busiest first.
     // An event with time-slot answers gets a Session A group and a Session B
-    // group (each shown even before anyone picks it), plus an "Earlier
-    // sign-ups" group only when some registrants answered the old field
-    // alone. An event with only the old field keeps one ungrouped set of
-    // cards. Sessions nobody picked never reach the payload, and the section
-    // stays hidden for events without breakout data.
+    // group (each shown even before anyone picks it); registrants who
+    // answered only the old field are left out of the cards there (they
+    // still count as registrants). An event with only the old field keeps
+    // one ungrouped set of cards. Sessions nobody picked never reach the
+    // payload, and the section stays hidden for events without breakout data.
     function renderBreakoutSessions(record) {
       const section = document.getElementById('breakout-sessions');
       const container = document.getElementById('breakout-groups');
       const hasSlots = record.sessionA.length > 0 || record.sessionB.length > 0;
       const groups = BREAKOUT_SLOTS.filter(function (slot) {
-        return slot.key === 'breakouts' ? record.breakouts.length > 0 : hasSlots;
+        return slot.key === 'breakouts' ? !hasSlots && record.breakouts.length > 0 : hasSlots;
       });
       container.replaceChildren();
       section.hidden = groups.length === 0;
