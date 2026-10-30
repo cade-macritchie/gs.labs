@@ -16,6 +16,11 @@ PORTAL_ORIGIN = "https://enroll.gs.edu"
 binding = "OPTIONS_CACHE"
 id = "1fc9b0939692486d91f3147d3b215769"
 
+# Daily portal-analytics archive (archiveAnalyticsHistory in worker.js):
+# folds yesterday's raw events into the permanent per-day rollup.
+[triggers]
+crons = ["15 0 * * *"]
+
 # Per-IP rate limiter for /api/slate/* and /api/checkin/*. Counters live in
 # Cloudflare's rate-limiting service, not KV — see checkRateLimit in worker.js
 # for why. namespace_id is an arbitrary account-unique integer.

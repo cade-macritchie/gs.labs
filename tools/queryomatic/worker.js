@@ -1857,10 +1857,7 @@ async function recordAnalyticsEvent(request, env) {
   return json({ recorded: true }, env, 202);
 }
 
-async function readAnalyticsSummary(url, env) {
-  const requestedDays = Number.parseInt(url.searchParams.get("days") || "30", 10);
-  const days = [7, 30, 90].includes(requestedDays) ? requestedDays : 30;
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+async function listAnalyticsEvents(env, cutoff = 0) {
   const events = [];
   let cursor;
 
@@ -1881,6 +1878,15 @@ async function readAnalyticsSummary(url, env) {
 
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
+
+  return events;
+}
+
+async function readAnalyticsSummary(url, env) {
+  const requestedDays = Number.parseInt(url.searchParams.get("days") || "30", 10);
+  const days = [7, 30, 90].includes(requestedDays) ? requestedDays : 30;
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const events = await listAnalyticsEvents(env, cutoff);
 
   const sessions = new Set();
   const browsers = new Set();
@@ -1924,6 +1930,80 @@ async function readAnalyticsSummary(url, env) {
       }))
       .sort((a, b) => b.pageviews - a.pageviews || a.label.localeCompare(b.label)),
   }, env);
+}
+
+// Raw events expire after 90 days, so the daily cron (wrangler.toml
+// [triggers]) folds each finished UTC day into one permanent per-page rollup
+// under ANALYTICS_HISTORY_KEY. It's a single key, so archiving costs one KV
+// write per day, and any day a missed run skipped is picked up on the next
+// run while its raw events still exist. Events are timestamped by the Worker,
+// so a day can't gain events once it has ended.
+const ANALYTICS_HISTORY_KEY = "analytics:history";
+
+function rollupAnalyticsByDay(events) {
+  const days = new Map();
+
+  for (const event of events) {
+    const date = event.occurredAt.slice(0, 10);
+    if (!days.has(date)) days.set(date, new Map());
+    const pages = days.get(date);
+    if (!pages.has(event.path)) pages.set(event.path, { pageviews: 0, sessions: new Set(), browsers: new Set() });
+    const page = pages.get(event.path);
+    page.pageviews += 1;
+    page.sessions.add(event.session);
+    if (ANALYTICS_IDENTIFIER_PATTERN.test(event.visitor || "")) page.browsers.add(event.visitor);
+  }
+
+  const result = {};
+  for (const [date, pages] of days) {
+    result[date] = {};
+    for (const [path, value] of pages) {
+      result[date][path] = { pageviews: value.pageviews, visits: value.sessions.size, uniqueBrowsers: value.browsers.size };
+    }
+  }
+  return result;
+}
+
+async function archiveAnalyticsHistory(env) {
+  const history = (await env.OPTIONS_CACHE.get(ANALYTICS_HISTORY_KEY, "json")) || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const rollup = rollupAnalyticsByDay(await listAnalyticsEvents(env));
+  const added = Object.keys(rollup).filter((date) => date < today && !history[date]);
+
+  if (!added.length) return 0;
+  for (const date of added) history[date] = rollup[date];
+  await env.OPTIONS_CACHE.put(ANALYTICS_HISTORY_KEY, JSON.stringify(history));
+  return added.length;
+}
+
+function csvCell(value) {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+// Every archived day, plus whatever the cron hasn't archived yet (including
+// today so far) straight from the raw events.
+async function exportAnalyticsCsv(env) {
+  const history = (await env.OPTIONS_CACHE.get(ANALYTICS_HISTORY_KEY, "json")) || {};
+  const rollup = rollupAnalyticsByDay(await listAnalyticsEvents(env));
+  const days = { ...rollup, ...history };
+
+  const rows = [["date", "page", "path", "pageviews", "sessions", "unique_browsers"]];
+  for (const date of Object.keys(days).sort()) {
+    const pages = Object.entries(days[date])
+      .sort(([, a], [, b]) => b.pageviews - a.pageviews);
+    for (const [path, value] of pages) {
+      rows.push([date, analyticsLabel(path), path, value.pageviews, value.visits, value.uniqueBrowsers]);
+    }
+  }
+
+  return new Response(rows.map((row) => row.map(csvCell).join(",")).join("\n") + "\n", {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="portal-analytics-${new Date().toISOString().slice(0, 10)}.csv"`,
+      ...corsHeaders(env),
+    },
+  });
 }
 
 
@@ -3537,6 +3617,13 @@ export default {
         return await readAnalyticsSummary(url, env);
       }
 
+      if (
+        url.pathname === "/api/analytics/export.csv" &&
+        request.method === "GET"
+      ) {
+        return await exportAnalyticsCsv(env);
+      }
+
 
       // ======================================================
       // QUERYOMATIC GUARD
@@ -3866,5 +3953,9 @@ export default {
           : url.pathname.startsWith("/api/slate/") || url.pathname.startsWith("/api/mailings/") ? env.PORTAL_ORIGIN : undefined
       );
     }
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(archiveAnalyticsHistory(env));
   },
 };

@@ -50,9 +50,11 @@
     h1 { margin:0 0 7px; color:#fff; font:700 clamp(1.8rem,4vw,2.4rem)/1.15 var(--font-heading); letter-spacing:-.015em; }
     .subtitle { margin:0; color:var(--subtle-text); line-height:1.55; }
     .updated { margin:0; color:var(--muted); line-height:1.5; }
-    .controls { display:flex; align-items:center; gap:10px; }
+    .controls { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
     label { color:var(--subtle-text); font:750 .7rem var(--font-subheading); letter-spacing:.1em; text-transform:uppercase; }
     select { min-height:42px; padding:9px 34px 9px 12px; color:var(--navy); font:650 .9rem var(--font-body); appearance:none; border:1px solid #cfdadd; border-radius:var(--radius); background-color:var(--white); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23132a46' stroke-width='1.8' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; box-shadow:none; }
+    .download { min-height:42px; display:inline-flex; align-items:center; padding:9px 14px; color:var(--navy); font:700 .78rem var(--font-subheading); letter-spacing:.06em; text-transform:uppercase; text-decoration:none; white-space:nowrap; border-radius:var(--radius); background:var(--gold); }
+    .download:hover { background:#fff; }
     .stats { position:relative; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:32px; }
     .stat { position:relative; overflow:hidden; padding:21px 23px 20px; border:1px solid var(--border); border-radius:var(--radius); color:var(--navy); background:var(--white); box-shadow:0 5px 18px rgba(19,42,70,.07); }
     .stat::before { content:''; position:absolute; top:0; right:0; left:0; height:3px; background:var(--stat-accent, var(--teal)); }
@@ -103,6 +105,7 @@
       <div class="controls">
         <label for="range">Date range</label>
         <select id="range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select>
+        <a class="download" href="https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/export.csv" title="Every day on record, per page">Download CSV</a>
       </div>
     </section>
 
@@ -112,7 +115,7 @@
       <div class="stat"><div class="stat-value" id="visits">—</div><div class="stat-label">Anonymous sessions</div></div>
       <div class="stat"><div class="stat-value" id="pagesUsed">—</div><div class="stat-label">Pages used</div></div>
     </section>
-    <p class="browser-note">Unique browsers is an anonymous estimate. The identifier rotates after 90 days and resets when browser storage is cleared. From 25 Sep 2026, each browser counts a page once per day, plus once more for each reload, so page views and sessions from that date are lower than true totals.</p>
+    <p class="browser-note">Unique browsers is an anonymous estimate. The identifier rotates after 90 days and resets when browser storage is cleared. From 25 Sep 2026, each browser counts a page once per day, plus once more for each reload, so page views and sessions from that date are lower than true totals. Raw events are kept for 90 days, but each finished day is also archived for good, so Download CSV keeps the full history.</p>
 
     <section id="loading" class="panel state">Loading analytics…</section>
     <div id="dashboard" class="grid" hidden>
