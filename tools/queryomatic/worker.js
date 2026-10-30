@@ -1911,8 +1911,12 @@ async function readAnalyticsSummary(url, env) {
     if (ANALYTICS_IDENTIFIER_PATTERN.test(event.visitor || "")) page.browsers.add(event.visitor);
   }
 
+  // Clicks are an extra; a D1 problem shouldn't take the page-view summary down.
+  const clicks = await readAnalyticsTopClicks(env, days).catch(() => []);
+
   return json({
     days,
+    clicks,
     generatedAt: new Date().toISOString(),
     pageviews: events.length,
     visits: sessions.size,
@@ -1997,13 +2001,112 @@ async function exportAnalyticsCsv(env) {
     }
   }
 
+  return csvResponse(rows, "portal-analytics", env);
+}
+
+function csvResponse(rows, name, env) {
   return new Response(rows.map((row) => row.map(csvCell).join(",")).join("\n") + "\n", {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="portal-analytics-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Content-Disposition": `attachment; filename="${name}-${new Date().toISOString().slice(0, 10)}.csv"`,
       ...corsHeaders(env),
     },
   });
+}
+
+// Click counts live in D1 (PORTAL_ANALYTICS), not KV: KV's 1,000 writes/day
+// is already spent on page views and caches. portal-analytics.js batches a
+// page visit's clicks into one beacon when the page is left, and only on
+// visits it also counted as a page view, so clicks add at most one request
+// per recorded view. Rows are per-day totals per (page, target) and are kept
+// for good, so they need no archive. Each beacon writes at most
+// ANALYTICS_CLICK_MAX_TARGETS rows, and the Worker refuses clicks for the
+// rest of a UTC day once ANALYTICS_CLICK_DAILY_ROW_CAP rows were written
+// (5% of D1 Free's 100k/day). Targets are labels the page script built from
+// static UI text or CSS classes, never record data — see portal-analytics.js.
+const ANALYTICS_CLICK_MAX_TARGETS = 50;
+const ANALYTICS_CLICK_MAX_COUNT = 500;
+const ANALYTICS_CLICK_DAILY_ROW_CAP = 5000;
+let analyticsClickTablesReady;
+
+function ensureAnalyticsClickTables(env) {
+  analyticsClickTablesReady ||= env.PORTAL_ANALYTICS.batch([
+    env.PORTAL_ANALYTICS.prepare(
+      "CREATE TABLE IF NOT EXISTS clicks (day TEXT NOT NULL, path TEXT NOT NULL, target TEXT NOT NULL, clicks INTEGER NOT NULL, PRIMARY KEY (day, path, target))"
+    ),
+    env.PORTAL_ANALYTICS.prepare(
+      "CREATE TABLE IF NOT EXISTS click_usage (day TEXT PRIMARY KEY, rows INTEGER NOT NULL)"
+    ),
+  ]).catch((err) => {
+    analyticsClickTablesReady = undefined;
+    throw err;
+  });
+  return analyticsClickTablesReady;
+}
+
+async function recordAnalyticsClicks(request, env) {
+  const origin = request.headers.get("Origin");
+  if (origin !== env.ALLOWED_ORIGIN) {
+    return json({ error: "Origin not allowed" }, env, 403);
+  }
+  if (!env.PORTAL_ANALYTICS) return json({ error: "Click analytics not configured" }, env, 503);
+
+  const body = await request.json();
+  const path = cleanAnalyticsPath(body?.path);
+  const clicks = Array.isArray(body?.clicks) ? body.clicks : [];
+  const targets = new Map();
+
+  for (const click of clicks.slice(0, ANALYTICS_CLICK_MAX_TARGETS)) {
+    const target = String(click?.target || "").trim().slice(0, 80);
+    const count = Number(click?.count);
+    if (!target || !Number.isInteger(count) || count < 1) continue;
+    targets.set(target, Math.min(ANALYTICS_CLICK_MAX_COUNT, (targets.get(target) || 0) + count));
+  }
+
+  if (!path || !targets.size) return json({ error: "Invalid click batch" }, env, 400);
+
+  await ensureAnalyticsClickTables(env);
+  const db = env.PORTAL_ANALYTICS;
+  const day = new Date().toISOString().slice(0, 10);
+  const usage = await db.prepare("SELECT rows FROM click_usage WHERE day = ?").bind(day).first();
+  if ((usage?.rows || 0) + targets.size > ANALYTICS_CLICK_DAILY_ROW_CAP) {
+    return json({ error: "Daily click cap reached" }, env, 429);
+  }
+
+  await db.batch([
+    ...[...targets].map(([target, count]) =>
+      db.prepare(
+        "INSERT INTO clicks (day, path, target, clicks) VALUES (?, ?, ?, ?) ON CONFLICT (day, path, target) DO UPDATE SET clicks = clicks + excluded.clicks"
+      ).bind(day, path, target, count)
+    ),
+    db.prepare(
+      "INSERT INTO click_usage (day, rows) VALUES (?, ?) ON CONFLICT (day) DO UPDATE SET rows = rows + excluded.rows"
+    ).bind(day, targets.size),
+  ]);
+
+  return json({ recorded: targets.size }, env, 202);
+}
+
+async function readAnalyticsTopClicks(env, days) {
+  if (!env.PORTAL_ANALYTICS) return [];
+  await ensureAnalyticsClickTables(env);
+  const since = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { results } = await env.PORTAL_ANALYTICS.prepare(
+    "SELECT path, target, SUM(clicks) AS clicks FROM clicks WHERE day >= ? GROUP BY path, target ORDER BY clicks DESC, target LIMIT 50"
+  ).bind(since).all();
+  return results.map((row) => ({ ...row, label: analyticsLabel(row.path) }));
+}
+
+async function exportAnalyticsClicksCsv(env) {
+  const rows = [["date", "page", "path", "target", "clicks"]];
+  if (env.PORTAL_ANALYTICS) {
+    await ensureAnalyticsClickTables(env);
+    const { results } = await env.PORTAL_ANALYTICS.prepare(
+      "SELECT day, path, target, clicks FROM clicks ORDER BY day, path, clicks DESC, target"
+    ).all();
+    for (const row of results) rows.push([row.day, analyticsLabel(row.path), row.path, row.target, row.clicks]);
+  }
+  return csvResponse(rows, "portal-clicks", env);
 }
 
 
@@ -3458,6 +3561,13 @@ export default {
         return await recordAnalyticsEvent(request, env);
       }
 
+      if (
+        url.pathname === "/api/analytics/clicks" &&
+        request.method === "POST"
+      ) {
+        return await recordAnalyticsClicks(request, env);
+      }
+
       // ======================================================
       // SLATE PORTAL PROXY ROUTES
       //
@@ -3622,6 +3732,13 @@ export default {
         request.method === "GET"
       ) {
         return await exportAnalyticsCsv(env);
+      }
+
+      if (
+        url.pathname === "/api/analytics/clicks.csv" &&
+        request.method === "GET"
+      ) {
+        return await exportAnalyticsClicksCsv(env);
       }
 
 

@@ -69,6 +69,7 @@
     .panel-head { padding:18px 20px 6px; }
     .panel-head::after { content:''; display:block; margin-top:12px; width:40px; height:3px; background:var(--red); }
     h2 { margin:0; color:var(--navy); font:700 1.25rem/1.2 var(--font-subheading); }
+    .wide { grid-column:1 / -1; }
     .chart { height:270px; display:flex; align-items:end; gap:5px; padding:24px 20px 12px; }
     .bar-wrap { min-width:0; height:100%; flex:1; display:flex; flex-direction:column; justify-content:end; align-items:center; gap:7px; }
     .bar { width:100%; min-height:2px; border-radius:var(--radius) var(--radius) 0 0; background:var(--teal); }
@@ -105,7 +106,8 @@
       <div class="controls">
         <label for="range">Date range</label>
         <select id="range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select>
-        <a class="download" href="https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/export.csv" title="Every day on record, per page">Download CSV</a>
+        <a class="download" href="https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/export.csv" title="Page views for every day on record, per page">Views CSV</a>
+        <a class="download" href="https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/clicks.csv" title="Clicks for every day on record, per page and target">Clicks CSV</a>
       </div>
     </section>
 
@@ -115,7 +117,7 @@
       <div class="stat"><div class="stat-value" id="visits">—</div><div class="stat-label">Anonymous sessions</div></div>
       <div class="stat"><div class="stat-value" id="pagesUsed">—</div><div class="stat-label">Pages used</div></div>
     </section>
-    <p class="browser-note">Unique browsers is an anonymous estimate. The identifier rotates after 90 days and resets when browser storage is cleared. From 25 Sep 2026, each browser counts a page once per day, plus once more for each reload, so page views and sessions from that date are lower than true totals. Raw events are kept for 90 days, but each finished day is also archived for good, so Download CSV keeps the full history.</p>
+    <p class="browser-note">Unique browsers is an anonymous estimate. The identifier rotates after 90 days and resets when browser storage is cleared. From 25 Sep 2026, each browser counts a page once per day, plus once more for each reload, so page views and sessions from that date are lower than true totals. Raw events are kept for 90 days, but each finished day is also archived for good, so the CSVs keep the full history. Clicks are counted from 30 Oct 2026, on the same visits as page views. A target in [brackets] is a CSS class, used for anything rendered after the page loads, so record data never becomes a label.</p>
 
     <section id="loading" class="panel state">Loading analytics…</section>
     <div id="dashboard" class="grid" hidden>
@@ -132,6 +134,16 @@
           </table>
         </div>
         <div id="empty" class="state" hidden>No activity recorded in this period.</div>
+      </section>
+      <section class="panel wide">
+        <div class="panel-head"><h2>Top clicks</h2></div>
+        <div class="table-wrap">
+          <table id="clicks-table">
+            <thead><tr><th>Page</th><th>Clicked</th><th class="number">Clicks</th></tr></thead>
+            <tbody id="clicks"></tbody>
+          </table>
+        </div>
+        <div id="clicks-empty" class="state" hidden>No clicks recorded in this period.</div>
       </section>
     </div>
     <p class="updated" id="updated"></p>
@@ -202,6 +214,24 @@
 
         document.getElementById('empty').hidden = data.pages.length !== 0;
         document.querySelector('table').hidden = data.pages.length === 0;
+
+        const clicks = data.clicks || [];
+        const clicksBody = document.getElementById('clicks');
+        clicksBody.innerHTML = '';
+        clicks.forEach(click => {
+          const row = document.createElement('tr');
+          const page = document.createElement('td');
+          const target = document.createElement('td');
+          const count = document.createElement('td');
+          page.textContent = click.label;
+          target.textContent = click.target;
+          count.textContent = number.format(click.clicks);
+          count.className = 'number';
+          row.append(page, target, count);
+          clicksBody.appendChild(row);
+        });
+        document.getElementById('clicks-empty').hidden = clicks.length !== 0;
+        document.getElementById('clicks-table').hidden = clicks.length === 0;
         document.getElementById('updated').textContent = `Updated ${new Date(data.generatedAt).toLocaleString()}`;
       }
 

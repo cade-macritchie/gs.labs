@@ -4,6 +4,7 @@
   const PRODUCTION_HOST = 'cade-macritchie.github.io';
   const SITE_TOKEN = '41948a5bca5f4a97b32961ff03ce053f';
   const AGGREGATE_ENDPOINT = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/event';
+  const CLICKS_ENDPOINT = 'https://gs-labs-slate-gateway.gs-labs.workers.dev/api/analytics/clicks';
   const IDENTIFIER_PATTERN = /^[a-f0-9-]{20,64}$/i;
   const VISITOR_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 
@@ -71,8 +72,8 @@
   }
 
   function recordAggregateVisit() {
-    if (window.location.pathname.includes('/analytics/')) return;
-    if (alreadyRecordedToday(window.location.pathname)) return;
+    if (window.location.pathname.includes('/analytics/')) return false;
+    if (alreadyRecordedToday(window.location.pathname)) return false;
 
     const sessionId = sessionIdentifier();
     const visitorId = visitorIdentifier(sessionId);
@@ -88,11 +89,65 @@
     }).catch(function () {
       // Analytics must never interfere with a portal page.
     });
+    return true;
+  }
+
+  // Click counts, batched into one beacon when the page is left, and only on
+  // visits recordAggregateVisit counted, so clicks never add more than one
+  // Worker request per recorded page view.
+  //
+  // Pages render student names, emails and phone numbers as links and buttons,
+  // so a click target is never labeled by its text at click time. Elements
+  // already on the page when this runs (before any data has loaded) are
+  // labeled by the text they had then; anything rendered later is labeled by
+  // its CSS class, e.g. "[campus-card]". Either way, data-track="Name" on an
+  // element overrides the label. Text with an @ or a 5+ digit run is dropped.
+  const CLICKABLE = 'a[href], button, summary, [role="button"], [role="tab"], [role="option"], input[type="checkbox"], input[type="radio"], input[type="submit"], input[type="button"], [data-track]';
+  const MAX_CLICK_TARGETS = 50;
+
+  function cleanLabel(text) {
+    const label = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    return label && !/@|\d{5,}/.test(label) ? label : '';
+  }
+
+  function staticLabel(element) {
+    const field = element.matches('input[type="checkbox"], input[type="radio"]');
+    return cleanLabel(element.getAttribute('aria-label')) ||
+      cleanLabel(field ? (element.labels && element.labels[0] && element.labels[0].textContent) : (element.textContent || element.value)) ||
+      cleanLabel(element.title);
+  }
+
+  function startClickTracking() {
+    const staticLabels = new WeakMap();
+    document.querySelectorAll(CLICKABLE).forEach(function (element) {
+      const label = staticLabel(element);
+      if (label) staticLabels.set(element, label);
+    });
+
+    const counts = new Map();
+    document.addEventListener('click', function (event) {
+      const element = event.target instanceof Element ? event.target.closest(CLICKABLE) : null;
+      if (!element) return;
+      const className = typeof element.className === 'string' ? element.className.trim().split(/\s+/)[0] : '';
+      const target = cleanLabel(element.getAttribute('data-track')) ||
+        staticLabels.get(element) ||
+        '[' + (className || element.tagName.toLowerCase()) + ']';
+      if (counts.has(target) || counts.size < MAX_CLICK_TARGETS) counts.set(target, (counts.get(target) || 0) + 1);
+    }, true);
+
+    window.addEventListener('pagehide', function () {
+      if (!counts.size) return;
+      const clicks = Array.from(counts, function (entry) { return { target: entry[0], count: entry[1] }; });
+      counts.clear();
+      try {
+        navigator.sendBeacon(CLICKS_ENDPOINT, JSON.stringify({ path: window.location.pathname, clicks: clicks }));
+      } catch (_) {}
+    });
   }
 
   function startAnalytics() {
     loadBeacon();
-    recordAggregateVisit();
+    if (recordAggregateVisit()) startClickTracking();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startAnalytics, { once:true });
