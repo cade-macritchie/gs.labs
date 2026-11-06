@@ -463,16 +463,17 @@ async function proxySlateQuery(env, id, routeName, allowedParams, incomingSearch
 
 
 // "Begins with" filters on all_people (Slate formula `@v_x like @x + '%'`).
-// Record Lookup sends first_prefix for its partial first-name matches (see
-// student-lookup-wrapper.liquid.html). A caller's own % or _ would be a LIKE
-// wildcard, and "%" alone would return the whole population past the
-// at-least-one-filter rule, so only letters, spaces, apostrophes and hyphens
-// are kept, and a prefix with fewer than 3 letters is dropped.
-const PREFIX_PARAM_KEYS = Object.freeze(["first_prefix"]);
+// Record Lookup sends first_prefix and last_prefix for its partial name
+// matches (see student-lookup-wrapper.liquid.html). A caller's own % or _
+// would be a LIKE wildcard, and "%" alone would return the whole population
+// past the at-least-one-filter rule, so only letters, spaces, apostrophes and
+// hyphens are kept, and a prefix with fewer than 3 letters is dropped.
+// Each key maps to the export its Slate filter compares against.
+const PREFIX_PARAM_FIELDS = Object.freeze({ first_prefix: "per_first", last_prefix: "per_last" });
 const PREFIX_MIN_LETTERS = 3;
 
 function cleanPrefixParams(searchParams) {
-  for (const key of PREFIX_PARAM_KEYS) {
+  for (const key of Object.keys(PREFIX_PARAM_FIELDS)) {
     if (!searchParams.has(key)) continue;
     const cleaned = String(searchParams.get(key) || "").replace(/[^\p{L}' -]/gu, "").replace(/\s+/g, " ").trim();
     if ((cleaned.match(/\p{L}/gu) || []).length < PREFIX_MIN_LETTERS) searchParams.delete(key);
@@ -480,18 +481,21 @@ function cleanPrefixParams(searchParams) {
   }
 }
 
-// Backstop for the Slate filter: if all_people ever stops declaring
-// first_prefix, Slate ignores it and returns everyone, so rows whose
-// per_first doesn't begin with the prefix are dropped here too.
+// Backstop for the Slate filters: if all_people ever stops declaring a
+// prefix parameter, Slate ignores it and returns everyone, so rows whose
+// per_first / per_last doesn't begin with the prefix are dropped here too.
 function foldName(value) {
   return String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }
 
 function keepPrefixMatches(data, searchParams, allowedParams) {
-  const prefix = allowedParams.includes("first_prefix") ? foldName(searchParams.get("first_prefix")) : "";
-  if (!prefix || !data || !data.row) return data;
+  const checks = Object.entries(PREFIX_PARAM_FIELDS)
+    .filter(([key]) => allowedParams.includes(key))
+    .map(([key, field]) => [field, foldName(searchParams.get(key))])
+    .filter(([, prefix]) => prefix);
+  if (!checks.length || !data || !data.row) return data;
   const rows = Array.isArray(data.row) ? data.row : [data.row];
-  return { ...data, row: rows.filter((row) => foldName(row?.per_first).startsWith(prefix)) };
+  return { ...data, row: rows.filter((row) => checks.every(([field, prefix]) => foldName(row?.[field]).startsWith(prefix))) };
 }
 
 
@@ -3656,7 +3660,7 @@ export default {
       ) {
         return await handleSlateProxyRoute(
           request, env, id, "records", "maindb",
-          ["status", "year", "term", "teachingsite", "first", "last", "first_prefix", "sisid", "alt_form_type"]
+          ["status", "year", "term", "teachingsite", "first", "last", "first_prefix", "last_prefix", "sisid", "alt_form_type"]
         );
       }
 

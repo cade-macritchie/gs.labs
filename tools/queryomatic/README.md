@@ -61,7 +61,7 @@ print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 | `GET /api/slate/regional-campus-people` | maindb x(campuses x stages) + prompts | Regional Campus | `campus`, `term`, `year`, `status` |
 | `GET /api/slate/pipeline-people` | maindb x2 + prompts | Pipeline Overview | `status`, `term`, `year` |
 | `GET /api/slate/portal-options` | prompts | (all three above, via the route) | (none) |
-| `GET /api/slate/records` | maindb | Record Lookup, Enrollment Events | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `first_prefix`, `sisid`, `alt_form_type` |
+| `GET /api/slate/records` | maindb | Record Lookup, Enrollment Events | `status`, `year`, `term`, `teachingsite`, `first`, `last`, `first_prefix`, `last_prefix`, `sisid`, `alt_form_type` |
 | `GET /api/slate/additional-applications` | maindb | Record Lookup | `sisid` |
 | `GET /api/slate/teaching-site-counts` | maindb | (none) | `status`, `year`, `term`, `site` |
 | `GET /api/slate/inquiries` | maindb | (none) | `campus`, `teachingsite`, `person_created_date_start`, `person_created_date_end` |
@@ -248,7 +248,7 @@ The main Slate query and Queryomatic currently share this parameter contract:
 
 **Adding a maindb filter in Slate** (query `all_people`): declare the parameter under **Edit Web Service** first (`<param id="x" type="string" />`), or saving the filter fails. Then copy an existing formula filter such as `campus_assigned`, change the formula to `((@x is null) or (@x = '') or (@x = @v_x))`, and swap its export for the field, renamed to `v_x`. Check that Matching Rows is unchanged with the parameter blank.
 
-**`first_prefix`** (Record Lookup's partial first-name matches, added 2026-11-06) is a "begins with" filter built the same way, with the formula `((@first_prefix is null) or (@first_prefix = '') or (@v_first_prefix like @first_prefix + '%'))` over the person's first name (not preferred name). `first` and `last` stay exact. The Worker keeps only letters, spaces, apostrophes and hyphens (so a caller can't send `%` and get the whole population), drops a prefix under 3 letters, and also filters the returned rows by `per_first`, in case Slate ever stops declaring the parameter and ignores it.
+**`first_prefix`** and **`last_prefix`** (Record Lookup's partial name matches, added 2026-11-06) are "begins with" filters built by copying the `first` and `last` filters, with the formula `((@first_prefix is null) or (@first_prefix = '') or (@Person-First like @first_prefix + '%'))` (and the same with `last_prefix` / `@Person-Last`). They use the legal first and last name, not the preferred name. `first` and `last` stay exact. The Worker keeps only letters, spaces, apostrophes and hyphens (so a caller can't send `%` and get the whole population), drops a prefix under 3 letters, and also filters the returned rows by `per_first` / `per_last`, in case Slate ever stops declaring a parameter and ignores it.
 
 Columns added 2026-10-12: `per_first`, `per_last`, `per_preferred`, `per_campus_assigned`, `per_created_date`, `per_city`/`per_region`/`per_country` (primary address), `per_origin_source` (first origin source), `per_academic_interest`, `per_degree_interest`, `per_entry_term`, `per_entry_year`, `per_marital_status`, `app_submitted_date`, `app_decision_date`, `app_url`, `app_degree`, `app_f1`, `app_count`, `app_missing_mats`, `event_titles`, `event_count`, `event_attended_count`, `event_last_date`. All are subquery or one-to-one exports, so it's still one row per person.
 

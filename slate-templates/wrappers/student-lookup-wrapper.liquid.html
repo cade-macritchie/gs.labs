@@ -154,12 +154,13 @@
     return terms.every(function (term) { return candidateName.includes(term); });
   }
 
-  // PARTIAL FIRST-NAME MATCHES. Slate's first/last filters are exact, so
-  // "cathy" finds people whose first name is Cathy but not Cathleen. After the
-  // exact search, each word of 3+ letters is also sent as first_prefix (its
-  // first PARTIAL_STEM_LENGTH letters: "cathy" -> "cath"), a "begins with"
-  // filter on the first name. Those people are listed after the exact matches
-  // and flagged match:'partial'. Nicknames play no part: partial matching uses
+  // PARTIAL NAME MATCHES. Slate's first/last filters are exact, so "cathy"
+  // finds people whose first name is Cathy but not Cathleen, and "gardener"
+  // finds no Gardner. After the exact search, each word of 3+ letters is also
+  // sent as first_prefix and as last_prefix (its first PARTIAL_STEM_LENGTH
+  // letters: "cathy" -> "cath", "gardener" -> "gard"), "begins with" filters
+  // on the first and last name. Those people are listed after the exact
+  // matches and flagged match:'partial'. Nicknames play no part: partial matching uses
   // the legal first and last name only (per_first/per_last), never the
   // "(Cathy)" in per_name. Every word must start like a first- or last-name
   // word ("cathleen g" -> Cathleen Gardner). Skipped for SIS ID searches, and
@@ -341,7 +342,8 @@
     if (skipPartial) return exact;
     let partial = [];
     try {
-      partial = uniqueCandidates((await fetchRecords(prefixes.map(function (prefix) { return { first_prefix:prefix }; }))).filter(function (candidate) {
+      const variants = prefixes.flatMap(function (prefix) { return [{ first_prefix:prefix }, { last_prefix:prefix }]; });
+      partial = uniqueCandidates((await fetchRecords(variants)).filter(function (candidate) {
         return matchesPartially(candidate, search);
       }), seen);
     } catch (error) {
