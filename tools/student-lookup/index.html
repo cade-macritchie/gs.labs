@@ -71,6 +71,7 @@
     .result { width: 100%; height: auto; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink); background: var(--panel); font: inherit; letter-spacing: 0; text-transform: none; text-align: left; }
     .result:hover { border-color: var(--teal); background: var(--bg); }
     .result-name { display: block; font-size: 1rem; font-weight: 600; }
+    .match-tag { display: inline-block; margin-left: 8px; padding: 1px 7px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--ink-soft); font: 600 .62rem var(--font-subheading); letter-spacing: .06em; text-transform: uppercase; vertical-align: middle; }
     .result-meta { display: block; margin-top: 5px; color: var(--ink-soft); font-size: .85rem; font-weight: 400; }
     .profile-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
     .profile-head h1 { margin: 0; }
@@ -263,12 +264,14 @@
       materialsEmpty.hidden = allItems.length > 0;
       return allItems.length;
     }
+    // The wrapper flags people found only by a partial first-name match ("cathy" -> Cathleen); they come after the exact matches.
+    function addMatchTag(nameElement, person) { if (person.match !== 'partial') return; const tag=document.createElement('span'); tag.className='match-tag'; tag.textContent='Partial match'; nameElement.appendChild(tag); }
     function showResultsLayout() { document.body.classList.remove('search-start'); }
     function hideSuggestions() { suggestions.hidden=true; suggestions.replaceChildren(); searchInput.setAttribute('aria-expanded','false'); }
     function renderSuggestions(candidates) {
       suggestions.replaceChildren();
       if (!candidates.length) { const message=document.createElement('div'); message.className='suggestions-message'; message.textContent='No suggested records found.'; suggestions.appendChild(message); }
-      candidates.forEach(person => { const button=document.createElement('button'); button.className='suggestion'; button.type='button'; button.setAttribute('role','option'); button.innerHTML='<span class="suggestion-name"></span><span class="suggestion-meta"></span>'; button.querySelector('.suggestion-name').textContent=text(person.name); button.querySelector('.suggestion-meta').textContent=[person.SIS_ID,person.email,person.program].filter(Boolean).map(decodeEntities).join(' · '); button.addEventListener('click', () => { searchInput.value=value(person.name) || value(person.SIS_ID); hideSuggestions(); renderProfile(person); requestAnimationFrame(resize); }); suggestions.appendChild(button); });
+      candidates.forEach(person => { const button=document.createElement('button'); button.className='suggestion'; button.type='button'; button.setAttribute('role','option'); button.innerHTML='<span class="suggestion-name"></span><span class="suggestion-meta"></span>'; button.querySelector('.suggestion-name').textContent=text(person.name); addMatchTag(button.querySelector('.suggestion-name'), person); button.querySelector('.suggestion-meta').textContent=[person.SIS_ID,person.email,person.program].filter(Boolean).map(decodeEntities).join(' · '); button.addEventListener('click', () => { searchInput.value=value(person.name) || value(person.SIS_ID); hideSuggestions(); renderProfile(person); requestAnimationFrame(resize); }); suggestions.appendChild(button); });
       suggestions.hidden=false; searchInput.setAttribute('aria-expanded','true'); requestAnimationFrame(resize);
     }
     function hasApplication(record) {
@@ -374,7 +377,7 @@
     function renderResults(candidates) {
       applicationRequest += 1; currentProfile=null; applicationRecords=[]; applicationStackStatus.hidden=true;
       showResultsLayout(); document.body.classList.remove('profile-mode'); app.classList.remove('profile-mode'); results.innerHTML=''; results.hidden=false; empty.hidden=true; profile.hidden=true; applications.hidden=true;
-      candidates.forEach(person => { const button=document.createElement('button'); button.className='result'; button.type='button'; button.innerHTML='<span class="result-name"></span><span class="result-meta"></span>'; button.querySelector('.result-name').textContent=text(person.name); button.querySelector('.result-meta').textContent=[person.email, person.program, person.status, person.term, person.vear].filter(Boolean).map(decodeEntities).join(' · '); button.addEventListener('click', () => { renderProfile(person); requestAnimationFrame(resize); }); results.appendChild(button); });
+      candidates.forEach(person => { const button=document.createElement('button'); button.className='result'; button.type='button'; button.innerHTML='<span class="result-name"></span><span class="result-meta"></span>'; button.querySelector('.result-name').textContent=text(person.name); addMatchTag(button.querySelector('.result-name'), person); button.querySelector('.result-meta').textContent=[person.email, person.program, person.status, person.term, person.vear].filter(Boolean).map(decodeEntities).join(' · '); button.addEventListener('click', () => { renderProfile(person); requestAnimationFrame(resize); }); results.appendChild(button); });
       summary.textContent=`${candidates.length} matching records — select one to view the profile.`;
     }
     window.addEventListener('message', (event) => {

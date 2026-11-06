@@ -14,7 +14,7 @@
   app_created_date. It is called only when an opened record has Student status.
   Legacy field aliases remain as fallbacks during rollout.
 -->
-<iframe id="studentLookupFrame" src="https://cade-macritchie.github.io/gs.labs/tools/student-lookup/?v=student-lookup-v23" title="Record Lookup" referrerpolicy="origin" style="width:100%;height:600px;min-height:600px;border:0;display:block"></iframe>
+<iframe id="studentLookupFrame" src="https://cade-macritchie.github.io/gs.labs/tools/student-lookup/?v=student-lookup-v24" title="Record Lookup" referrerpolicy="origin" style="width:100%;height:600px;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
   'use strict';
@@ -138,13 +138,60 @@
     return variants;
   }
 
+  function fold(value) {
+    return text(value).toLocaleLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+  }
+
+  function searchTerms(search) {
+    return fold(search).split(' ').filter(Boolean);
+  }
+
   function matchesSearch(candidate, search) {
-    const normalized = text(search).toLocaleLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
-    const terms = normalized.split(' ').filter(Boolean);
+    const terms = searchTerms(search);
     if (!terms.length) return true;
     if (terms.length === 1 && /\d/.test(terms[0])) return text(candidate.SIS_ID).toLocaleLowerCase().includes(terms[0]);
-    const candidateName = [candidate.first, candidate.last, candidate.name].filter(Boolean).join(' ').toLocaleLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+    const candidateName = fold([candidate.first, candidate.last, candidate.name].filter(Boolean).join(' '));
     return terms.every(function (term) { return candidateName.includes(term); });
+  }
+
+  // PARTIAL FIRST-NAME MATCHES. Slate's first/last filters are exact, so
+  // "cathy" finds people whose first name is Cathy but not Cathleen. After the
+  // exact search, each word of 3+ letters is also sent as first_prefix (its
+  // first PARTIAL_STEM_LENGTH letters: "cathy" -> "cath"), a "begins with"
+  // filter on the first name. Those people are listed after the exact matches
+  // and flagged match:'partial'. Nicknames play no part: partial matching uses
+  // the legal first and last name only (per_first/per_last), never the
+  // "(Cathy)" in per_name. Every word must start like a first- or last-name
+  // word ("cathleen g" -> Cathleen Gardner). Skipped for SIS ID searches, and
+  // when a multi-word search already matched someone word for word
+  // ("cathleen gardner"), so a full name still opens the profile directly.
+  const PARTIAL_STEM_LENGTH = 4;
+  const PARTIAL_MIN_LETTERS = 3;
+  const PARTIAL_MAX_RESULTS = 25;
+
+  function partialPrefixes(search) {
+    return Array.from(new Set(searchTerms(search).map(function (term) {
+      return term.replace(/[^\p{L}'-]/gu, '').slice(0, PARTIAL_STEM_LENGTH);
+    }).filter(function (prefix) { return (prefix.match(/\p{L}/gu) || []).length >= PARTIAL_MIN_LETTERS; })));
+  }
+
+  function legalNameWords(candidate) {
+    return fold([candidate.legal_first, candidate.legal_last].filter(Boolean).join(' ') || text(candidate.name).replace(/\([^)]*\)/g, ' '))
+      .split(/[\s-]+/).filter(Boolean);
+  }
+
+  function matchesPartially(candidate, search) {
+    const words = legalNameWords(candidate);
+    return searchTerms(search).every(function (term) {
+      const stem = term.slice(0, PARTIAL_STEM_LENGTH);
+      return words.some(function (word) { return word.startsWith(stem); });
+    });
+  }
+
+  function matchesWordForWord(candidate, search) {
+    const terms = searchTerms(search);
+    const words = legalNameWords(candidate);
+    return terms.length > 1 && terms.every(function (term) { return words.includes(term); });
   }
 
   // Slate may export several applications per person as concatenated lists in
@@ -209,6 +256,9 @@
       SIS_ID: sisid,
       first: resolvedFirst,
       last: resolvedLast,
+      legal_first: plain(field(row, ['per_first'])),
+      legal_last: plain(field(row, ['per_last'])),
+      match: 'exact',
       status: plain(field(row, ['per_status','status'])),
       name: name,
       email: plain(field(row, ['per_email','email'])),
@@ -255,28 +305,52 @@
     };
   }
 
-  async function findCandidates(search) {
-    const responses = await Promise.allSettled(searchVariants(search).map(async function (values) {
+  async function fetchRecords(variants) {
+    const responses = await Promise.allSettled(variants.map(async function (values) {
       const url = new URL(recordsService);
-      url.searchParams.set('first', values.first);
-      url.searchParams.set('last', values.last);
-      url.searchParams.set('sisid', values.sisid);
+      Object.keys(values).forEach(function (key) { url.searchParams.set(key, values[key]); });
       const response = await fetch(url.toString().replace(/\+/g, '%20'), { credentials:'same-origin', cache:'no-store', headers:gatewayHeaders });
       if (!response.ok) throw new Error('Record Lookup query returned ' + response.status);
       return rowsFrom(await response.json());
     }));
     const successful = responses.filter(function (response) { return response.status === 'fulfilled'; });
     if (!successful.length && responses.length) throw responses[0].reason;
-    const candidates = successful.flatMap(function (response) { return response.value; }).map(normalize).filter(function (candidate) {
-      return matchesSearch(candidate, search);
-    });
-    const seen = new Set();
+    return successful.flatMap(function (response) { return response.value; }).map(normalize);
+  }
+
+  function candidateKey(candidate) {
+    return candidate.SIS_ID || candidate.url || [candidate.name,candidate.email].join('|').toLowerCase();
+  }
+
+  function uniqueCandidates(candidates, seen) {
     return candidates.filter(function (candidate) {
-      const key = candidate.SIS_ID || candidate.url || [candidate.name,candidate.email].join('|').toLowerCase();
+      const key = candidateKey(candidate);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+  }
+
+  async function findCandidates(search) {
+    const seen = new Set();
+    const exact = uniqueCandidates((await fetchRecords(searchVariants(search))).filter(function (candidate) {
+      return matchesSearch(candidate, search);
+    }), seen);
+    const prefixes = partialPrefixes(search);
+    const skipPartial = !prefixes.length || /\d/.test(search) || exact.some(function (candidate) { return matchesWordForWord(candidate, search); });
+    if (skipPartial) return exact;
+    let partial = [];
+    try {
+      partial = uniqueCandidates((await fetchRecords(prefixes.map(function (prefix) { return { first_prefix:prefix }; }))).filter(function (candidate) {
+        return matchesPartially(candidate, search);
+      }), seen);
+    } catch (error) {
+      // Exact matches still show if the partial search fails.
+      console.error('Unable to load Record Lookup partial matches.', error);
+    }
+    return exact.concat(partial.slice(0, PARTIAL_MAX_RESULTS).map(function (candidate) {
+      return Object.assign(candidate, { match:'partial' });
+    }));
   }
 
   async function loadData() {
