@@ -612,7 +612,7 @@ The application's funnel stage, sent as `app_status`. "Incomplete" or "missing m
 
 ### Context
 
-Which application an applicant used, sent as `app_round`. Master's, diploma and certificate programs use the first; "PhD", "ThM" or "doctoral" means the second.
+Which application an applicant used, sent as `app_round`. Master's, diploma and certificate programs use the first; "PhD" or "ThM" means the second; "DMin" or "Doctor of Ministry" means the third.
 
 ### Valid Values
 
@@ -620,8 +620,44 @@ Which application an applicant used, sent as `app_round`. Master's, diploma and 
 
 - Application for Masters, Diplomas, & Certificates
 - Application for PhD & ThM
+- Application for Doctor of Ministry (D.Min.)
 
 <!-- VALUES:app_round END -->
+
+## dmin_term
+
+### Context
+
+DMin applications have no Fall/Spring/Summer term. They belong to a cohort that starts in January or July, sent as `dmin_term` (the application field `dmin_term`). Use it with `dmin_year`. A cohort counts in the academic year that ends in its year: January 2027 and July 2027 are both `year` 2026-2027, so "Fall 2026 applications" including DMin means DMin with `year=2026-2027` and no `term`.
+
+### Valid Values
+
+<!-- VALUES:dmin_term START -->
+
+- January
+- July
+
+<!-- VALUES:dmin_term END -->
+
+## dmin_cohort
+
+### Context
+
+The DMin cohort track (application field `dmin_cohort_generic`), sent as `dmin_cohort`. `dmin_year` is the cohort's 4-digit start year (e.g. `2027`) and is free text.
+
+### Valid Values
+
+<!-- VALUES:dmin_cohort START -->
+
+- Arizona
+- Chinese Bilingual
+- Executive Leadership
+- Korean Bilingual
+- Online
+- Other
+- Southern California
+
+<!-- VALUES:dmin_cohort END -->
 
 ## app_f1
 

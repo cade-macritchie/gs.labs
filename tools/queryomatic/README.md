@@ -68,6 +68,7 @@ print station's 2.5s polling alone blew past Workers Free's 1,000 writes/day.)
 | `GET /api/slate/regional-campus-records` | maindb | (none) | `campus`, `term`, `year` |
 | `GET /api/slate/checkin-search` | `checkin_event_registrants` (not maindb) | Check-In (`tools/checkin/`) — last-name lookup | `form_title`, `last` |
 | `GET /api/slate/event-email-check` | `event_registrant_email_check` (not maindb) | Event registration forms' own scripts | `form_title`, `email` |
+| `GET /api/slate/event-breakout-counts` | `event_breakout_counts` (not maindb) | Event registration forms' own scripts | `form_title` |
 | `GET /api/slate/checkin-qr-image` | (proxies a Slate-rendered PNG, not maindb) | Check-In (`tools/checkin/`) | `url` (validated against `CHECKIN_QR_IMAGE_PATTERN`) |
 
 The last three (before `checkin-search`) have no caller since the portal
@@ -100,7 +101,20 @@ form lets the registrant submit. The form side is the "EVENT DUPLICATE EMAIL
 CHECK" block in `local.files.misc/BTC/ind-registration.js` (built for BTC
 2027, 2026-10-27).
 
-**Both serve every conference.** Each call names the event's registration
+`event-breakout-counts` works the same way (origin + rate limit, no key) and
+answers only `{ "counts": { "session_a": { "<talk>": n } } }`, so the form can
+mark talks at their cap "(Full)". Slate has no per-option limit on select
+fields, so this is the cap, and it's soft: two people submitting at once can
+both get the last seat. Its query `event_breakout_counts` (query id
+`9e86303d-de3b-4ca0-9398-f5975e402187`, folder **ai**) is a copy of the email
+check's without the email filter: one row per active registration, exports
+`reg_id`, `session_a` and `session_b` (Custom SQL
+`(select [value] from dbo.getFormResponseTopTable(fr__JID_.[id], 'session_a'))`).
+The Worker counts every export except `reg_id`, so more time slots just need
+more exports. The caps live in the form, in the "BTC BREAKOUT CAP" block of
+`local.files.misc/BTC/ind-registration.js` (built 2026-10-30).
+
+**All three serve every conference.** Each call names the event's registration
 form by its exact Slate title (`form_title`), and each query matches only
 that form, so a new conference needs no new query, token or secret: the
 check-in devices are given the form's title, and the email-check block is
@@ -117,6 +131,8 @@ wrangler secret put SLATE_TOKEN_CHECKIN         # that query's token
 wrangler secret put CHECKIN_KEY                 # passcode the check-in staff type once per device
 wrangler secret put SLATE_EVENT_EMAIL_QUERY_URL # event_registrant_email_check web service URL
 wrangler secret put SLATE_TOKEN_EVENT_EMAIL     # that query's token
+wrangler secret put SLATE_BREAKOUT_QUERY_URL    # event_breakout_counts web service URL
+wrangler secret put SLATE_TOKEN_BREAKOUT        # that query's token
 ```
 
 Route parameter names that differ from the maindb query’s own are renamed by
@@ -243,6 +259,7 @@ The main Slate query and Queryomatic currently share this parameter contract:
 - Application detail: `app_status`, `app_round`, `app_f1`, `app_submitted_start`/`_end`, `app_decision_date_start`/`_end`
 - Inquiry/RFI detail: `degree_interest`, `academic_interest` (contains), `entry_term`, `entry_year`, `marital_status`
 - Events: `event_title` (contains), `event_date_start`/`_end`, `event_attended` (`1`). They apply together: a person matches when one registration that isn't Cancelled, Declined or Saved for Later satisfies every event filter that's set (`event_filters` in Slate, a formula over a nested count).
+- Address: `postal` (added 2026-11-09): comma-separated 5-digit ZIPs, a Custom SQL filter on the primary address (`[address]` with `rank_overall = 1`), comparing `left(postal, 5)` against the list. Exports added the same day: `per_postal` and `per_ref` (Custom SQL on `p__JID_`), and `app_ref`, a copy of the `app_url` export with Format Type "Formula / Custom SQL" `(select [ref] from [application] where [id] = try_convert(uniqueidentifier, right(@val, 36)))`, so it follows the same first-application join as the other `app_*` columns.
 
 `/api/run` sends every date parameter as `M/D/YYYY` (all are typed `date` in Slate except `app_createddate_end`, which is `string`). `/api/run` moves a `YYYY-MM-DD` `_end` bound forward one day, because every maindb date filter compares `@end > field` and would otherwise drop the end day.
 

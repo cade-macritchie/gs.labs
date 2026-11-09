@@ -74,6 +74,10 @@
  * - GET /api/slate/event-email-check          (an event registration form's own script:
  *   is this email already registered on that form (form_title)? yes/no only.
  *   PORTAL_ORIGIN + rate limit, no key. See "EVENT DUPLICATE-EMAIL CHECK".)
+ * - GET /api/slate/event-breakout-counts      (an event registration form's own script:
+ *   how many active registrations picked each breakout talk on that form
+ *   (form_title)? Counts only. PORTAL_ORIGIN + rate limit, no key. See
+ *   "EVENT BREAKOUT COUNTS".)
  * - GET /api/slate/checkin-qr-image           (tools/checkin/, re-serves a per_qr_url PNG
  *   with CORS headers — also ALLOWED_ORIGIN-gated. See handleCheckinQrImage.)
  * - POST /api/checkin/print-queue             (tools/checkin/ scanners queue a print job)
@@ -101,6 +105,9 @@
  * - SLATE_EVENT_EMAIL_QUERY_URL                (event_registrant_email_check query: /api/slate/event-email-check)
  * - SLATE_TOKEN_EVENT_EMAIL                    (that query's token. Either unset = check returns 503,
  *                                               and the form lets people submit.)
+ * - SLATE_BREAKOUT_QUERY_URL                   (event_breakout_counts query: /api/slate/event-breakout-counts)
+ * - SLATE_TOKEN_BREAKOUT                       (that query's token. Either unset = counts return 503,
+ *                                               and the form shows every talk as open.)
  *   One query (and token) per route serves every conference: each call names
  *   its registration form by title (form_title), so a new event needs no new
  *   secrets.
@@ -161,6 +168,14 @@ const QUERY_PARAMETER_KEYS = Object.freeze([
   "event_date_start",
   "event_date_end",
   "event_attended",
+  // Added 2026-11-09. Comma-separated 5-digit postal codes, matched against
+  // the first 5 characters of the primary address postal code.
+  "postal",
+  // Added 2026-11-09. DMin cohort fields on the application (dmin_term,
+  // dmin_year, dmin_cohort_generic); DMin applications have no term.
+  "dmin_term",
+  "dmin_year",
+  "dmin_cohort",
 ]);
 
 // Date-typed maindb parameters: Slate rejects "" for these, so a blank is
@@ -523,7 +538,7 @@ async function handleSlateProxyRoute(request, env, id, routeName, source, allowe
 // ============================================================
 // EVENT REGISTRATION FORM TITLE (form_title)
 //
-// checkin-search and event-email-check each run one Slate query for every
+// checkin-search, event-email-check and event-breakout-counts each run one Slate query for every
 // conference: the caller names the registration form by its exact Slate
 // title (as shown in Slate's form list) and the query matches that one form, so a new event needs no new query, token or secret. Both
 // queries match event registration forms only, and a blank or unknown title
@@ -731,6 +746,84 @@ async function handleEventEmailCheck(request, env, id) {
   const registered = Array.isArray(data?.row) && data.row.length > 0;
   logInfo(id, "Event email check result", { registered });
   return json({ registered }, env, 200, env.PORTAL_ORIGIN);
+}
+
+
+// ============================================================
+// EVENT BREAKOUT COUNTS (GET /api/slate/event-breakout-counts?form_title=<title>)
+//
+// An event's individual registration form (enroll.gs.edu) asks this how many
+// active registrations picked each breakout talk, so its script can mark
+// talks at their cap as "(Full)". Slate has no per-option limit on select
+// fields, so this is the cap. Soft: two people submitting at the same moment
+// can both get the last seat. Built for BTC 2027; see
+// local.files.misc/BTC/ind-registration.js ("BTC BREAKOUT CAP"), which holds
+// the caps themselves.
+//
+// Backed by its own Slate query (event_breakout_counts,
+// SLATE_BREAKOUT_QUERY_URL), with `form_title` (see "EVENT REGISTRATION FORM
+// TITLE") as its only parameter. One row per active registration; every
+// export except reg_id is a breakout slot (session_a, session_b), so a
+// conference with more slots only needs more exports. Answers counts only,
+// never names or ids:
+//   { "counts": { "session_a": { "<talk>": 12, ... }, "session_b": { ... } } }
+//
+// Not behind PORTAL_KEY, for the same reason as the email check. Unset
+// secrets return 503, and the form shows every talk as open.
+// ============================================================
+
+async function handleEventBreakoutCounts(request, env, id) {
+  if (!originAllowed(request, env.PORTAL_ORIGIN)) {
+    return json({ error: "Origin not allowed", requestId: id }, env, 403, env.PORTAL_ORIGIN);
+  }
+
+  if (!env.SLATE_BREAKOUT_QUERY_URL || !env.SLATE_TOKEN_BREAKOUT) {
+    return json({ error: "Breakout counts aren't set up yet", requestId: id }, env, 503, env.PORTAL_ORIGIN);
+  }
+
+  if (!(await checkRateLimit(env, request, "event-breakout-counts"))) {
+    return json({ error: "Rate limit exceeded", requestId: id }, env, 429, env.PORTAL_ORIGIN);
+  }
+
+  const formTitle = formTitleParam(new URL(request.url).searchParams);
+  if (!formTitle) {
+    return json({ error: "Send the registration form's title", requestId: id }, env, 400, env.PORTAL_ORIGIN);
+  }
+
+  const url = new URL(env.SLATE_BREAKOUT_QUERY_URL);
+  url.searchParams.set("output", "json");
+  url.searchParams.set("form_title", formTitle);
+  logInfo(id, "Event breakout counts request", { route: "event-breakout-counts" });
+
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_BREAKOUT}`, Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    logError(id, "Event breakout counts query failed", {
+      status: resp.status,
+      query: `${url.origin}${url.pathname}?id=${url.searchParams.get("id")}&cmd=${url.searchParams.get("cmd")}`,
+      body: (await resp.text()).slice(0, 500),
+    });
+    throw new Error(`Slate query failed: HTTP ${resp.status} ${resp.statusText}`);
+  }
+
+  let data;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error("Slate query returned invalid JSON");
+  }
+
+  const counts = {};
+  for (const row of Array.isArray(data?.row) ? data.row : []) {
+    for (const [slot, talk] of Object.entries(row || {})) {
+      if (slot === "reg_id" || typeof talk !== "string" || !talk.trim()) continue;
+      counts[slot] = counts[slot] || {};
+      counts[slot][talk] = (counts[slot][talk] || 0) + 1;
+    }
+  }
+  logInfo(id, "Event breakout counts result", { slots: Object.keys(counts).length });
+  return json({ counts }, env, 200, env.PORTAL_ORIGIN);
 }
 
 
@@ -3201,6 +3294,8 @@ The output keys are Slate query parameter names. Map them to these options.md se
 - entry_term: entry_term
 - entry_year: academic_year
 - marital_status: marital_status
+- dmin_term: dmin_term
+- dmin_cohort: dmin_cohort
 
 academic_interest is matched as "contains", so use the closest academic_interests value or a shorter word from the request (e.g. "Counseling").
 
@@ -3225,6 +3320,10 @@ app_status is the application's funnel stage (e.g. "Awaiting Materials", "Decide
 degree_interest, entry_term, entry_year, academic_interest and marital_status describe what a person said on an inquiry or RFI ("inquiries interested in the MDiv", "people planning to start Fall 2027"). Use program, term and year instead when the user is talking about an application.
 
 Event filters: event_title is matched as "contains", so use a distinctive part of the event name ("Bible Teaching Conference", "SBC"). event_date_start / event_date_end are a YYYY-MM-DD range on the event's date. Set event_attended to "1" only when the user says attended, came, or showed up; leave it empty for registered or signed up.
+
+postal is a comma-separated list of 5-digit ZIP codes ("93701,93721") matched against the person's primary address. Use it only when the user gives ZIP or postal codes; a city name alone ("Fresno") is not enough, so leave postal empty then.
+
+DMin applications have no term: never set term for DMin. Their cohort starts in January or July (dmin_term) of a 4-digit year (dmin_year), and a cohort belongs to the academic year ending in that year (January 2027 and July 2027 are year "2026-2027"). For DMin requests set app_round "Application for Doctor of Ministry (D.Min.)", plus year, or dmin_term/dmin_year for a specific cohort, and dmin_cohort for a track (e.g. "Korean Bilingual"). A request for an academic term that should include DMin (e.g. "Fall 2026 applications including DMin") needs two runs: the term run for everyone else and a DMin run with year only.
 
 OPTIONS.MD
 ============================================================
@@ -3725,6 +3824,15 @@ export default {
         request.method === "GET"
       ) {
         return await handleEventEmailCheck(request, env, id);
+      }
+
+      // Called directly from an event registration form's own script
+      // (PORTAL_ORIGIN), not a wrapper — see "EVENT BREAKOUT COUNTS".
+      if (
+        url.pathname === "/api/slate/event-breakout-counts" &&
+        request.method === "GET"
+      ) {
+        return await handleEventBreakoutCounts(request, env, id);
       }
 
       // Re-serves a per_qr_url PNG with CORS headers so tools/checkin/ can

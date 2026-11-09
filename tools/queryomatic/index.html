@@ -357,6 +357,10 @@
     ["event_date_start", "Event Date (Start)"],
     ["event_date_end", "Event Date (End)"],
     ["event_attended", "Attended Event (1)"],
+    ["postal", "Postal Codes (comma list)"],
+    ["dmin_term", "DMin Cohort Term (January/July)"],
+    ["dmin_year", "DMin Cohort Year (e.g. 2027)"],
+    ["dmin_cohort", "DMin Cohort Track"],
   ];
 
   // Export presets for the column picker. Columns a preset names that the
@@ -364,8 +368,8 @@
   const PII_COLUMN = /^per_(name|first|last|preferred|email|phone|sisid|birt|qr)|_url$/i;
   const EXPORT_PRESETS = [
     ["all", "All columns", null],
-    ["contact", "Contact list", ["per_first", "per_last", "per_preferred", "per_email", "per_phone", "per_city", "per_region", "per_country", "per_status", "per_campus_assigned"]],
-    ["application", "Application status", ["per_name", "per_email", "per_sisid", "per_status", "app_program", "app_degree", "app_term", "app_year", "app_round", "app_status", "app_decision_code", "app_created_date", "app_submitted_date", "app_decision_date", "app_missing_mats", "app_count", "app_f1", "app_url"]],
+    ["contact", "Contact list", ["per_first", "per_last", "per_preferred", "per_email", "per_phone", "per_city", "per_region", "per_postal", "per_country", "per_status", "per_campus_assigned"]],
+    ["application", "Application status", ["per_name", "per_email", "per_sisid", "per_ref", "app_ref", "per_status", "app_program", "app_degree", "app_term", "app_year", "app_round", "app_status", "app_decision_code", "app_created_date", "app_submitted_date", "app_decision_date", "app_missing_mats", "app_count", "app_f1", "app_dmin_term", "app_dmin_year", "app_dmin_cohort", "app_url"]],
     ["events", "Event attendance", ["per_name", "per_email", "per_phone", "per_status", "event_titles", "event_count", "event_attended_count", "event_last_date", "per_origin_source"]],
     ["nopii", "No PII", (columns) => columns.filter((c) => !PII_COLUMN.test(c))],
   ];
