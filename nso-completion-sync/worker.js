@@ -49,8 +49,9 @@ async function fetchCaspioRows(env, year) {
   const token = await caspioToken(env);
   const rows = [];
   for (let page = 1; page <= 20; page++) {
-    const q = JSON.stringify({ where: `year='${year}'`, limit: 1000, pageNumber: page });
-    const res = await fetch(`${base}?q=${encodeURIComponent(q)}`, {
+    // Caspio REST v3 takes q.where / q.pageSize / q.pageNumber (default page size is 100, max 1000).
+    const qs = `q.where=${encodeURIComponent(`year='${year}'`)}&q.pageSize=1000&q.pageNumber=${page}`;
+    const res = await fetch(`${base}?${qs}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`Caspio records request failed: HTTP ${res.status}`);
