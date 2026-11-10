@@ -1,0 +1,18 @@
+name = "nso-completion-sync"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Non-secret config only (this repo is public). Credentials are `wrangler secret put` values,
+# see the header comment in worker.js.
+[vars]
+CASPIO_ACCOUNT = "c2gaf773"
+CASPIO_TABLE = "NSO_table"
+# Slate source format "NSO Completion (Caspio)" web-service URL (needs the Slate user's credentials).
+SLATE_IMPORT_URL = "https://enroll.gs.edu/manage/service/import?cmd=load&format=cdc7e1e1-8d28-4eee-a651-c053127b7674"
+# Leave NSO_YEAR out to use the current academic year (Aug-Jul); set e.g. "2026-2027" to pin it.
+# The nightly cron only pushes when ENABLED is "true"; otherwise it is a dry run in the logs.
+ENABLED = "false"
+
+# Nightly, 09:20 UTC (about 4 AM Central).
+[triggers]
+crons = ["20 9 * * *"]
