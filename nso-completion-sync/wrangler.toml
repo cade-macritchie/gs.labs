@@ -11,7 +11,7 @@ CASPIO_TABLE = "NSO_table"
 SLATE_IMPORT_URL = "https://enroll.gs.edu/manage/service/import?cmd=load&format=cdc7e1e1-8d28-4eee-a651-c053127b7674"
 # Leave NSO_YEAR out to use the current academic year (Aug-Jul); set e.g. "2026-2027" to pin it.
 # The nightly cron only pushes when ENABLED is "true"; otherwise it is a dry run in the logs.
-ENABLED = "false"
+ENABLED = "true"
 
 # Nightly, 09:20 UTC (about 4 AM Central).
 [triggers]
