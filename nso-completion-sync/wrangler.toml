@@ -9,7 +9,13 @@ CASPIO_ACCOUNT = "c2gaf773"
 CASPIO_TABLE = "NSO_table"
 # Slate source format "NSO Completion (Caspio)" web-service URL (needs the Slate user's credentials).
 SLATE_IMPORT_URL = "https://enroll.gs.edu/manage/service/import?cmd=load&format=cdc7e1e1-8d28-4eee-a651-c053127b7674"
-# Leave NSO_YEAR out to use the current academic year (Aug-Jul); set e.g. "2026-2027" to pin it.
+# Send every row from this term + academic year on, future years included.
+# Spring 24 = Spring of 2023-2024 (Fall 23 is also in 2023-2024 and is skipped).
+NSO_START_YEAR = "2023-2024"
+NSO_START_TERM = "Spring"
+# Optional: read rows from this year on for completed_date only (no NSO Completion = Yes), e.g. "2016-2017".
+# Unset = completed_date comes from the same window as NSO Completion.
+# NSO_DATE_FROM_YEAR = "2016-2017"
 # The nightly cron only pushes when ENABLED is "true"; otherwise it is a dry run in the logs.
 ENABLED = "true"
 
