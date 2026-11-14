@@ -205,6 +205,7 @@
     .breakout-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--nb-gold); }
     .breakout-name { margin: 0; color: var(--nb-black); font: 700 1.05rem/1.35 var(--nb-font-heading); overflow-wrap: anywhere; }
     .breakout-count { color: var(--nb-black); font: 700 1.8rem/1 var(--nb-font-heading); font-variant-numeric: tabular-nums; }
+    .breakout-share { margin-left: 8px; color: var(--muted); font-size: .82rem; font-weight: 700; font-variant-numeric: tabular-nums; }
     .breakout-note { margin: 0 0 24px; color: var(--muted); font-size: .8rem; line-height: 1.5; }
     .registration-chart-panel { padding: 24px; }
     .registration-chart-heading { margin: 0; color: var(--navy); font: 700 1.3rem/1.25 'Playfair Display', Georgia, serif; }
@@ -308,6 +309,12 @@
         <p id="breakout-note" class="breakout-note"></p>
       </section>
 
+      <section id="i-am-breakdown" class="i-am-breakdown" hidden>
+        <div class="section-divider"><div class="section-eyebrow">Registration Answers</div><div class="section-heading">I am</div></div>
+        <div id="i-am-cards" class="breakout-cards"></div>
+        <p id="i-am-note" class="breakout-note"></p>
+      </section>
+
       <div class="panel registration-chart-panel">
         <h2 class="registration-chart-heading">Registration growth over time</h2>
         <p id="chart-copy" class="registration-chart-copy">Cumulative registrations based on each registrant's registration date.</p>
@@ -370,10 +377,14 @@
             respondents: respondentCount(record && record[slot.respondentsKey])
           };
         });
+        const iAm = Array.isArray(record && record.iAm) ? record.iAm : [];
+        const iAmRespondents = respondentCount(record && record.iAmRespondents);
         const existing = groups.get(key);
 
         if (existing) {
           existing.registrants += registrants;
+          existing.iAmRespondents += iAmRespondents;
+          addBreakoutCounts(existing.iAmCounts, iAm);
           existing.registrationDates.push.apply(existing.registrationDates, dates);
           if (!existing.date && eventDate) existing.date = eventDate;
           if (!existing.url && clean(record && record.url)) existing.url = clean(record.url);
@@ -385,9 +396,12 @@
             registrants: registrants,
             registrationDates: dates,
             url: clean(record && record.url),
-            slotCounts: BREAKOUT_SLOTS.map(function () { return { respondents:0, counts:new Map() }; })
+            slotCounts: BREAKOUT_SLOTS.map(function () { return { respondents:0, counts:new Map() }; }),
+            iAmRespondents: iAmRespondents,
+            iAmCounts: new Map()
           };
           addSlotCounts(group, slots);
+          addBreakoutCounts(group.iAmCounts, iAm);
           groups.set(key, group);
         }
       });
@@ -399,6 +413,8 @@
           record[slot.respondentsKey] = record.slotCounts[index].respondents;
         });
         delete record.slotCounts;
+        record.iAm = Array.from(record.iAmCounts.values()).filter(function (answer) { return answer.count > 0; });
+        delete record.iAmCounts;
         return record;
       });
     }
@@ -444,7 +460,7 @@
       });
     }
 
-    function breakoutCard(session) {
+    function breakoutCard(session, caption, share) {
       const card = document.createElement('article');
       card.className = 'breakout-card';
       const name = document.createElement('h3');
@@ -453,13 +469,38 @@
       const count = document.createElement('div');
       const countCaption = document.createElement('span');
       countCaption.className = 'event-detail-label';
-      countCaption.textContent = 'Projected attendance';
+      countCaption.textContent = caption || 'Projected attendance';
       const countValue = document.createElement('span');
       countValue.className = 'breakout-count';
       countValue.textContent = session.count.toLocaleString();
       count.append(countCaption, countValue);
+      if (share) {
+        const shareValue = document.createElement('span');
+        shareValue.className = 'breakout-share';
+        shareValue.textContent = share;
+        count.appendChild(shareValue);
+      }
       card.append(name, count);
       return card;
+    }
+
+    // One card per "I am" answer (a check-box question, so one registrant
+    // can pick several), most common first, with its share of the
+    // registrants who answered. Hidden for events whose form has no i_am
+    // field or no answers yet.
+    function renderIAmBreakdown(record) {
+      const section = document.getElementById('i-am-breakdown');
+      const list = document.getElementById('i-am-cards');
+      const answers = sortedSessions(record.iAm);
+      const respondents = record.iAmRespondents;
+      list.replaceChildren();
+      section.hidden = answers.length === 0;
+      if (!answers.length) return;
+      answers.forEach(function (answer) {
+        const share = respondents ? Math.round(answer.count / respondents * 100) + '%' : '';
+        list.appendChild(breakoutCard(answer, 'Registrants', share));
+      });
+      document.getElementById('i-am-note').textContent = respondents.toLocaleString() + ' of ' + registrantCount(record.registrants) + ' answered "I am". Registrants can check more than one answer, so the cards can add up to more than that; percentages are of those who answered.';
     }
 
     function registrantCount(count) {
@@ -714,6 +755,7 @@
       renderRegistrationChart(record);
       loadBtcRegistrationDetails(record);
       renderBreakoutSessions(record);
+      renderIAmBreakdown(record);
       // scrollIntoView also scrolls the Slate page, so the detail view isn't
       // opened off-screen when the event was clicked far down the list.
       document.body.scrollIntoView({ block:'start', behavior:'smooth' });
