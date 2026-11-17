@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="origin">
+  <title>Cohort Dashboard</title>
+  <script defer src="../../assets/portal-analytics.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&amp;family=Open+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../assets/dashboard.css">
+  <style>
+    /* GS 2026 brand, same tokens as reports/funnel-overview (see BRANDGUIDE.md). */
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Semibold.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+    @font-face { font-family: 'Tiempos Fine'; src: url('../../assets/fonts/TiemposFine-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+    .cohort-dashboard {
+      --nb-black:#0c0f14; --nb-darkgray:#2c343a; --nb-teal:#234048; --nb-rust:#c44329; --nb-gold:#d3a422; --nb-grayblue:#708aa2;
+      --nb-radius:4px;
+      --nb-font-heading:'Tiempos Fine',Georgia,serif; --nb-font-subheading:Montserrat,'Segoe UI',sans-serif; --nb-font-body:'Open Sans',system-ui,sans-serif;
+      font-family: var(--nb-font-body);
+    }
+    .cohort-dashboard .gs-header { background: linear-gradient(120deg, var(--nb-black), var(--nb-darkgray)); }
+    .cohort-dashboard .wordmark-logo { height: 26px; width: auto; }
+    .cohort-dashboard .header-title { display: inline-flex; align-items: center; gap: 10px; color: var(--nb-gold); font-family: var(--nb-font-subheading); }
+    .cohort-dashboard .page-intro { background: linear-gradient(122deg, var(--nb-black), var(--nb-darkgray)); border-radius: var(--nb-radius); }
+    .cohort-dashboard .page-intro::after { background: var(--nb-gold); }
+    .cohort-dashboard .intro-heading { font-family: var(--nb-font-heading); }
+    .cohort-dashboard .intro-subtitle { color: rgba(255,255,255,.82); }
+    .cohort-dashboard .controls-row, .cohort-dashboard .control-select, .cohort-dashboard .toggle-group, .cohort-dashboard .panel, .cohort-dashboard .stat-cell { border-radius: var(--nb-radius); }
+    .cohort-dashboard .ctrl-label, .cohort-dashboard .toggle-btn, .cohort-dashboard .stat-lbl, .cohort-dashboard .section-eyebrow { font-family: var(--nb-font-subheading); }
+    .cohort-dashboard .toggle-btn.active { background: var(--nb-black); }
+    .cohort-dashboard .stat-val, .cohort-dashboard .section-heading { color: var(--nb-black); font-family: var(--nb-font-heading); }
+    .cohort-dashboard .stat-cell:nth-child(1)::before { background: var(--nb-black); }
+    .cohort-dashboard .stat-cell:nth-child(2)::before { background: var(--nb-grayblue); }
+    .cohort-dashboard .stat-cell:nth-child(3)::before { background: var(--nb-gold); }
+    .cohort-dashboard .stat-cell:nth-child(4)::before { background: var(--nb-teal); }
+    .cohort-dashboard .stat-cell:nth-child(5)::before { background: var(--nb-rust); }
+    .cohort-dashboard .section-divider::before { background: var(--nb-rust); }
+    .cohort-dashboard .section-eyebrow { color: var(--nb-teal); }
+    .cohort-dashboard .data-table th { background: var(--nb-black); font-family: var(--nb-font-subheading); }
+    .cohort-dashboard .csv-export-button { border-color: var(--nb-black); background: var(--nb-black); border-radius: var(--nb-radius); font-family: var(--nb-font-subheading); }
+
+    .funnel-stage { position: relative; background: transparent; box-shadow: none; }
+    .funnel-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .funnel-stage .funnel-label { position: relative; padding: 8px 0; }
+    .funnel-stage .stage-name { font-family: var(--nb-font-subheading); font-size: .72rem; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+    .funnel-stage .stage-count { font: 700 1.55rem var(--nb-font-heading); }
+    .funnel-stage .stage-rate { font-size: .72rem; opacity: .9; }
+    .funnel-stage.stage-trigger { cursor: pointer; }
+    .funnel-stage.stage-trigger[aria-pressed="true"] { filter: brightness(1.12); }
+
+    .cohort-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .cohort-card { padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--nb-radius); background: #fff; box-shadow: var(--shadow); }
+    .cohort-card h3 { margin: 0; color: var(--nb-black); font: 700 1.05rem var(--nb-font-heading); }
+    .cohort-card .cohort-meta { margin: 3px 0 12px; color: var(--muted); font-size: .78rem; }
+    .bar-row { display: grid; grid-template-columns: 92px 1fr 34px; align-items: center; gap: 8px; margin: 6px 0; font-size: .78rem; }
+    .bar-row .bar-label { color: var(--muted); font-weight: 600; }
+    .bar-row .bar-track { height: 12px; border-radius: 4px; background: #eef1f3; overflow: hidden; }
+    .bar-row .bar-fill { height: 100%; border-radius: 0 4px 4px 0; background: var(--nb-teal); }
+    .bar-row .bar-value { text-align: right; color: var(--nb-black); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .cohort-card .card-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; font-size: .74rem; color: var(--muted); }
+    .cohort-card button.link { padding: 0; border: 0; background: none; color: var(--nb-teal); font-weight: 700; cursor: pointer; }
+
+    .activity-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-bottom: 12px; }
+    .activity-filters input[type=search] { min-width: 220px; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: var(--nb-radius); font: inherit; }
+    .activity-day { padding: 10px 18px; color: var(--nb-teal); font: 800 .68rem var(--nb-font-subheading); letter-spacing: .12em; text-transform: uppercase; background: #f4f6f7; border-bottom: 1px solid #e5eaec; }
+    .activity-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: start; padding: 12px 18px; border-bottom: 1px solid #eef1f3; font-size: .86rem; }
+    .activity-item:last-child { border-bottom: 0; }
+    .activity-icon { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--nb-grayblue); }
+    .activity-icon.k-checklist { background: var(--nb-teal); }
+    .activity-icon.k-decision { background: var(--nb-gold); }
+    .activity-icon.k-status { background: var(--nb-grayblue); }
+    .activity-icon.k-application { background: var(--nb-rust); }
+    .activity-who { padding: 0; border: 0; background: none; color: var(--nb-black); font: inherit; font-weight: 700; cursor: pointer; text-align: left; }
+    .activity-who:hover { text-decoration: underline; }
+    .activity-what { color: var(--nb-darkgray); }
+    .activity-cohort { margin-top: 2px; color: var(--muted); font-size: .74rem; }
+    .activity-when { color: var(--muted); font-size: .74rem; white-space: nowrap; text-align: right; }
+    .activity-note { margin: 10px 2px 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+    .activity-more { display: block; width: 100%; padding: 12px; border: 0; border-top: 1px solid #e5eaec; background: #fafbfb; color: var(--nb-teal); font-weight: 700; cursor: pointer; }
+    .missing-list { color: var(--muted); font-size: .78rem; }
+    .clickable { cursor: pointer; }
+
+    @media (max-width: 640px) {
+      .container { width: calc(100% - 32px); }
+      .controls-row { margin: -10px 0 20px; }
+      .bar-row { grid-template-columns: 80px 1fr 30px; }
+      .activity-item { grid-template-columns: 16px 1fr; }
+      .activity-when { grid-column: 2; text-align: left; }
+      .data-table .hide-sm { display: none; }
+    }
+  </style>
+</head>
+<body class="cohort-dashboard">
+  <header class="gs-header">
+    <a class="wordmark" href="../../" target="_top" aria-label="Return to Admissions"><img class="wordmark-logo" src="../../assets/brand-new/gs-logo-horizontal-white.png" alt="Gateway Seminary"></a>
+    <div class="header-divider"></div>
+    <span class="header-title">DMin Cohorts</span>
+    <div class="header-spacer"></div>
+  </header>
+
+  <div id="loading" class="loading">Waiting for cohort data from Slate…</div>
+  <main id="app" class="container" hidden>
+    <div class="page-intro">
+      <h1 class="intro-heading">Cohort Dashboard</h1>
+      <p class="intro-subtitle">Where each of your DMin cohorts' applicants are, and everything that has moved recently.</p>
+    </div>
+
+    <div class="controls-row">
+      <div class="control-group"><label class="ctrl-label" for="cohort-select">Cohort</label><select id="cohort-select" class="control-select"></select></div>
+      <div class="control-group">
+        <span class="ctrl-label">View</span>
+        <div class="toggle-group" role="group" aria-label="Funnel view">
+          <button id="view-aggregate" class="toggle-btn active" type="button">Combined</button>
+          <button id="view-cohorts" class="toggle-btn" type="button">By Cohort</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <span class="ctrl-label">Conversion</span>
+        <div class="toggle-group" role="group" aria-label="Conversion mode">
+          <button id="mode-cumulative" class="toggle-btn active" type="button">From Started</button>
+          <button id="mode-sequential" class="toggle-btn" type="button">Step-to-Step</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="empty-scope" class="panel" hidden></div>
+
+    <div id="scope-content">
+      <div class="stat-bar">
+        <div class="stat-cell"><div id="sum-started" class="stat-val">0</div><div class="stat-lbl">Applications</div></div>
+        <div class="stat-cell"><div id="sum-submitted" class="stat-val">0</div><div class="stat-lbl">Submitted</div></div>
+        <div class="stat-cell"><div id="sum-waiting" class="stat-val">0</div><div class="stat-lbl">Awaiting Decision</div></div>
+        <div class="stat-cell"><div id="sum-admitted" class="stat-val">0</div><div class="stat-lbl">Admitted</div></div>
+        <div class="stat-cell"><div id="sum-exited" class="stat-val">0</div><div class="stat-lbl">Withdrawn / Denied</div></div>
+      </div>
+
+      <div id="panel-aggregate">
+        <div id="funnel" class="funnel" aria-label="Application funnel"></div>
+        <div id="stage-drilldown" class="stage-drilldown" hidden>
+          <div class="section-divider"><div id="drill-eyebrow" class="section-eyebrow">Stage</div><div id="drill-heading" class="section-heading">Applicants</div></div>
+          <div class="panel">
+            <table class="data-table">
+              <thead><tr><th>Name</th><th class="hide-sm">Cohort</th><th>Status</th><th class="hide-sm">Still missing</th></tr></thead>
+              <tbody id="drill-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="panel-cohorts" hidden>
+        <div id="cohort-grid" class="cohort-grid"></div>
+      </div>
+
+      <div class="section-divider"><div class="section-eyebrow">Activity</div><div class="section-heading">What's moved</div></div>
+      <div class="activity-filters">
+        <div class="control-group"><label class="ctrl-label" for="activity-range">Range</label>
+          <select id="activity-range" class="control-select">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last year</option>
+            <option value="all">All time</option>
+          </select>
+        </div>
+        <div class="control-group"><label class="ctrl-label" for="activity-type">Type</label>
+          <select id="activity-type" class="control-select">
+            <option value="all" selected>Everything</option>
+            <option value="checklist">Checklist</option>
+            <option value="application">Started / submitted</option>
+            <option value="status">Status &amp; cohort</option>
+            <option value="decision">Decisions</option>
+          </select>
+        </div>
+        <input id="activity-search" type="search" placeholder="Search by name…" aria-label="Search activity by name" autocomplete="off">
+        <button id="activity-export" class="csv-export-button" type="button" style="margin-left:auto">Export CSV</button>
+      </div>
+      <div class="panel"><div id="activity-list"></div></div>
+      <p id="activity-note" class="activity-note"></p>
+    </div>
+  </main>
+
+  <script src="../../assets/dashboard-common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const ui = window.DashboardUI;
+    const ADMITTED = ['AT', 'ADP', 'AD', 'AM', 'DP'];
+    const EXITED = ['WT', 'DN', 'EXP', 'WD'];
+    const DECISIONS = { AT:'Admit', ADP:'Admit (provisional)', AD:'Admit / declined', AM:'Enrolled', DP:'Deposit pending', DF:'Defer', DFI:'Defer (incomplete)', ADF:'Auto-defer', ADF2:'Auto-defer (2nd)', DN:'Deny', WL:'Waitlist', WA:'Waitlist accept', WD:'Waitlist decline', WT:'Withdrawn', EXP:'Expired' };
+    const TERM_ORDER = { January:1, July:7 };
+    const STAGES = [
+      { key:'started', label:'Started', color:'#708aa2' },
+      { key:'submitted', label:'Submitted', color:'#2c343a' },
+      { key:'complete', label:'File Complete', color:'#d3a422' },
+      { key:'decided', label:'Decided', color:'#234048' },
+      { key:'admitted', label:'Admitted', color:'#c44329' }
+    ];
+    const state = { apps: [], cohorts: [], activity: { status:'loading', events:[] }, cohort: 'all', view: 'aggregate', mode: 'cumulative', stage: null, range: '30', type: 'all', search: '', shown: 60 };
+    const bridge = window.DashboardBridge.create('cohort-dashboard', receive);
+
+    function parseJson(value) {
+      try { const parsed = JSON.parse(ui.decodeEntities(value || '[]')); return Array.isArray(parsed) ? parsed : []; } catch (_) { return []; }
+    }
+    function clean(value) { return ui.decodeText(value == null ? '' : value).trim(); }
+    function parseDate(value) {
+      const text = clean(value); if (!text) return null;
+      const d = new Date(/T|\d{2}:\d{2}/.test(text) || /Z$/.test(text) ? text : text + 'T12:00:00');
+      return isNaN(d) ? null : d;
+    }
+
+    function cohortKey(app) { return [app.track || 'No cohort', app.term || '', app.year || ''].join('|'); }
+    function cohortLabel(app) { return app.track ? app.track + (app.term || app.year ? ' · ' + [app.term, app.year].filter(Boolean).join(' ') : '') : 'No cohort set'; }
+
+    function normalize(row) {
+      const app = {
+        id: clean(row.app_id).toLowerCase(), name: clean(row.name) || 'Unnamed applicant', email: clean(row.email), url: clean(row.url),
+        track: clean(row.cohort_track), term: clean(row.cohort_term), year: clean(row.cohort_year),
+        director: clean(row.director), directorEmail: clean(row.director_email).toLowerCase(),
+        status: clean(row.app_status), created: parseDate(row.created), submitted: parseDate(row.submitted),
+        decision: clean(row.decision_code).toUpperCase(),
+        decisions: parseJson(row.decisions).map(d => ({ code: clean(d.code).toUpperCase(), date: parseDate(d.created) })).filter(d => d.code),
+        checklist: parseJson(row.checklist).map(c => ({ subject: clean(c.s), status: clean(c.st) || 'Awaiting', date: parseDate(c.d) })).filter(c => c.subject)
+      };
+      app.key = cohortKey(app); app.cohortLabel = cohortLabel(app);
+      app.missing = app.checklist.filter(c => c.status === 'Awaiting').map(c => c.subject);
+      app.reached = {
+        started: true,
+        submitted: !!app.submitted,
+        complete: !!app.submitted && (app.status === 'Awaiting Decision' || app.status === 'Decided'),
+        decided: !!app.submitted && app.status === 'Decided',
+        admitted: ADMITTED.indexOf(app.decision) !== -1
+      };
+      app.exited = EXITED.indexOf(app.decision) !== -1;
+      return app;
+    }
+
+    function receive(payload) {
+      const rows = Array.isArray(payload && payload.apps) ? payload.apps : [];
+      state.apps = rows.map(normalize).filter(app => app.id);
+      state.activity = payload && payload.activity ? payload.activity : { status:'loading', events:[] };
+      const map = {};
+      state.apps.forEach(app => {
+        if (!map[app.key]) map[app.key] = { key: app.key, label: app.cohortLabel, track: app.track, term: app.term, year: app.year, directors: {}, apps: [] };
+        map[app.key].apps.push(app);
+        if (app.director) map[app.key].directors[app.director] = true;
+      });
+      state.cohorts = Object.keys(map).map(k => map[k]).sort((a, b) =>
+        (Number(b.year) || 0) - (Number(a.year) || 0) || (TERM_ORDER[b.term] || 0) - (TERM_ORDER[a.term] || 0) || a.label.localeCompare(b.label));
+      if (state.cohort !== 'all' && !map[state.cohort]) state.cohort = 'all';
+      populateCohorts();
+      ui.showApp(); // before render, so the funnel can measure its width
+      render();
+    }
+
+    function populateCohorts() {
+      const select = document.getElementById('cohort-select');
+      select.replaceChildren();
+      const all = document.createElement('option'); all.value = 'all'; all.textContent = 'All my cohorts (' + state.cohorts.length + ')'; select.appendChild(all);
+      state.cohorts.forEach(c => {
+        const o = document.createElement('option'); o.value = c.key;
+        const directors = Object.keys(c.directors);
+        o.textContent = c.label + ' (' + c.apps.length + ')' + (directors.length ? ' · ' + directors.join(', ') : '');
+        select.appendChild(o);
+      });
+      select.value = state.cohort;
+    }
+
+    function scopedApps() { return state.cohort === 'all' ? state.apps : state.apps.filter(app => app.key === state.cohort); }
+    function stageCounts(apps) { const out = {}; STAGES.forEach(s => { out[s.key] = apps.filter(a => a.reached[s.key]).length; }); return out; }
+    function pct(value, base) { return base > 0 ? Math.round(value * 1000 / base) / 10 : 0; }
+
+    function render() {
+      const apps = scopedApps();
+      const empty = document.getElementById('empty-scope');
+      document.getElementById('scope-content').hidden = !state.apps.length;
+      empty.hidden = !!state.apps.length;
+      if (!state.apps.length) { empty.replaceChildren(ui.emptyState('No DMin applications in cohorts assigned to you yet. Cohort directors are set on each application when it is submitted.')); return; }
+      const counts = stageCounts(apps);
+      ui.setText('sum-started', counts.started.toLocaleString());
+      ui.setText('sum-submitted', counts.submitted.toLocaleString());
+      ui.setText('sum-waiting', apps.filter(a => a.status === 'Awaiting Decision').length.toLocaleString());
+      ui.setText('sum-admitted', counts.admitted.toLocaleString());
+      ui.setText('sum-exited', apps.filter(a => a.exited).length.toLocaleString());
+      document.getElementById('view-aggregate').classList.toggle('active', state.view === 'aggregate');
+      document.getElementById('view-cohorts').classList.toggle('active', state.view === 'cohorts');
+      document.getElementById('mode-cumulative').classList.toggle('active', state.mode === 'cumulative');
+      document.getElementById('mode-sequential').classList.toggle('active', state.mode === 'sequential');
+      document.getElementById('panel-aggregate').hidden = state.view !== 'aggregate';
+      document.getElementById('panel-cohorts').hidden = state.view !== 'cohorts';
+      if (state.view === 'aggregate') { renderFunnel(apps, counts); renderDrilldown(apps); } else renderCohortCards();
+      renderActivity();
+    }
+
+    function rateText(counts, index) {
+      if (!index) return '';
+      const value = counts[STAGES[index].key];
+      const base = state.mode === 'cumulative' ? counts.started : counts[STAGES[index - 1].key];
+      return (state.mode === 'cumulative' ? 'Of started: ' : 'From prev: ') + pct(value, base) + '%';
+    }
+
+    function renderFunnel(apps, counts) {
+      const root = document.getElementById('funnel'); root.replaceChildren();
+      const maxWidth = Math.min(680, Math.max(280, root.clientWidth - 48 || 680));
+      const minWidth = Math.min(220, maxWidth * 0.4);
+      const height = 78;
+      const step = (maxWidth - minWidth) / (STAGES.length - 1);
+      const ns = 'http://www.w3.org/2000/svg';
+      STAGES.forEach((stage, index) => {
+        const top = maxWidth - index * step;
+        const bottom = index === STAGES.length - 1 ? minWidth : Math.max(minWidth, top - step);
+        const inset = (top - bottom) / 2;
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'funnel-stage stage-trigger';
+        el.style.width = top + 'px'; el.style.height = height + 'px';
+        el.setAttribute('aria-pressed', String(state.stage === stage.key));
+        el.title = counts[stage.key] + ' of ' + counts.started + ' applications reached ' + stage.label + '. Click to list them.';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('viewBox', '0 0 ' + top + ' ' + height); svg.setAttribute('preserveAspectRatio', 'none'); svg.setAttribute('aria-hidden', 'true');
+        const poly = document.createElementNS(ns, 'polygon');
+        poly.setAttribute('points', '0,0 ' + top + ',0 ' + (top - inset) + ',' + height + ' ' + inset + ',' + height);
+        poly.setAttribute('fill', stage.color); svg.appendChild(poly);
+        const label = document.createElement('div'); label.className = 'funnel-label';
+        const name = document.createElement('div'); name.className = 'stage-name'; name.textContent = stage.label;
+        const count = document.createElement('div'); count.className = 'stage-count'; count.textContent = counts[stage.key].toLocaleString();
+        label.append(name, count);
+        if (index) { const rate = document.createElement('div'); rate.className = 'stage-rate'; rate.textContent = rateText(counts, index); label.appendChild(rate); }
+        el.append(svg, label);
+        el.addEventListener('click', () => { state.stage = state.stage === stage.key ? null : stage.key; render(); });
+        root.appendChild(el);
+      });
+    }
+
+    // "Currently at" this stage: reached it but not the next one.
+    function atStage(app, key) {
+      const i = STAGES.findIndex(s => s.key === key);
+      if (!app.reached[key]) return false;
+      return i === STAGES.length - 1 || !app.reached[STAGES[i + 1].key];
+    }
+
+    function renderDrilldown(apps) {
+      const wrap = document.getElementById('stage-drilldown');
+      if (!state.stage) { wrap.hidden = true; return; }
+      const stage = STAGES.find(s => s.key === state.stage);
+      const rows = apps.filter(a => atStage(a, state.stage)).sort((a, b) => a.name.localeCompare(b.name));
+      wrap.hidden = false;
+      document.getElementById('drill-eyebrow').textContent = stage.key === 'admitted' ? 'Admitted' : 'Stopped at ' + stage.label;
+      document.getElementById('drill-heading').textContent = rows.length + (rows.length === 1 ? ' applicant' : ' applicants');
+      const body = document.getElementById('drill-table'); body.replaceChildren();
+      if (!rows.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.appendChild(ui.emptyState('Nobody is at this stage right now.')); tr.appendChild(td); body.appendChild(tr); return; }
+      rows.forEach(app => {
+        const tr = document.createElement('tr'); tr.className = 'clickable'; tr.title = 'Open in Slate';
+        const status = app.decision ? app.status + ' · ' + (DECISIONS[app.decision] || app.decision) : app.status;
+        [app.name, app.cohortLabel, status, app.missing.join(', ') || '—'].forEach((value, i) => {
+          const td = document.createElement('td'); td.textContent = value || '—';
+          if (i === 1 || i === 3) td.className = 'hide-sm' + (i === 3 ? ' missing-list' : '');
+          tr.appendChild(td);
+        });
+        tr.addEventListener('click', () => bridge.openRecord(app.url));
+        body.appendChild(tr);
+      });
+    }
+
+    function renderCohortCards() {
+      const grid = document.getElementById('cohort-grid'); grid.replaceChildren();
+      const list = state.cohort === 'all' ? state.cohorts : state.cohorts.filter(c => c.key === state.cohort);
+      list.forEach(cohort => {
+        const counts = stageCounts(cohort.apps);
+        const card = document.createElement('article'); card.className = 'cohort-card';
+        const h = document.createElement('h3'); h.textContent = cohort.label;
+        const meta = document.createElement('div'); meta.className = 'cohort-meta';
+        meta.textContent = (Object.keys(cohort.directors).join(', ') || 'No director assigned yet') + ' · ' + cohort.apps.length + ' application' + (cohort.apps.length === 1 ? '' : 's');
+        card.append(h, meta);
+        STAGES.forEach((stage, index) => {
+          const row = document.createElement('div'); row.className = 'bar-row';
+          row.title = stage.label + ': ' + counts[stage.key] + (index ? ' (' + rateText(counts, index) + ')' : '');
+          const label = document.createElement('span'); label.className = 'bar-label'; label.textContent = stage.label;
+          const track = document.createElement('span'); track.className = 'bar-track';
+          const fill = document.createElement('span'); fill.className = 'bar-fill'; fill.style.display = 'block';
+          fill.style.width = (counts.started ? Math.max(counts[stage.key] ? 3 : 0, counts[stage.key] * 100 / counts.started) : 0) + '%';
+          track.appendChild(fill);
+          const value = document.createElement('span'); value.className = 'bar-value'; value.textContent = counts[stage.key];
+          row.append(label, track, value); card.appendChild(row);
+        });
+        const foot = document.createElement('div'); foot.className = 'card-foot';
+        const exited = cohort.apps.filter(a => a.exited).length;
+        const note = document.createElement('span'); note.textContent = counts.started ? pct(counts.admitted, counts.started) + '% admitted' + (exited ? ' · ' + exited + ' withdrawn/denied' : '') : '';
+        const open = document.createElement('button'); open.type = 'button'; open.className = 'link'; open.textContent = 'Open cohort →';
+        open.addEventListener('click', () => { state.cohort = cohort.key; state.view = 'aggregate'; state.stage = null; document.getElementById('cohort-select').value = cohort.key; render(); });
+        foot.append(note, open); card.appendChild(foot);
+        grid.appendChild(card);
+      });
+    }
+
+    // ---------- Activity ----------
+
+    function sameItem(a, b) { return a.toLowerCase() === b.toLowerCase(); }
+    function dayDiff(a, b) { return Math.abs(a - b) / 86400000; }
+
+    function buildActivity(apps) {
+      const byId = {}; apps.forEach(a => { byId[a.id] = a; });
+      const directorNames = {}; state.apps.forEach(a => { if (a.directorEmail && a.director) directorNames[a.directorEmail] = a.director; });
+      const events = [];
+      // Dates Slate keeps itself.
+      apps.forEach(app => {
+        if (app.created) events.push({ app, date: app.created, kind: 'application', text: 'Started an application', exact: false });
+        if (app.submitted) events.push({ app, date: app.submitted, kind: 'application', text: 'Submitted the application', exact: false });
+        app.checklist.forEach(c => {
+          if (c.date && c.status !== 'Awaiting') events.push({ app, date: c.date, kind: 'checklist', text: c.subject + ' ' + (c.status === 'Received' ? 'received' : c.status.toLowerCase()), item: c.subject, exact: false });
+        });
+        app.decisions.forEach(d => { if (d.date) events.push({ app, date: d.date, kind: 'decision', text: 'Decision: ' + (DECISIONS[d.code] || d.code), code: d.code, exact: false }); });
+      });
+      // Changes the gateway found between snapshots.
+      const raw = Array.isArray(state.activity.events) ? state.activity.events : [];
+      const added = {};
+      raw.forEach(e => {
+        const app = byId[String(e.app_id || '').toLowerCase()]; if (!app) return;
+        const date = parseDate(e.detected_at); if (!date) return;
+        const prev = parseDate(e.prev_seen_at);
+        const oldV = clean(e.old_value), newV = clean(e.new_value), item = clean(e.item);
+        if (e.kind === 'checklist') {
+          // Slate already dated this one (a received/waived item): skip the duplicate.
+          const dated = app.checklist.some(c => sameItem(c.subject, item) && c.date && c.status === newV && dayDiff(c.date, date) <= 3);
+          if (dated) return;
+          events.push({ app, date, prev, kind: 'checklist', text: item + ': ' + (oldV || 'Awaiting') + ' → ' + (newV || 'Awaiting'), exact: true });
+        } else if (e.kind === 'checklist_added') {
+          const key = app.id + '|' + e.detected_at;
+          if (!added[key]) { added[key] = { app, date, prev, kind: 'checklist', items: [], exact: true }; events.push(added[key]); }
+          added[key].items.push(item);
+        } else if (e.kind === 'checklist_removed') {
+          events.push({ app, date, prev, kind: 'checklist', text: item + ' removed from the checklist', exact: true });
+        } else if (e.kind === 'decision') {
+          if (newV && app.decisions.some(d => d.code === newV && d.date && dayDiff(d.date, date) <= 3)) return;
+          events.push({ app, date, prev, kind: 'decision', text: newV ? 'Decision changed to ' + (DECISIONS[newV] || newV) + (oldV ? ' (was ' + (DECISIONS[oldV] || oldV) + ')' : '') : 'Decision removed (was ' + (DECISIONS[oldV] || oldV) + ')', exact: true });
+        } else if (e.kind === 'status') {
+          events.push({ app, date, prev, kind: 'status', text: 'Status: ' + (oldV || '—') + ' → ' + (newV || '—'), exact: true });
+        } else if (e.kind === 'cohort') {
+          events.push({ app, date, prev, kind: 'status', text: 'Moved cohort: ' + (oldV || 'none') + ' → ' + (newV || 'none'), exact: true });
+        } else if (e.kind === 'director') {
+          const name = v => directorNames[v] || v || 'nobody';
+          events.push({ app, date, prev, kind: 'status', text: 'Cohort director: ' + name(oldV) + ' → ' + name(newV), exact: true });
+        }
+      });
+      Object.keys(added).forEach(k => {
+        const e = added[k];
+        e.text = e.items.length === 1 ? e.items[0] + ' added to the checklist' : e.items.length + ' checklist items added (' + e.items.slice(0, 4).join(', ') + (e.items.length > 4 ? ', …' : '') + ')';
+      });
+      return events.sort((a, b) => b.date - a.date);
+    }
+
+    function filteredActivity() {
+      const all = buildActivity(scopedApps());
+      const cutoff = state.range === 'all' ? null : Date.now() - Number(state.range) * 86400000;
+      const q = state.search.toLowerCase();
+      return all.filter(e => (!cutoff || e.date >= cutoff) && (state.type === 'all' || e.kind === state.type) && (!q || e.app.name.toLowerCase().indexOf(q) !== -1));
+    }
+
+    function dayLabel(date) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const d = new Date(date); d.setHours(0, 0, 0, 0);
+      const diff = Math.round((today - d) / 86400000);
+      if (diff === 0) return 'Today';
+      if (diff === 1) return 'Yesterday';
+      return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+    }
+    function whenLabel(e) {
+      if (!e.exact) return 'per Slate';
+      const t = e.date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return e.prev ? 'seen ' + t + ', changed after ' + e.prev.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'seen ' + t;
+    }
+
+    function renderActivity() {
+      const list = document.getElementById('activity-list'); list.replaceChildren();
+      const events = filteredActivity();
+      if (!events.length) list.appendChild(ui.emptyState(state.activity.status === 'loading' ? 'Loading activity…' : 'No activity in this range.'));
+      let lastDay = '';
+      events.slice(0, state.shown).forEach(e => {
+        const day = dayLabel(e.date);
+        if (day !== lastDay) { const h = document.createElement('div'); h.className = 'activity-day'; h.textContent = day; list.appendChild(h); lastDay = day; }
+        const row = document.createElement('div'); row.className = 'activity-item';
+        const icon = document.createElement('span'); icon.className = 'activity-icon k-' + e.kind; icon.setAttribute('aria-hidden', 'true');
+        const body = document.createElement('div');
+        const who = document.createElement('button'); who.type = 'button'; who.className = 'activity-who'; who.textContent = e.app.name; who.title = 'Open in Slate';
+        who.addEventListener('click', () => bridge.openRecord(e.app.url));
+        const what = document.createElement('span'); what.className = 'activity-what'; what.textContent = ' · ' + e.text;
+        const cohort = document.createElement('div'); cohort.className = 'activity-cohort'; cohort.textContent = e.app.cohortLabel;
+        body.append(who, what, cohort);
+        const when = document.createElement('div'); when.className = 'activity-when'; when.textContent = whenLabel(e);
+        row.append(icon, body, when); list.appendChild(row);
+      });
+      if (events.length > state.shown) {
+        const more = document.createElement('button'); more.type = 'button'; more.className = 'activity-more';
+        more.textContent = 'Show more (' + (events.length - state.shown) + ' older)';
+        more.addEventListener('click', () => { state.shown += 100; renderActivity(); });
+        list.appendChild(more);
+      }
+      const note = document.getElementById('activity-note');
+      const since = parseDate(state.activity.trackingSince);
+      const last = parseDate(state.activity.lastRun);
+      const parts = ['Started, submitted, checklist and decision dates come straight from Slate (date only).'];
+      if (state.activity.status === 'error') parts.push('Status, cohort and director changes couldn\'t be loaded just now; reload to try again.');
+      else if (since) parts.push('Status, cohort, director and checklist changes are checked every 30 minutes and recorded since ' + since.toLocaleDateString() + (last ? ' (last check ' + last.toLocaleString() + ')' : '') + '.');
+      else if (state.activity.status === 'ready') parts.push('Status, cohort and director changes will appear here once change tracking starts.');
+      note.textContent = parts.join(' ');
+    }
+
+    function exportActivity() {
+      const rows = filteredActivity().map(e => ({ date: e.exact ? e.date.toISOString() : e.date.toISOString().slice(0, 10), name: e.app.name, cohort: e.app.cohortLabel, type: e.kind, what: e.text }));
+      ui.downloadCsv('cohort-activity', [
+        { key:'date', label:'Date' }, { key:'name', label:'Applicant' }, { key:'cohort', label:'Cohort' }, { key:'type', label:'Type' }, { key:'what', label:'What happened' }
+      ], rows);
+    }
+
+    document.getElementById('cohort-select').addEventListener('change', e => { state.cohort = e.target.value; state.stage = null; state.shown = 60; render(); });
+    document.getElementById('view-aggregate').addEventListener('click', () => { state.view = 'aggregate'; render(); });
+    document.getElementById('view-cohorts').addEventListener('click', () => { state.view = 'cohorts'; render(); });
+    document.getElementById('mode-cumulative').addEventListener('click', () => { state.mode = 'cumulative'; render(); });
+    document.getElementById('mode-sequential').addEventListener('click', () => { state.mode = 'sequential'; render(); });
+    document.getElementById('activity-range').addEventListener('change', e => { state.range = e.target.value; state.shown = 60; renderActivity(); });
+    document.getElementById('activity-type').addEventListener('change', e => { state.type = e.target.value; state.shown = 60; renderActivity(); });
+    document.getElementById('activity-search').addEventListener('input', e => { state.search = e.target.value.trim(); state.shown = 60; renderActivity(); });
+    document.getElementById('activity-export').addEventListener('click', exportActivity);
+    window.addEventListener('resize', () => { if (state.apps.length && state.view === 'aggregate') renderFunnel(scopedApps(), stageCounts(scopedApps())); });
+  }());
+  </script>
+</body>
+</html>

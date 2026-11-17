@@ -23,10 +23,22 @@ binding = "PORTAL_ANALYTICS"
 database_name = "portal-analytics"
 database_id = "c18b4d71-7b06-439d-a4d2-73a3eb147930"
 
-# Daily portal-analytics archive (archiveAnalyticsHistory in worker.js):
-# folds yesterday's raw events into the permanent per-day rollup.
+# Cohort Dashboard activity log (IT-230, "COHORT DASHBOARD ACTIVITY" in
+# worker.js): the DMin application snapshot and the changes found between
+# pulls. Created with: wrangler d1 create cohort-activity. Tables are
+# created on first use.
+[[d1_databases]]
+binding = "COHORT_ACTIVITY"
+database_name = "cohort-activity"
+database_id = "97b42bdf-10ad-4b60-a2c2-244f08f364f7"
+
+# "15 0 * * *": daily portal-analytics archive (archiveAnalyticsHistory in
+# worker.js) folds yesterday's raw events into the permanent per-day rollup.
+# "*/30 * * * *": cohort dashboard snapshot (snapshotCohortActivity). The
+# scheduled handler tells them apart by event.cron, so keep these strings in
+# sync with COHORT_SNAPSHOT_CRON.
 [triggers]
-crons = ["15 0 * * *"]
+crons = ["15 0 * * *", "*/30 * * * *"]
 
 # Per-IP rate limiter for /api/slate/* and /api/checkin/*. Counters live in
 # Cloudflare's rate-limiting service, not KV — see checkRateLimit in worker.js

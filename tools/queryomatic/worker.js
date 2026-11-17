@@ -88,6 +88,9 @@
  * - POST /api/mailings/analyze                (mailing-success wrapper: asks Claude what the
  *   top and bottom ranked mailings have in common. PORTAL_ORIGIN + key gated.
  *   See "MAILING SUCCESS AI ANALYSIS".)
+ * - POST /api/cohort/activity                 (cohort-dashboard wrapper: recorded changes for the
+ *   DMin applications the portal's own query returned. PORTAL_ORIGIN + key
+ *   gated. Fed by the 30-minute cron. See "COHORT DASHBOARD ACTIVITY".)
  *
  *
  * Secrets (names only — set with `wrangler secret put <NAME>`):
@@ -113,6 +116,8 @@
  *   secrets.
  * - CHECKIN_KEY                                (passcode tools/checkin/ devices send as X-Checkin-Key
  *                                               for the last-name lookup. Unset = lookup refused.)
+ * - SLATE_COHORT_SNAPSHOT_URL                  (cohort_dashboard_snapshot query: the cohort cron)
+ * - SLATE_TOKEN_COHORT                         (that query's token. Either unset = the cron skips.)
  *
  * Vars:
  * - ALLOWED_ORIGIN   (GitHub Pages origin — Queryomatic + analytics routes)
@@ -3621,6 +3626,205 @@ async function runSlateQuery(
 
 
 // ============================================================
+// COHORT DASHBOARD ACTIVITY (IT-230)
+//
+// Slate keeps dates for some application events (created, submitted,
+// checklist items fulfilled, decisions) but not for status, cohort or
+// director changes. Every 30 minutes the cron pulls the
+// cohort_dashboard_snapshot query (Slate query 497c889e-6de8-47e3-b5e6-c68f8516e22e,
+// folder ai, Application base, D.Min. round only: app_id, cohort_track/term/year,
+// director_id, app_status, decision_code, checklist JSON), compares each
+// application with the copy saved last time in the COHORT_ACTIVITY D1
+// database, and records what changed as events.
+//
+// No names, emails or other contact details of applicants are stored: only
+// the application GUID and the old/new value of a status, cohort, director
+// (a staff email), decision code or checklist item status. The Cohort
+// Dashboard portal (slate-templates/wrappers/cohort-dashboard-wrapper.liquid.html)
+// asks POST /api/cohort/activity for the events of the applications its own
+// Slate query returned, which Slate already limits to the signed-in user's
+// cohorts. Gated by PORTAL_ORIGIN + the gateway key.
+//
+// Secrets: SLATE_COHORT_SNAPSHOT_URL (the query's web service URL) and
+// SLATE_TOKEN_COHORT (its token). Either unset = the cron does nothing
+// and the route returns no events.
+// ============================================================
+
+const COHORT_SNAPSHOT_CRON = "*/30 * * * *";
+const COHORT_ACTIVITY_MAX_APPS = 2000;
+const COHORT_ACTIVITY_MAX_EVENTS = 5000;
+const COHORT_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+let cohortTablesReady = false;
+async function ensureCohortTables(env) {
+  if (cohortTablesReady) return;
+  await env.COHORT_ACTIVITY.batch([
+    env.COHORT_ACTIVITY.prepare("CREATE TABLE IF NOT EXISTS cohort_snapshot (app_id TEXT PRIMARY KEY, data TEXT NOT NULL, seen_at TEXT NOT NULL)"),
+    env.COHORT_ACTIVITY.prepare("CREATE TABLE IF NOT EXISTS cohort_events (id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, kind TEXT NOT NULL, item TEXT, old_value TEXT, new_value TEXT, detected_at TEXT NOT NULL, prev_seen_at TEXT)"),
+    env.COHORT_ACTIVITY.prepare("CREATE INDEX IF NOT EXISTS cohort_events_app ON cohort_events (app_id, detected_at)"),
+    env.COHORT_ACTIVITY.prepare("CREATE TABLE IF NOT EXISTS cohort_meta (key TEXT PRIMARY KEY, value TEXT)"),
+  ]);
+  cohortTablesReady = true;
+}
+
+function cohortText(value, max) {
+  return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+// One comparable record per application. Checklist items are keyed by
+// subject; a blank status is Slate's "Awaiting".
+function normalizeCohortRow(row) {
+  const checklist = {};
+  let items = [];
+  try { items = JSON.parse(row?.checklist || "[]"); } catch { items = []; }
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const subject = cohortText(item?.s, 200);
+    if (subject) checklist[subject] = cohortText(item?.st, 40) || "Awaiting";
+  });
+  return {
+    status: cohortText(row?.app_status, 60),
+    decision: cohortText(row?.decision_code, 20),
+    director: cohortText(row?.director_id, 120).toLowerCase(),
+    cohort: [row?.cohort_track, row?.cohort_term, row?.cohort_year].map((v) => cohortText(v, 60)).filter(Boolean).join(" "),
+    checklist,
+  };
+}
+
+function diffCohortRecords(before, after) {
+  const changes = [];
+  for (const key of ["status", "decision", "director", "cohort"]) {
+    if ((before[key] || "") !== (after[key] || "")) {
+      changes.push({ kind: key, item: null, old: before[key] || null, value: after[key] || null });
+    }
+  }
+  const subjects = new Set([...Object.keys(before.checklist || {}), ...Object.keys(after.checklist || {})]);
+  for (const subject of subjects) {
+    const old = before.checklist?.[subject];
+    const value = after.checklist?.[subject];
+    if (old === value) continue;
+    if (old == null) changes.push({ kind: "checklist_added", item: subject, old: null, value });
+    else if (value == null) changes.push({ kind: "checklist_removed", item: subject, old, value: null });
+    else changes.push({ kind: "checklist", item: subject, old, value });
+  }
+  return changes;
+}
+
+async function fetchCohortSnapshot(env) {
+  const url = new URL(env.SLATE_COHORT_SNAPSHOT_URL);
+  url.searchParams.set("output", "json");
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_COHORT}`, Accept: "application/json" },
+  });
+  if (!resp.ok) {
+    throw new Error(`Cohort snapshot query failed: HTTP ${resp.status} ${(await resp.text()).slice(0, 300)}`);
+  }
+  const data = await resp.json();
+  return (Array.isArray(data?.row) ? data.row : [])
+    .map((row) => ({ id: cohortText(row?.app_id, 36).toLowerCase(), record: normalizeCohortRow(row) }))
+    .filter((row) => COHORT_GUID.test(row.id));
+}
+
+// The cron's job. Returns a short summary for the logs.
+async function snapshotCohortActivity(env) {
+  if (!env.COHORT_ACTIVITY || !env.SLATE_COHORT_SNAPSHOT_URL || !env.SLATE_TOKEN_COHORT) {
+    return { skipped: "not configured" };
+  }
+  await ensureCohortTables(env);
+  const now = new Date().toISOString();
+  const rows = await fetchCohortSnapshot(env);
+
+  const saved = new Map();
+  const result = await env.COHORT_ACTIVITY.prepare("SELECT app_id, data, seen_at FROM cohort_snapshot").all();
+  for (const r of result.results || []) saved.set(r.app_id, r);
+
+  // A failed or partial pull must never look like everyone changed or left.
+  if (!rows.length || (saved.size > 10 && rows.length < saved.size * 0.5)) {
+    return { skipped: `suspicious pull (${rows.length} rows, ${saved.size} saved)` };
+  }
+
+  const firstRun = saved.size === 0;
+  const statements = [];
+  let events = 0;
+  for (const row of rows) {
+    const data = JSON.stringify(row.record);
+    const previous = saved.get(row.id);
+    if (previous && previous.data === data) continue;
+    if (previous) {
+      let before;
+      try { before = JSON.parse(previous.data); } catch { before = null; }
+      if (before) {
+        for (const change of diffCohortRecords(before, row.record)) {
+          statements.push(env.COHORT_ACTIVITY.prepare(
+            "INSERT INTO cohort_events (app_id, kind, item, old_value, new_value, detected_at, prev_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+          ).bind(row.id, change.kind, change.item, change.old, change.value, now, previous.seen_at));
+          events += 1;
+        }
+      }
+    }
+    statements.push(env.COHORT_ACTIVITY.prepare(
+      "INSERT INTO cohort_snapshot (app_id, data, seen_at) VALUES (?, ?, ?) ON CONFLICT(app_id) DO UPDATE SET data = excluded.data, seen_at = excluded.seen_at"
+    ).bind(row.id, data, now));
+  }
+  // Apps that left the query (deleted, or moved off the D.Min. round) are
+  // dropped from the snapshot without an event: the portal couldn't name them.
+  const present = new Set(rows.map((row) => row.id));
+  for (const appId of saved.keys()) {
+    if (!present.has(appId)) statements.push(env.COHORT_ACTIVITY.prepare("DELETE FROM cohort_snapshot WHERE app_id = ?").bind(appId));
+  }
+  statements.push(env.COHORT_ACTIVITY.prepare(
+    "INSERT INTO cohort_meta (key, value) VALUES ('last_run', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).bind(now));
+  if (firstRun) {
+    statements.push(env.COHORT_ACTIVITY.prepare(
+      "INSERT INTO cohort_meta (key, value) VALUES ('tracking_since', ?) ON CONFLICT(key) DO NOTHING"
+    ).bind(now));
+  }
+  for (let i = 0; i < statements.length; i += 50) {
+    await env.COHORT_ACTIVITY.batch(statements.slice(i, i + 50));
+  }
+  return { rows: rows.length, events, firstRun };
+}
+
+// POST /api/cohort/activity  { apps: ["<application guid>", ...] }
+//   -> { events: [...], trackingSince, lastRun }
+async function handleCohortActivity(request, env, id) {
+  const denied = await guardRoute(request, env, id, "cohort-activity", env.PORTAL_ORIGIN);
+  if (denied) return denied;
+
+  const empty = { events: [], trackingSince: null, lastRun: null };
+  let body;
+  try { body = await request.json(); } catch { body = null; }
+  const apps = [...new Set((Array.isArray(body?.apps) ? body.apps : [])
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter((value) => COHORT_GUID.test(value)))];
+  if (!apps.length || !env.COHORT_ACTIVITY) return json(empty, env, 200, env.PORTAL_ORIGIN);
+  if (apps.length > COHORT_ACTIVITY_MAX_APPS) {
+    return json({ error: "Too many applications", requestId: id }, env, 400, env.PORTAL_ORIGIN);
+  }
+
+  await ensureCohortTables(env);
+  const events = [];
+  // D1 caps bound parameters per statement, so look the apps up in chunks.
+  for (let i = 0; i < apps.length; i += 90) {
+    const chunk = apps.slice(i, i + 90);
+    const placeholders = chunk.map(() => "?").join(",");
+    const result = await env.COHORT_ACTIVITY.prepare(
+      `SELECT app_id, kind, item, old_value, new_value, detected_at, prev_seen_at FROM cohort_events WHERE app_id IN (${placeholders}) ORDER BY detected_at DESC LIMIT ${COHORT_ACTIVITY_MAX_EVENTS}`
+    ).bind(...chunk).all();
+    events.push(...(result.results || []));
+  }
+  events.sort((a, b) => String(b.detected_at).localeCompare(String(a.detected_at)));
+  const meta = await env.COHORT_ACTIVITY.prepare("SELECT key, value FROM cohort_meta").all();
+  const metaMap = Object.fromEntries((meta.results || []).map((r) => [r.key, r.value]));
+  return json({
+    events: events.slice(0, COHORT_ACTIVITY_MAX_EVENTS),
+    trackingSince: metaMap.tracking_since || null,
+    lastRun: metaMap.last_run || null,
+  }, env, 200, env.PORTAL_ORIGIN);
+}
+
+
+// ============================================================
 // WORKER
 // ============================================================
 
@@ -3864,6 +4068,13 @@ export default {
         request.method === "POST"
       ) {
         return await handleMailingAnalyze(request, env, id);
+      }
+
+      if (
+        url.pathname === "/api/cohort/activity" &&
+        request.method === "POST"
+      ) {
+        return await handleCohortActivity(request, env, id);
       }
 
       if (
@@ -4213,12 +4424,19 @@ export default {
         url.pathname === "/api/slate/checkin-qr-image" ||
         url.pathname.startsWith("/api/checkin/")
           ? env.ALLOWED_ORIGIN
-          : url.pathname.startsWith("/api/slate/") || url.pathname.startsWith("/api/mailings/") ? env.PORTAL_ORIGIN : undefined
+          : url.pathname.startsWith("/api/slate/") || url.pathname.startsWith("/api/mailings/") || url.pathname.startsWith("/api/cohort/") ? env.PORTAL_ORIGIN : undefined
       );
     }
   },
 
   async scheduled(event, env, ctx) {
+    if (event.cron === COHORT_SNAPSHOT_CRON) {
+      ctx.waitUntil(snapshotCohortActivity(env).then(
+        (summary) => logInfo("cron", "Cohort snapshot", summary),
+        (error) => logError("cron", "Cohort snapshot failed", { message: error.message })
+      ));
+      return;
+    }
     ctx.waitUntil(archiveAnalyticsHistory(env));
   },
 };
