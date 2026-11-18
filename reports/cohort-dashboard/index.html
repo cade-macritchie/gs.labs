@@ -79,6 +79,13 @@
     .activity-when { color: var(--muted); font-size: .74rem; white-space: nowrap; text-align: right; }
     .activity-note { margin: 10px 2px 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
     .activity-more { display: block; width: 100%; padding: 12px; border: 0; border-top: 1px solid #e5eaec; background: #fafbfb; color: var(--nb-teal); font-weight: 700; cursor: pointer; }
+    .student-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 14px; }
+    .student-search input[type=search] { flex: 1 1 280px; max-width: 460px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: var(--nb-radius); font: inherit; font-size: .95rem; }
+    .student-search input[type=search]:focus { outline: 2px solid var(--nb-teal); outline-offset: 1px; border-color: var(--nb-teal); }
+    .student-search-hint { color: var(--muted); font-size: .76rem; }
+    .student-results { margin: 0 0 22px; }
+    .student-results .data-table td { vertical-align: top; }
+    .student-results button.link { padding: 0; border: 0; background: none; color: var(--nb-teal); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
     .missing-list { color: var(--muted); font-size: .78rem; }
     .clickable { cursor: pointer; }
 
@@ -128,6 +135,20 @@
     <div id="empty-scope" class="panel" hidden></div>
 
     <div id="scope-content">
+      <div class="student-search">
+        <label class="ctrl-label" for="student-search">Find a student</label>
+        <input id="student-search" type="search" placeholder="Type a name or email…" autocomplete="off">
+        <span class="student-search-hint">Searches all of your cohorts.</span>
+      </div>
+      <div id="student-results" class="student-results" hidden>
+        <div class="panel">
+          <table class="data-table">
+            <thead><tr><th>Name</th><th class="hide-sm">Cohort</th><th>Currently at</th><th class="hide-sm">Status</th><th class="hide-sm">Still missing</th><th></th></tr></thead>
+            <tbody id="student-table"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="stat-bar">
         <div class="stat-cell"><div id="sum-started" class="stat-val">0</div><div class="stat-lbl">Applications</div></div>
         <div class="stat-cell"><div id="sum-submitted" class="stat-val">0</div><div class="stat-lbl">Submitted</div></div>
@@ -197,7 +218,8 @@
       { key:'decided', label:'Decided', color:'#234048' },
       { key:'admitted', label:'Admitted', color:'#c44329' }
     ];
-    const state = { apps: [], cohorts: [], activity: { status:'loading', events:[] }, cohort: 'all', view: 'aggregate', mode: 'cumulative', stage: null, range: '30', type: 'all', search: '', shown: 60 };
+    const state = { apps: [], cohorts: [], activity: { status:'loading', events:[] }, cohort: 'all', view: 'aggregate', mode: 'cumulative', stage: null, range: '30', type: 'all', search: '', shown: 60, find: '' };
+    const FIND_LIMIT = 25;
     const bridge = window.DashboardBridge.create('cohort-dashboard', receive);
 
     function parseJson(value) {
@@ -289,8 +311,61 @@
       document.getElementById('mode-sequential').classList.toggle('active', state.mode === 'sequential');
       document.getElementById('panel-aggregate').hidden = state.view !== 'aggregate';
       document.getElementById('panel-cohorts').hidden = state.view !== 'cohorts';
+      renderStudentSearch();
       if (state.view === 'aggregate') { renderFunnel(apps, counts); renderDrilldown(apps); } else renderCohortCards();
       renderActivity();
+    }
+
+    // ---------- Find a student (all of the viewer's cohorts, not just the selected one) ----------
+
+    function currentStage(app) {
+      if (app.exited) return DECISIONS[app.decision] || 'Withdrawn / denied';
+      for (let i = STAGES.length - 1; i >= 0; i--) if (app.reached[STAGES[i].key]) return STAGES[i].label;
+      return STAGES[0].label;
+    }
+
+    function renderStudentSearch() {
+      const wrap = document.getElementById('student-results');
+      const body = document.getElementById('student-table'); body.replaceChildren();
+      const q = state.find.toLowerCase();
+      if (q.length < 2) { wrap.hidden = true; return; }
+      const words = q.split(/\s+/).filter(Boolean);
+      const matches = state.apps
+        .filter(app => { const hay = (app.name + ' ' + app.email).toLowerCase(); return words.every(w => hay.indexOf(w) !== -1); })
+        .sort((a, b) => a.name.localeCompare(b.name));
+      wrap.hidden = false;
+      if (!matches.length) {
+        const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6;
+        td.appendChild(ui.emptyState('No one in your cohorts matches "' + state.find + '".')); tr.appendChild(td); body.appendChild(tr); return;
+      }
+      matches.slice(0, FIND_LIMIT).forEach(app => {
+        const tr = document.createElement('tr'); tr.className = 'clickable'; tr.title = 'Open in Slate';
+        const status = app.decision ? app.status + ' · ' + (DECISIONS[app.decision] || app.decision) : app.status;
+        [app.name, app.cohortLabel, currentStage(app), status, app.missing.join(', ') || '—'].forEach((value, i) => {
+          const td = document.createElement('td'); td.textContent = value || '—';
+          if (i === 1 || i === 3 || i === 4) td.className = 'hide-sm' + (i === 4 ? ' missing-list' : '');
+          tr.appendChild(td);
+        });
+        const actions = document.createElement('td');
+        const activity = document.createElement('button'); activity.type = 'button'; activity.className = 'link'; activity.textContent = 'Activity ↓';
+        activity.title = 'Show everything that has happened on this application';
+        activity.addEventListener('click', e => {
+          e.stopPropagation();
+          state.search = app.name; state.range = 'all'; state.type = 'all'; state.shown = 60;
+          document.getElementById('activity-search').value = app.name;
+          document.getElementById('activity-range').value = 'all';
+          document.getElementById('activity-type').value = 'all';
+          renderActivity();
+          document.getElementById('activity-search').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        actions.appendChild(activity); tr.appendChild(actions);
+        tr.addEventListener('click', () => bridge.openRecord(app.url));
+        body.appendChild(tr);
+      });
+      if (matches.length > FIND_LIMIT) {
+        const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 6; td.className = 'missing-list';
+        td.textContent = (matches.length - FIND_LIMIT) + ' more match. Keep typing to narrow it down.'; tr.appendChild(td); body.appendChild(tr);
+      }
     }
 
     function rateText(counts, index) {
@@ -522,6 +597,7 @@
     document.getElementById('activity-type').addEventListener('change', e => { state.type = e.target.value; state.shown = 60; renderActivity(); });
     document.getElementById('activity-search').addEventListener('input', e => { state.search = e.target.value.trim(); state.shown = 60; renderActivity(); });
     document.getElementById('activity-export').addEventListener('click', exportActivity);
+    document.getElementById('student-search').addEventListener('input', e => { state.find = e.target.value.trim(); renderStudentSearch(); });
     window.addEventListener('resize', () => { if (state.apps.length && state.view === 'aggregate') renderFunnel(scopedApps(), stageCounts(scopedApps())); });
   }());
   </script>
