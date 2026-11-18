@@ -6,10 +6,16 @@
   ABOVE this wrapper in the portal view; it sets window.GS_GATEWAY_KEY, which
   this wrapper sends when it asks the gateway for the recorded activity.
 
+  Homepage tab: Database > Tabs > "Cohort Dashboard" (Scope Homepage, Type
+  Report) shows the report System / Homepage / Cohort Dashboard, whose Static
+  Content part is an iframe of /portal/cohort_dashboard. Slate only offers
+  Express Portals as Portal-type tabs, hence the report.
+
   Liquid export: cohort_apps (Application base, D.Min. round). Its Custom SQL
   filter uses @identity (the signed-in Slate user) so each director only gets
-  the applications in their own cohorts; Jackie Garland, David Johnson and
-  Cade see every cohort. Exports, all Custom SQL: app_id, name, email, url,
+  the applications in their own cohorts; Jackie Garland, David Johnson,
+  Cade and the four DMin office staff on the "DMin SMS Inbox" role see every
+  cohort. Exports, all Custom SQL: app_id, name, email, url,
   cohort_track, cohort_term, cohort_year, director, director_email,
   app_status, created, submitted, decision_code, decisions (JSON: code,
   created), checklist (JSON: s = subject, st = status, d = fulfilled date).
@@ -55,6 +61,16 @@
       .then(sendData);
   }
 
+  // On the Slate homepage this portal sits in an iframe inside the "Cohort
+  // Dashboard" report (System / Homepage). Same origin, so grow that iframe
+  // to fit instead of leaving a scrollbar inside the tab.
+  function fitHostFrame() {
+    try {
+      const host = window.frameElement;
+      if (host) host.style.height = Math.max(600, document.documentElement.scrollHeight) + 'px';
+    } catch (_) {}
+  }
+
   function openRecord(value) {
     try { const url = new URL(String(value || ''), window.location.origin); if (url.origin === window.location.origin) window.open(url.href, '_blank', 'noopener'); } catch (_) {}
   }
@@ -62,7 +78,10 @@
   window.addEventListener('message', function (event) {
     if (event.origin !== frameOrigin || event.source !== frame.contentWindow || !event.data || event.data.dashboard !== dashboard) return;
     if (event.data.type === 'enrollment-dashboard-ready') sendData();
-    if (event.data.type === 'enrollment-dashboard-resize') frame.style.height = Math.max(600, Math.min(Number(event.data.height) || 600, 20000)) + 'px';
+    if (event.data.type === 'enrollment-dashboard-resize') {
+      frame.style.height = Math.max(600, Math.min(Number(event.data.height) || 600, 20000)) + 'px';
+      fitHostFrame();
+    }
     if (event.data.type === 'enrollment-dashboard-open-record') openRecord(event.data.url);
   });
   frame.addEventListener('load', sendData);
