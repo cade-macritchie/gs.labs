@@ -22,6 +22,12 @@
                  — one row per text a mailing sent:
                  sn_mailing (Message Mailing GUID), sn_to (recipient phone)
 
+  mailing_links (Message Track base; one row per tracked link click on a
+                 mailing; optional. Without it the page just says link detail
+                 isn't loaded):
+                 lk_mailing (Message Mailing GUID), lk_url (link URL),
+                 lk_person (Person GUID or email, hashed below)
+
   Reply bodies and phone numbers never leave this page. Liquid reduces each
   body to a STOP flag, and the script below replaces every phone number with
   a short hash before anything is posted to the hosted page. The hosted page
@@ -65,6 +71,9 @@
   </div>
   <div class="sent-texts">
     {% for s in sms_sent %}<div class="sent-text"><span class="m">{{ s.sn_mailing | escape }}</span><span class="to">{{ s.sn_to | escape }}</span></div>{% endfor %}
+  </div>
+  <div class="link-clicks">
+    {% for k in mailing_links %}<div class="link-click"><span class="m">{{ k.lk_mailing | escape }}</span><span class="url">{{ k.lk_url | escape }}</span><span class="who">{{ k.lk_person | escape }}</span></div>{% endfor %}
   </div>
 </div>
 
@@ -113,8 +122,27 @@
     }),
     sent: Array.from(root.querySelectorAll('.sent-text')).map(function (node) {
       return { m: read(node, '.m'), who: hash(phone(read(node, '.to'))) };
-    }).filter(function (row) { return row.m && row.who; })
+    }).filter(function (row) { return row.m && row.who; }),
+    links: linkCounts()
   };
+
+  // One row per click in, one row per mailing + link out: clicks and distinct
+  // people (hashed, so nobody's identity is posted to the hosted page).
+  function linkCounts() {
+    const byKey = new Map();
+    Array.from(root.querySelectorAll('.link-click')).forEach(function (node) {
+      const m = read(node, '.m');
+      const url = read(node, '.url');
+      if (!m || !url) return;
+      const key = m + '\n' + url;
+      if (!byKey.has(key)) byKey.set(key, { m: m, url: url, clicks: 0, who: new Set() });
+      const entry = byKey.get(key);
+      entry.clicks += 1;
+      const who = hash(read(node, '.who'));
+      if (who) entry.who.add(who);
+    });
+    return Array.from(byKey.values()).map(function (e) { return { m: e.m, url: e.url, clicks: e.clicks, people: e.who.size }; });
+  }
 
   function post(message) {
     if (frame.contentWindow) frame.contentWindow.postMessage(Object.assign({ dashboard: dashboard }, message), frameOrigin);

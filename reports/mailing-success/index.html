@@ -89,6 +89,26 @@
     .score-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--nb-gold), var(--nb-rust)); }
     .show-more { display: flex; justify-content: center; margin-top: 14px; }
 
+    .mailing-card { cursor: pointer; }
+    .mailing-card:hover { border-color: #cfd8dd; }
+    .mailing-card:focus-visible { outline: 2px solid var(--nb-teal); outline-offset: 2px; }
+    .card-toggle { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin: -4px 0 -6px 56px; color: var(--muted); font: 700 .68rem var(--nb-font-subheading); letter-spacing: .06em; text-transform: uppercase; }
+    .mailing-detail { grid-column: 1 / -1; margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); cursor: default; }
+    .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .detail-stat { padding: 10px 12px; border-radius: var(--nb-radius); background: #f6f8f9; }
+    .detail-stat .metric-value { font-size: 1.15rem; }
+    .detail-stat .metric-label, .detail-stat .metric-sub { text-align: left; }
+    .detail-stat { text-align: left; }
+    .detail-title { margin: 0 0 8px; color: var(--nb-black); font: 800 .68rem/1.2 var(--nb-font-subheading); letter-spacing: .1em; text-transform: uppercase; }
+    .link-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .link-table th { padding: 6px 8px; color: var(--muted); font: 800 .6rem var(--nb-font-subheading); letter-spacing: .1em; text-align: right; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+    .link-table th:first-child, .link-table td:first-child { text-align: left; }
+    .link-table td { padding: 7px 8px; text-align: right; border-bottom: 1px solid #f0f2f4; font-variant-numeric: tabular-nums; }
+    .link-url { display: block; max-width: 520px; overflow-wrap: anywhere; color: var(--nb-teal); font-weight: 600; }
+    .link-bar { height: 4px; margin-top: 4px; border-radius: 99px; background: #eceff2; overflow: hidden; }
+    .link-bar > span { display: block; height: 100%; background: var(--nb-gold); }
+    .detail-note { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+
     .ai-panel { padding: 24px; border-radius: var(--nb-radius); }
     .ai-intro { margin: 0 0 14px; color: var(--muted); font-size: .84rem; line-height: 1.55; }
     .ai-question { width: 100%; min-height: 64px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid #cfd8dd; border-radius: var(--nb-radius); font: .88rem/1.45 var(--nb-font-body); resize: vertical; }
@@ -261,6 +281,8 @@
     let ranked = [];
     let shown = PAGE_SIZE;
     let pendingAnalysis = null;
+    let hasLinkData = false;
+    const expanded = new Set();
 
     function clean(value) { return ui.text(value, '').trim(); }
 
@@ -328,6 +350,17 @@
         m.recipients.add(who);
       });
       normalize.hasRecipients = mailings.some(function (m) { return m.recipients; });
+
+      // Per-link clicks, already counted by the wrapper: { m, url, clicks, people }.
+      mailings.forEach(function (m) { m.links = []; });
+      hasLinkData = Array.isArray(payload.links) && payload.links.length > 0;
+      (Array.isArray(payload.links) ? payload.links : []).forEach(function (row) {
+        const m = byId.get(clean(row.m));
+        const url = clean(row.url);
+        if (!m || !url) return;
+        m.links.push({ url: url, clicks: ui.number(row.clicks), people: ui.number(row.people) });
+      });
+      mailings.forEach(function (m) { m.links.sort(function (a, b) { return b.clicks - a.clicks || a.url.localeCompare(b.url); }); });
 
       // "Now" for the date-range filter is the newest timestamp Slate gave us,
       // which keeps it in the same naive clock as the data.
@@ -503,7 +536,93 @@
         bar.appendChild(fill); score.appendChild(bar);
       }
       el.append(badge, body, delivered, main, score);
+
+      const open = expanded.has(m.id);
+      el.tabIndex = 0;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-expanded', open ? 'true' : 'false');
+      const toggle = document.createElement('div');
+      toggle.className = 'card-toggle';
+      toggle.textContent = open ? '▾ Hide details' : '▸ Delivery stats' + (m.method === 'email' ? ' & link clicks' : '');
+      el.appendChild(toggle);
+      if (open) el.appendChild(detail(m));
+      const flip = function () {
+        if (expanded.has(m.id)) expanded.delete(m.id); else expanded.add(m.id);
+        renderList();
+      };
+      el.addEventListener('click', function (event) {
+        if (event.target.closest('.mailing-detail')) return;
+        if (window.getSelection && String(window.getSelection())) return;
+        flip();
+      });
+      el.addEventListener('keydown', function (event) {
+        if (event.target !== el || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        flip();
+      });
       return el;
+    }
+
+    function detailStat(label, value, sub) {
+      const cell = metricCell(label, value, sub);
+      cell.className = 'detail-stat';
+      return cell;
+    }
+
+    function detail(m) {
+      const box = document.createElement('div');
+      box.className = 'mailing-detail';
+      const grid = document.createElement('div');
+      grid.className = 'detail-grid';
+      grid.appendChild(detailStat('Sent', int.format(m.sent), ''));
+      grid.appendChild(detailStat('Delivered', int.format(m.delivered), fmtRate(rate(m.delivered, m.sent)) + ' of sent'));
+      grid.appendChild(detailStat('Bounced', int.format(m.bounce), fmtRate(m.bounceRate)));
+      if (m.skip) grid.appendChild(detailStat('Skipped', int.format(m.skip), ''));
+      if (m.method === 'email') {
+        grid.appendChild(detailStat('Unique opens', int.format(m.opens), fmtRate(m.openRate) + ' of delivered'));
+        grid.appendChild(detailStat('Unique clicks', int.format(m.clicks), fmtRate(m.clickRate) + ' of delivered'));
+        grid.appendChild(detailStat('Click-to-open', fmtRate(rate(m.clicks, m.opens)), ''));
+      } else {
+        grid.appendChild(detailStat('Replied', int.format(m.repliers), fmtRate(m.replyRate) + ' of delivered'));
+        grid.appendChild(detailStat('Opted out', int.format(m.optOuts), fmtRate(m.optOutRate)));
+      }
+      box.appendChild(grid);
+
+      if (m.method === 'email') {
+        const title = document.createElement('h4');
+        title.className = 'detail-title';
+        title.textContent = 'Links clicked';
+        box.appendChild(title);
+        if (!m.links.length) {
+          const note = document.createElement('p');
+          note.className = 'detail-note';
+          note.textContent = !hasLinkData
+            ? 'Link-level clicks aren’t loaded in this portal yet.'
+            : (m.clicks ? 'No link detail came back for this mailing.' : 'No links were clicked.');
+          box.appendChild(note);
+        } else {
+          const total = m.links.reduce(function (s, l) { return s + l.clicks; }, 0);
+          const table = document.createElement('table');
+          table.className = 'link-table';
+          const head = table.createTHead().insertRow();
+          ['Link', 'Clicks', 'People', 'Share'].forEach(function (h) { const th = document.createElement('th'); th.textContent = h; head.appendChild(th); });
+          const tbody = table.createTBody();
+          m.links.forEach(function (l) {
+            const row = tbody.insertRow();
+            const first = row.insertCell();
+            const u = document.createElement('span'); u.className = 'link-url'; u.textContent = l.url;
+            const bar = document.createElement('div'); bar.className = 'link-bar';
+            const fill = document.createElement('span'); fill.style.width = (total ? Math.round(l.clicks / total * 100) : 0) + '%';
+            bar.appendChild(fill);
+            first.append(u, bar);
+            row.insertCell().textContent = int.format(l.clicks);
+            row.insertCell().textContent = int.format(l.people);
+            row.insertCell().textContent = total ? pct.format(l.clicks / total) : '—';
+          });
+          box.appendChild(table);
+        }
+      }
+      return box;
     }
 
     function renderList() {
@@ -537,6 +656,9 @@
         { label:'Repliers', value:function (m) { return m.method === 'sms' ? m.repliers : ''; } },
         { label:'Reply rate', value:function (m) { return fmtRate(m.replyRate); } },
         { label:'Opt-outs', value:function (m) { return m.method === 'sms' ? m.optOuts : ''; } },
+        { label:'Sent', key:'sent' },
+        { label:'Bounced', key:'bounce' },
+        { label:'Top link', value:function (m) { return m.links && m.links.length ? m.links[0].url : ''; } },
         { label:'Success score', value:function (m) { return m.score == null ? '' : m.score; } }
       ], ranked);
     }
