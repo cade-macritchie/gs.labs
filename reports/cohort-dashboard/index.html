@@ -71,6 +71,7 @@
     .activity-icon.k-checklist { background: var(--nb-teal); }
     .activity-icon.k-decision { background: var(--nb-gold); }
     .activity-icon.k-status { background: var(--nb-grayblue); }
+    .activity-icon.k-inquiry { background: var(--nb-gold); outline: 2px solid var(--nb-teal); outline-offset: 1px; }
     .activity-icon.k-application { background: var(--nb-rust); }
     .activity-who { padding: 0; border: 0; background: none; color: var(--nb-black); font: inherit; font-weight: 700; cursor: pointer; text-align: left; }
     .activity-who:hover { text-decoration: underline; }
@@ -192,6 +193,7 @@
             <option value="application">Started / submitted</option>
             <option value="status">Status &amp; cohort</option>
             <option value="decision">Decisions</option>
+            <option value="inquiry">New inquiries</option>
           </select>
         </div>
         <input id="activity-search" type="search" placeholder="Search by name…" aria-label="Search activity by name" autocomplete="off">
@@ -262,6 +264,13 @@
       const rows = Array.isArray(payload && payload.apps) ? payload.apps : [];
       state.apps = rows.map(normalize).filter(app => app.id);
       state.activity = payload && payload.activity ? payload.activity : { status:'loading', events:[] };
+      // DMin inquiries (people whose Degree of Interest is Doctor of Ministry). Only
+      // users Slate lets see them get rows. They have no cohort.
+      state.inquiries = {};
+      (Array.isArray(payload && payload.inquiries) ? payload.inquiries : []).forEach(row => {
+        const ref = clean(row.ref); if (!ref) return;
+        state.inquiries[ref] = { ref, name: clean(row.name) || 'Unknown', url: clean(row.url), created: parseDate(row.created), cohortLabel: 'DMin inquiry' };
+      });
       const map = {};
       state.apps.forEach(app => {
         if (!map[app.key]) map[app.key] = { key: app.key, label: app.cohortLabel, track: app.track, term: app.term, year: app.year, directors: {}, apps: [] };
@@ -522,6 +531,23 @@
         const e = added[k];
         e.text = e.items.length === 1 ? e.items[0] + ' added to the checklist' : e.items.length + ' checklist items added (' + e.items.slice(0, 4).join(', ') + (e.items.length > 4 ? ', …' : '') + ')';
       });
+      // DMin inquiries aren't in a cohort, so they show only with all cohorts selected.
+      if (state.cohort === 'all') {
+        const people = Object.keys(state.inquiries).map(k => state.inquiries[k]);
+        const detected = {};
+        raw.forEach(e => {
+          if (e.kind !== 'inquiry') return;
+          const person = state.inquiries[clean(e.app_id)]; const date = parseDate(e.detected_at);
+          if (!person || !date) return;
+          // Slate dated the record close to when we first saw the interest: one row is enough.
+          if (person.created && dayDiff(person.created, date) <= 3) return;
+          detected[person.ref] = true;
+          events.push({ app: person, date, kind: 'inquiry', text: 'Chose Doctor of Ministry as their degree of interest', exact: true });
+        });
+        people.forEach(person => {
+          if (person.created) events.push({ app: person, date: person.created, kind: 'inquiry', text: 'Inquired about the Doctor of Ministry program', exact: false });
+        });
+      }
       return events.sort((a, b) => b.date - a.date);
     }
 
@@ -578,6 +604,7 @@
       if (state.activity.status === 'error') parts.push('Status, cohort and director changes couldn\'t be loaded just now; reload to try again.');
       else if (since) parts.push('Status, cohort, director and checklist changes are checked every 30 minutes and recorded since ' + since.toLocaleDateString() + (last ? ' (last check ' + last.toLocaleString() + ')' : '') + '.');
       else if (state.activity.status === 'ready') parts.push('Status, cohort and director changes will appear here once change tracking starts.');
+      if (Object.keys(state.inquiries || {}).length) parts.push('New inquiries list people whose Degree of Interest is Doctor of Ministry, with the date Slate created their record. If someone switches to Doctor of Ministry later, the date we first noticed it is shown instead. Both show only with all cohorts selected.');
       note.textContent = parts.join(' ');
     }
 

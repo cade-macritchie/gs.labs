@@ -3312,7 +3312,7 @@ Today is ${currentDate}. Resolve relative academic-term language when possible. 
 
 Leave alt_form_type empty. It only checks one form response per person, so it misses most event registrants; the event_* filters below replace it. When the user asks for people tied to any event at all (no event name or dates), set event_date_start to "2000-01-01" so every event registration counts.
 
-When the user asks for "students", use the exact person_status value "Student" in the status output key. When they ask for admitted students or admitted applications, use status "Student" and decision code "AT". For provisionally admitted students, use decision code "ATP" instead.
+When the user asks for "students", use the exact person_status value "Student" in the status output key. When they ask for admitted students or admitted applications, use status "Student" and decision code "AT". For provisionally admitted students, use decision code "ADP" instead.
 
 Application Created Date is a date range. Use app_createddate_start for the inclusive beginning of the requested range and app_createddate_end for the inclusive end. Return dates in YYYY-MM-DD format. If the user provides only one boundary, leave the other boundary empty. If they name a full month, use its first and last calendar dates. Never return app_createddate.
 
@@ -3663,6 +3663,7 @@ async function ensureCohortTables(env) {
     env.COHORT_ACTIVITY.prepare("CREATE TABLE IF NOT EXISTS cohort_events (id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, kind TEXT NOT NULL, item TEXT, old_value TEXT, new_value TEXT, detected_at TEXT NOT NULL, prev_seen_at TEXT)"),
     env.COHORT_ACTIVITY.prepare("CREATE INDEX IF NOT EXISTS cohort_events_app ON cohort_events (app_id, detected_at)"),
     env.COHORT_ACTIVITY.prepare("CREATE TABLE IF NOT EXISTS cohort_meta (key TEXT PRIMARY KEY, value TEXT)"),
+    env.COHORT_ACTIVITY.prepare("CREATE TABLE IF NOT EXISTS inquiry_snapshot (person_ref TEXT PRIMARY KEY, seen_at TEXT NOT NULL)"),
   ]);
   cohortTablesReady = true;
 }
@@ -3785,6 +3786,75 @@ async function snapshotCohortActivity(env) {
   return { rows: rows.length, events, firstRun };
 }
 
+// ------------------------------------------------------------
+// DMin inquiries (IT-234). Slate has no date for "Degree of Interest
+// changed to Doctor of Ministry", so the same cron pulls the all_people
+// query with degree_interest=Doctor of Ministry and keeps only the Slate
+// person reference IDs it saw. A reference that wasn't in the last pull
+// becomes an 'inquiry' event in cohort_events (app_id = person ref). The
+// first pull is a baseline: people already interested get no event. A
+// person who drops the interest and returns is flagged again. No names
+// or contact details are stored or logged.
+// ------------------------------------------------------------
+
+const INQUIRY_DEGREE_INTEREST = "Doctor of Ministry";
+const COHORT_PERSON_REF = /^\d{5,12}$/;
+
+async function fetchInquiryRefs(env) {
+  if (!env.SLATE_QUERY_URL || !env.SLATE_TOKEN_MAINDB) throw new Error("maindb query not configured");
+  const url = new URL(env.SLATE_QUERY_URL);
+  url.searchParams.set("output", "json");
+  url.searchParams.set("degree_interest", INQUIRY_DEGREE_INTEREST);
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${env.SLATE_TOKEN_MAINDB}`, Accept: "application/json" },
+  });
+  if (!resp.ok) throw new Error(`Inquiry snapshot query failed: HTTP ${resp.status}`);
+  const data = await resp.json();
+  const rows = Array.isArray(data?.row) ? data.row : [];
+  // An ignored filter returns the whole population; a real one only returns people with this interest.
+  const matching = rows.filter((row) => cohortText(row?.per_degree_interest, 200) === INQUIRY_DEGREE_INTEREST);
+  if (rows.length && matching.length < rows.length) throw new Error("Inquiry snapshot filter was ignored");
+  return [...new Set(matching.map((row) => cohortText(row?.per_ref, 20)).filter((ref) => COHORT_PERSON_REF.test(ref)))];
+}
+
+async function snapshotInquiries(env) {
+  if (!env.COHORT_ACTIVITY) return { skipped: "not configured" };
+  await ensureCohortTables(env);
+  const now = new Date().toISOString();
+  const refs = await fetchInquiryRefs(env);
+  const result = await env.COHORT_ACTIVITY.prepare("SELECT person_ref FROM inquiry_snapshot").all();
+  const saved = new Set((result.results || []).map((r) => r.person_ref));
+  if (!refs.length || (saved.size > 10 && refs.length < saved.size * 0.5)) {
+    return { skipped: `suspicious pull (${refs.length} rows, ${saved.size} saved)` };
+  }
+  const firstRun = saved.size === 0;
+  const present = new Set(refs);
+  const statements = [];
+  let events = 0;
+  for (const ref of refs) {
+    if (saved.has(ref)) continue;
+    if (!firstRun) {
+      statements.push(env.COHORT_ACTIVITY.prepare(
+        "INSERT INTO cohort_events (app_id, kind, item, old_value, new_value, detected_at, prev_seen_at) VALUES (?, 'inquiry', NULL, NULL, ?, ?, NULL)"
+      ).bind(ref, INQUIRY_DEGREE_INTEREST, now));
+      events += 1;
+    }
+    statements.push(env.COHORT_ACTIVITY.prepare("INSERT OR IGNORE INTO inquiry_snapshot (person_ref, seen_at) VALUES (?, ?)").bind(ref, now));
+  }
+  for (const ref of saved) {
+    if (!present.has(ref)) statements.push(env.COHORT_ACTIVITY.prepare("DELETE FROM inquiry_snapshot WHERE person_ref = ?").bind(ref));
+  }
+  if (firstRun) {
+    statements.push(env.COHORT_ACTIVITY.prepare(
+      "INSERT INTO cohort_meta (key, value) VALUES ('inquiry_tracking_since', ?) ON CONFLICT(key) DO NOTHING"
+    ).bind(now));
+  }
+  for (let i = 0; i < statements.length; i += 50) {
+    await env.COHORT_ACTIVITY.batch(statements.slice(i, i + 50));
+  }
+  return { refs: refs.length, events, firstRun };
+}
+
 // POST /api/cohort/activity  { apps: ["<application guid>", ...] }
 //   -> { events: [...], trackingSince, lastRun }
 async function handleCohortActivity(request, env, id) {
@@ -3796,7 +3866,7 @@ async function handleCohortActivity(request, env, id) {
   try { body = await request.json(); } catch { body = null; }
   const apps = [...new Set((Array.isArray(body?.apps) ? body.apps : [])
     .map((value) => String(value || "").trim().toLowerCase())
-    .filter((value) => COHORT_GUID.test(value)))];
+    .filter((value) => COHORT_GUID.test(value) || COHORT_PERSON_REF.test(value)))];
   if (!apps.length || !env.COHORT_ACTIVITY) return json(empty, env, 200, env.PORTAL_ORIGIN);
   if (apps.length > COHORT_ACTIVITY_MAX_APPS) {
     return json({ error: "Too many applications", requestId: id }, env, 400, env.PORTAL_ORIGIN);
@@ -3819,6 +3889,7 @@ async function handleCohortActivity(request, env, id) {
   return json({
     events: events.slice(0, COHORT_ACTIVITY_MAX_EVENTS),
     trackingSince: metaMap.tracking_since || null,
+    inquiryTrackingSince: metaMap.inquiry_tracking_since || null,
     lastRun: metaMap.last_run || null,
   }, env, 200, env.PORTAL_ORIGIN);
 }
@@ -4434,6 +4505,10 @@ export default {
       ctx.waitUntil(snapshotCohortActivity(env).then(
         (summary) => logInfo("cron", "Cohort snapshot", summary),
         (error) => logError("cron", "Cohort snapshot failed", { message: error.message })
+      ));
+      ctx.waitUntil(snapshotInquiries(env).then(
+        (summary) => logInfo("cron", "Inquiry snapshot", summary),
+        (error) => logError("cron", "Inquiry snapshot failed", { message: error.message })
       ));
       return;
     }
