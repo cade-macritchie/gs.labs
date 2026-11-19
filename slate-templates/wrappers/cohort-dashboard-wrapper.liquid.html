@@ -23,8 +23,9 @@
   Second Liquid export (IT-234): cohort_inquiries (Person base). Filter:
   Degree of Interest = Doctor of Ministry, limited to the same full-access
   users as cohort_apps (via @identity, so everyone else gets no rows).
-  Exports: ref (Person Reference ID), name, url (record link), created
-  (Person created date). The gateway's cron records when each ref first
+  Exports (query "DMin Cohort Inquiries", renamed): ref (Person Reference
+  ID), name, created (Person Created Date), guid (Person GUID, the wrapper
+  builds the /manage/lookup/record link from it). The gateway's cron records when each ref first
   appeared with that interest (see worker.js, "DMin inquiries").
 
   The wrapper sends the rows to the hosted page, then asks the gateway's
@@ -34,7 +35,7 @@
   gateway; names never leave Slate except to the page in this iframe.
 -->
 <div id="cohortDashboardData" style="display:none">{% for record in cohort_apps %}<div class="app"><span class="app_id">{{ record.app_id | escape }}</span><span class="name">{{ record.name | escape }}</span><span class="email">{{ record.email | escape }}</span><span class="url">{{ record.url | escape }}</span><span class="cohort_track">{{ record.cohort_track | escape }}</span><span class="cohort_term">{{ record.cohort_term | escape }}</span><span class="cohort_year">{{ record.cohort_year | escape }}</span><span class="director">{{ record.director | escape }}</span><span class="director_email">{{ record.director_email | escape }}</span><span class="app_status">{{ record.app_status | escape }}</span><span class="created">{{ record.created | escape }}</span><span class="submitted">{{ record.submitted | escape }}</span><span class="decision_code">{{ record.decision_code | escape }}</span><span class="decisions">{{ record.decisions | escape }}</span><span class="checklist">{{ record.checklist | escape }}</span></div>{% endfor %}</div>
-<div id="cohortInquiryData" style="display:none">{% for record in cohort_inquiries %}<div class="inq"><span class="ref">{{ record.ref | escape }}</span><span class="name">{{ record.name | escape }}</span><span class="url">{{ record.url | escape }}</span><span class="created">{{ record.created | escape }}</span></div>{% endfor %}</div>
+<div id="cohortInquiryData" style="display:none">{% for record in cohort_inquiries %}<div class="inq"><span class="ref">{{ record.ref | escape }}</span><span class="name">{{ record.name | escape }}</span><span class="url">/manage/lookup/record?id={{ record.guid | escape }}</span><span class="created">{{ record.created | escape }}</span></div>{% endfor %}</div>
 <iframe id="cohortDashboardFrame" src="https://cade-macritchie.github.io/gs.labs/reports/cohort-dashboard/" title="Cohort Dashboard" referrerpolicy="origin" style="width:100%;height:100vh;min-height:600px;border:0;display:block"></iframe>
 <script>
 (function () {
